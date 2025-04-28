@@ -1,0 +1,8 @@
+# Example Plugin Requirements
+# These are the additional dependencies needed by this plugin
+
+# GUI requirements are provided by the main application (PySide6)
+
+# Networking tools (example only - not actually used in this example)
+# ping3==4.0.4     # Uncomment if you need ping functionality
+# netifaces==0.11.0  # Uncomment if you need network interface information 

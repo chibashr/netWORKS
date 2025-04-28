@@ -1,0 +1,47 @@
+{
+  "app": {
+    "theme": "light",
+    "auto_save_interval": 300,
+    "default_workspace": "last-used"
+  },
+  "scanning": {
+    "timeout": 1000,
+    "retries": 3,
+    "concurrent_scans": 50
+  },
+  "network": {
+    "preferred_interface": "auto",
+    "excluded_ranges": []
+  },
+  "ui": {
+    "panels": {
+      "left": {
+        "visible": true,
+        "width": 313
+      },
+      "right": {
+        "visible": true,
+        "width": 356
+      },
+      "bottom": {
+        "visible": true,
+        "height": 230
+      }
+    },
+    "table": {
+      "columns": [
+        "ip",
+        "hostname",
+        "mac"
+      ],
+      "sort_by": "ip",
+      "sort_direction": "ascending"
+    },
+    "toolbar": {
+      "visible": true,
+      "pinned": false,
+      "position": "top",
+      "categories": {}
+    }
+  }
+}

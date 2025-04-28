@@ -1,0 +1,12 @@
+NAME: "c38xx Stack", DESCR: "c38xx Stack"
+PID: WS-C3850-24XU-L   , VID: V03  , SN: FCW2121C131
+
+NAME: "Switch 1", DESCR: "WS-C3850-24XU-L"
+PID: WS-C3850-24XU-L   , VID: V03  , SN: FCW2121C131
+
+NAME: "Switch 1 - Power Supply A", DESCR: "Switch 1 - Power Supply A"
+PID: PWR-C1-715WAC     , VID: V01  , SN: DCB1901G26T
+
+NAME: "Switch 1 FRU Uplink Module 1", DESCR: "4x10G Uplink Module"
+PID: C3850-NM-4-10G    , VID: V01  , SN: FOC2114119G
+

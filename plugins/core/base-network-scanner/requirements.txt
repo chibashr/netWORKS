@@ -1,0 +1,5 @@
+ipaddress>=1.0.23
+PySide6>=6.0.0
+# netifaces is optional and requires Microsoft Visual C++ 14.0 or greater
+# if not installed, the plugin will fall back to alternative methods
+# netifaces>=0.11.0 

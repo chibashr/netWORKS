@@ -1,0 +1,26 @@
+{
+    "name": "Cisco IOS",
+    "description": "Commands for Cisco IOS devices",
+    "commands": {
+        "show_version": {
+            "command": "show version",
+            "description": "Display version information",
+            "output_type": "text"
+        },
+        "show_interfaces": {
+            "command": "show ip interface brief",
+            "description": "Display interface status and IP addresses",
+            "output_type": "tabular"
+        },
+        "show_inventory": {
+            "command": "show inventory",
+            "description": "Display hardware inventory",
+            "output_type": "text"
+        },
+        "show_running_config": {
+            "command": "show running-config",
+            "description": "Display current configuration",
+            "output_type": "text"
+        }
+    }
+}

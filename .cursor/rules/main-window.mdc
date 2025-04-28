@@ -1,0 +1,23 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+
+# Important
+When making changes, make sure to use your reason to update [version_manifest.json](mdc:docs/version_manifest.json). Use [versioning.md](mdc:docs/versioning.md) as a reference for this.
+
+When implementing a new feature, update the docs folder. 
+
+# Also Remember
+The main window should be able to run without plugins fully. The main window should be completely accessible for plugins, and should just act as a scaffolding for plugins. It is for these reasons that the main window needs to be fully documented.
+
+The plugins folder is only where plugins live, and should not be modified as the main window, only in reference the plugin.
+
+Update [requirements.txt](mdc:requirements.txt) when adding new requirements.
+
+PySide6 is used for the UI for this program.
+
+This program is primarily used for Windows.
+

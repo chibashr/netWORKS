@@ -1,0 +1,63 @@
+{
+    "name": "network-device-manager",
+    "displayName": "Network Device Manager",
+    "version": "1.0.0",
+    "description": "Connect to network devices via SSH/telnet and run commands for maintenance and information gathering",
+    "author": "chibashr",
+    "main": "main.py",
+    "dependencies": [],
+    "ui": {
+        "panels": ["bottom", "right"],
+        "menus": ["device_context"]
+    },
+    "hooks": {
+        "device_select": {
+            "description": "Called when a device is selected"
+        },
+        "before_scan": {
+            "description": "Called before a network scan starts"
+        },
+        "after_scan": {
+            "description": "Called after a network scan completes"
+        },
+        "device_found": {
+            "description": "Called when a new device is discovered"
+        }
+    },
+    "api": {
+        "documentation": "API.md",
+        "exports": {
+            "connect_to_device": {
+                "description": "Connect to a device using SSH or telnet",
+                "parameters": ["device_info", "connection_type", "credentials"],
+                "returns": "Connection session object"
+            },
+            "run_command": {
+                "description": "Run a command on a connected device",
+                "parameters": ["device_info", "command", "output_format"],
+                "returns": "Command output as string or structured data"
+            },
+            "get_device_commands": {
+                "description": "Get available commands for a device type",
+                "parameters": ["device_type"],
+                "returns": "List of available commands"
+            },
+            "save_device_output": {
+                "description": "Save command output to a file",
+                "parameters": ["device_info", "command_output", "filename", "format"],
+                "returns": "Path to saved file"
+            }
+        },
+        "events": {
+            "network-device-manager:connection_established": {
+                "description": "Triggered when connection to a device is established"
+            },
+            "network-device-manager:command_executed": {
+                "description": "Triggered when a command is executed on a device"
+            },
+            "network-device-manager:output_saved": {
+                "description": "Triggered when command output is saved to a file"
+            }
+        }
+    }
+} 

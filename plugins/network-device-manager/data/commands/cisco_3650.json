@@ -1,0 +1,142 @@
+{
+    "id": "cisco_3650",
+    "name": "Cisco Catalyst 3650",
+    "description": "Commands for Cisco Catalyst 3650 Series Switches",
+    "commands": {
+        "show_version": {
+            "command": "show version",
+            "description": "Display version information",
+            "output_type": "text"
+        },
+        "show_inventory": {
+            "command": "show inventory",
+            "description": "Display hardware inventory",
+            "output_type": "text"
+        },
+        "show_run": {
+            "command": "show running-config",
+            "description": "Display current configuration",
+            "output_type": "text"
+        },
+        "show_int_status": {
+            "command": "show interfaces status",
+            "description": "Display interface status",
+            "output_type": "tabular"
+        },
+        "show_ip_int_brief": {
+            "command": "show ip interface brief",
+            "description": "Display IP interface summary",
+            "output_type": "tabular"
+        },
+        "show_mac_address": {
+            "command": "show mac address-table",
+            "description": "Display MAC address table",
+            "output_type": "tabular"
+        },
+        "show_vlan": {
+            "command": "show vlan",
+            "description": "Display VLAN information",
+            "output_type": "tabular"
+        },
+        "show_cdp_neighbors": {
+            "command": "show cdp neighbors detail",
+            "description": "Display CDP neighbor details",
+            "output_type": "text"
+        },
+        "show_lldp_neighbors": {
+            "command": "show lldp neighbors detail",
+            "description": "Display LLDP neighbor details",
+            "output_type": "text"
+        },
+        "show_spanning_tree": {
+            "command": "show spanning-tree",
+            "description": "Display spanning tree status",
+            "output_type": "text"
+        },
+        "show_power_inline": {
+            "command": "show power inline",
+            "description": "Display PoE information",
+            "output_type": "tabular"
+        },
+        "show_env_all": {
+            "command": "show env all",
+            "description": "Display environmental status",
+            "output_type": "text"
+        },
+        "show_controllers": {
+            "command": "show controllers utilization",
+            "description": "Display controller utilization",
+            "output_type": "text"
+        },
+        "show_processes_cpu": {
+            "command": "show processes cpu sorted",
+            "description": "Display CPU utilization",
+            "output_type": "text"
+        },
+        "show_interface_transceiver": {
+            "command": "show interface transceiver",
+            "description": "Display transceiver information",
+            "output_type": "text"
+        },
+        "show_log": {
+            "command": "show logging",
+            "description": "Display system logs",
+            "output_type": "text"
+        },
+        "show_tech_support": {
+            "command": "show tech-support",
+            "description": "Display technical support information",
+            "output_type": "text"
+        },
+        "show_port_security": {
+            "command": "show port-security",
+            "description": "Display port security settings",
+            "output_type": "tabular"
+        },
+        "show_storm_control": {
+            "command": "show storm-control",
+            "description": "Display storm control settings",
+            "output_type": "text"
+        },
+        "show_ip_access_lists": {
+            "command": "show ip access-lists",
+            "description": "Display IP access lists",
+            "output_type": "text"
+        },
+        "show_ip_route": {
+            "command": "show ip route",
+            "description": "Display IP routing table",
+            "output_type": "text"
+        },
+        "show_ip_arp": {
+            "command": "show ip arp",
+            "description": "Display ARP table",
+            "output_type": "tabular"
+        },
+        "show_version_running": {
+            "command": "show version running",
+            "description": "Display running IOS version",
+            "output_type": "text"
+        },
+        "show_ip_dhcp_binding": {
+            "command": "show ip dhcp binding",
+            "description": "Display DHCP bindings",
+            "output_type": "tabular"
+        },
+        "show_ip_dhcp_snooping": {
+            "command": "show ip dhcp snooping",
+            "description": "Display DHCP snooping configuration",
+            "output_type": "text"
+        },
+        "show_interface_trunk": {
+            "command": "show interface trunk",
+            "description": "Display trunk interfaces",
+            "output_type": "tabular"
+        },
+        "show_switchport": {
+            "command": "show interfaces switchport",
+            "description": "Display switchport configuration",
+            "output_type": "text"
+        }
+    }
+}

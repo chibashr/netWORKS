@@ -1,0 +1,138 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# netWORKS Plugin Development Guide
+
+This guide will help you create plugins for the netWORKS application, with references to the official documentation for detailed information.
+
+## Quick Start
+
+1. Create a new directory under `plugins/` with your plugin name
+2. Create the required files (see [Plugin Structure](#plugin-structure))
+3. Implement the plugin class and required functions
+4. Test your plugin within netWORKS
+
+## Plugin Structure
+
+A basic plugin requires the following structure:
+
+```
+plugins/
+└── your_plugin_name/
+    ├── manifest.json   # Required: Plugin metadata and configuration
+    ├── main.py         # Required: Main plugin code with init_plugin function
+    ├── README.md       # Required: User documentation
+    ├── API.md          # Required if plugin exposes APIs to other plugins
+    ├── requirements.txt # Optional: Python dependencies for this plugin
+    └── assets/         # Optional: Plugin resources like images
+```
+
+For more details, see [docs/plugins/PLUGIN_GUIDE.md](../docs/plugins/PLUGIN_GUIDE.md)
+
+## Plugin Manifest
+
+Every plugin needs a `manifest.json` file that defines its metadata. Example:
+
+```json
+{
+    "name": "your-plugin-name",           // Unique identifier (use kebab-case)
+    "displayName": "Your Plugin Name",     // User-friendly name
+    "version": "1.0.0",                   // Semantic versioning
+    "description": "Description of your plugin",  // Brief description
+    "author": "Your Name",                // Author information
+    "main": "main.py",                    // Entry point file
+    "dependencies": [],                   // Other plugin dependencies
+    "ui": {                               // UI registration
+        "panels": ["left", "right", "bottom"]  // UI panels used
+    }
+}
+```
+
+## Main Plugin Module
+
+Your main plugin module must contain an `init_plugin` function:
+
+```python
+def init_plugin(plugin_api):
+    """
+    Required entry point for the plugin.
+    
+    Args:
+        plugin_api: Instance of PluginAPI
+        
+    Returns:
+        An instance of your plugin class
+    """
+    return YourPluginClass(plugin_api)
+```
+
+## UI Integration
+
+Plugins can integrate with the netWORKS UI in multiple ways:
+
+1. **Panels**: Left, right, and bottom panels
+2. **Device Table**: Custom columns and renderers
+3. **Main Menu**: Add items to existing menus
+4. **Toolbars**: Add buttons to the main toolbar
+5. **Context Menus**: Add right-click menu options
+
+Example panel registration:
+```python
+# Register a panel
+self.api.register_panel(panel_widget, "left", "Panel Name")
+```
+
+For more UI information, see [docs/plugins/UI_FRAMEWORK.md](../docs/plugins/UI_FRAMEWORK.md)
+
+## Database Integration
+
+Plugins can access the central database through the database manager API:
+
+```python
+# Get database manager instance
+db_manager = self.api.get_database_manager()
+
+# Execute queries
+results = db_manager.execute_query("SELECT * FROM devices WHERE ip LIKE ?", ["192.168.1.%"])
+```
+
+For database details, see [docs/device_management.md](../docs/device_management.md)
+
+## Event Hooks
+
+Register for application events using hooks:
+
+```python
+# Using decorator syntax
+@self.api.hook("device_select")
+def on_device_select(device):
+    self.api.log(f"Device selected: {device['ip']}")
+```
+
+Common hooks:
+- `device_select`: Called when a device is selected
+- `before_scan`: Called before a network scan starts
+- `after_scan`: Called after a network scan completes
+- `device_found`: Called when a new device is discovered
+
+## API Reference
+
+For complete API documentation, see [docs/API.md](../docs/API.md) and [docs/plugins/API.md](../docs/plugins/API.md)
+
+## Template for New Plugins
+
+The [docs/plugin_creation_template.md](../docs/plugin_creation_template.md) provides a comprehensive template you can use to plan your plugin before implementation.
+
+## Plugin Examples
+
+Check the example plugin in [docs/plugins/example_plugin/](../docs/plugins/example_plugin/) for a working reference implementation.
+
+## Versioning
+
+Follow the application's versioning guidelines in [docs/versioning.md](../docs/versioning.md) to ensure compatibility with future netWORKS releases.
+
+## Debugging
+
+For debugging your plugins, see the debugging guide in [docs/DEBUG.md](../docs/DEBUG.md).

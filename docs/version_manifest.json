@@ -1,0 +1,942 @@
+{
+  "version": {
+    "major": 1,
+    "minor": 3,
+    "patch": 2
+  },
+  "version_string": "1.3.2-alpha",
+  "version_info": {
+    "major": 1,
+    "minor": 3,
+    "patch": 2,
+    "build": 0,
+    "release_type": "alpha"
+  },
+  "build_date": "2024-10-15",
+  "release_notes": "Enhanced UI with modern Office-style ribbon toolbar and improved UI scaling",
+  "release_type": "alpha",
+  "compatibility": {
+    "min_plugin_api": "1.0.0",
+    "recommended_plugin_api": "1.0.3",
+    "python_version": ">=3.10.0",
+    "min_python_version": "3.10.0"
+  },
+  "version_history": [
+    {
+      "version": "1.3.2-alpha",
+      "date": "2024-10-15",
+      "changes": [
+        "Transformed traditional menubar into modern Office-style ribbon toolbar",
+        "Implemented grouped toolbar buttons for better organization",
+        "Fixed button scaling issues to ensure text remains readable at all window sizes",
+        "Improved tab design with closer spacing and modern styling",
+        "Added Home/View/Tools/Plugins/Help tabs for better categorization",
+        "Enhanced UI documentation to explain the new ribbon interface",
+        "Ensured consistent button sizing with minimum dimensions",
+        "Fixed toolbar overflow issues with improved layout management"
+      ]
+    },
+    {
+      "version": "1.3.1-alpha",
+      "date": "2024-10-15",
+      "changes": [
+        "Redesigned toolbar system with Microsoft Office-style tab interface",
+        "Added comprehensive device selection debugging in device_table.py",
+        "Improved bottom panel resizing with minimal height constraints",
+        "Enhanced plugin content handling within the bottom panel",
+        "Updated API documentation for toolbar integration",
+        "Fixed UI issues when using 'Tools' menu and hovering",
+        "Improved plugin integration with toolbar tabs",
+        "Made toolbar documentation more comprehensive for plugin developers",
+        "Solved resizing issues with embedded content in the bottom panel"
+      ]
+    },
+    {
+      "version": "1.0.44-alpha",
+      "date": "2024-09-05",
+      "changes": [
+        "Reorganized project structure for better maintainability",
+        "Moved utility scripts to utils/ directory",
+        "Moved batch files and setup scripts to scripts/ directory",
+        "Moved version_manager.py to core/ directory",
+        "Moved DEBUG.md to docs/ folder",
+        "Updated file paths and import references to reflect new structure",
+        "Added start.py launcher with improved error handling",
+        "Updated launch.bat to use new project structure"
+      ]
+    },
+    {
+      "version": "1.0.43-alpha",
+      "date": "2024-09-05",
+      "changes": [
+        "Removed workspace functionality from the program",
+        "Replaced workspace system with direct database storage for devices",
+        "Implemented DeviceDatabaseManager for centralized device data management",
+        "Cleaned up all workspace references from UI components",
+        "Simplified program architecture by removing workspace dependencies",
+        "Improved memory usage by eliminating workspace storage",
+        "Updated documentation to reflect database-centric approach"
+      ]
+    },
+    {
+      "version": "1.0.42-alpha",
+      "date": "2024-09-04",
+      "changes": [
+        "Fixed workspace loading to properly restore device information from database",
+        "Enhanced DefaultWorkspaceManager to load all device details when opening workspaces",
+        "Improved workspace loading to apply saved table settings when opening workspaces"
+      ]
+    },
+    {
+      "version": "1.0.41-alpha",
+      "date": "2024-09-03",
+      "changes": [
+        "Enhanced workspace file naming using descriptive names for better organization",
+        "Added workspace deletion capability with confirmation dialog",
+        "Added quick save button to workspace toolbar for faster access",
+        "Implemented auto-save functionality with configurable timer",
+        "Improved workspace management UI with more intuitive controls"
+      ]
+    },
+    {
+      "version": "1.0.40-alpha",
+      "date": "2024-09-03",
+      "changes": [
+        "Enhanced DefaultWorkspaceManager with proper database storage for device information",
+        "Improved workspace toolbar UI with larger buttons and better visual style",
+        "Added comprehensive device storage and retrieval functionality to default workspaces",
+        "Enhanced UI elements with better spacing, font sizing, and visual feedback"
+      ]
+    },
+    {
+      "version": "1.0.39-alpha",
+      "date": "2024-09-03",
+      "changes": [
+        "Fixed workspace opening functionality in DefaultWorkspaceManager",
+        "Added proper file dialog for opening workspaces without a plugin",
+        "Enhanced DefaultWorkspaceManager with no-argument open_workspace method",
+        "Improved error handling in workspace operations"
+      ]
+    },
+    {
+      "version": "1.0.38-alpha",
+      "date": "2024-09-03",
+      "changes": [
+        "Updated DefaultWorkspaceManager to use PySide6 instead of PyQt5",
+        "Fixed Qt framework compatibility in default workspace management",
+        "Improved cross-framework compatibility in workspace handling",
+        "Enhanced consistency in Qt library usage"
+      ]
+    },
+    {
+      "version": "1.0.37-alpha",
+      "date": "2024-08-31",
+      "changes": [
+        "Redesigned workspace toolbar with dropdown menu for better space efficiency",
+        "Added consolidated Workspace Manager button with full menu of workspace operations",
+        "Improved workspace controls with integrated dropdown selector and rename capability",
+        "Enhanced UI experience with contextual workspace button showing current workspace name"
+      ]
+    },
+    {
+      "version": "1.0.36-alpha",
+      "date": "2024-08-30",
+      "changes": [
+        "Fixed workspace toolbar integration to always display in main window",
+        "Improved toolbar layout with consistent workspace management controls",
+        "Enhanced usability by making workspace toolbar available regardless of plugin status"
+      ]
+    },
+    {
+      "version": "1.0.35-alpha",
+      "date": "2024-08-30",
+      "changes": [
+        "Added WorkspaceToolbar integration to the main window for better workspace management",
+        "Enhanced workspace management with dedicated toolbar component",
+        "Improved user experience for common workspace operations"
+      ]
+    },
+    {
+      "version": "1.0.34-alpha",
+      "date": "2024-08-29",
+      "changes": [
+        "Added proper database storage for all application data",
+        "Created WorkspaceDBManager for integrated database management",
+        "Standardized the workspace data structure and database schema",
+        "Enhanced base-network-scanner to write directly to the database",
+        "Added comprehensive workspace integration with loadable/saveable workspaces",
+        "Improved plugin modularity with standardized database access",
+        "Updated documentation for database storage and workspace integration",
+        "Enhanced device management with better database persistence"
+      ]
+    },
+    {
+      "version": "1.0.33-alpha",
+      "date": "2024-07-26",
+      "changes": [
+        "Removed workspace integration code from the base-network-scanner plugin",
+        "Made base-network-scanner plugin independent of workspace functionality",
+        "Improved plugin isolation for better modularity",
+        "Enhanced device storage with in-memory scan history"
+      ]
+    },
+    {
+      "version": "1.0.32-alpha",
+      "date": "2024-07-26",
+      "changes": [
+        "Fixed error in base-network-scanner plugin's workspace_saved hook handler",
+        "Updated hook handler to properly handle workspace_id as a string instead of expecting a dictionary",
+        "Improved error handling in workspace plugin hook dispatching"
+      ]
+    },
+    {
+      "version": "1.0.31-alpha",
+      "date": "2024-07-26",
+      "changes": [
+        "Fixed race conditions and potential deadlocks in workspace auto-save functionality",
+        "Improved database connection handling with enhanced cleanup and retry mechanism",
+        "Fixed potential memory leaks by ensuring database connections are properly closed",
+        "Enhanced thread safety in concurrent database operations with improved locking strategy",
+        "Improved reliability of workspace saving during high system load"
+      ]
+    },
+    {
+      "version": "1.0.30-alpha",
+      "date": "2024-07-10",
+      "changes": [
+        "Fixed 'attempted relative import with no known parent package' error in workspace plugin",
+        "Fixed 'No module named ui.left_panel' error in base-network-scanner plugin",
+        "Enhanced workspace plugin dynamic loading with importlib for more reliable imports",
+        "Implemented dynamic module loading with importlib for better plugin compatibility",
+        "Implemented path-based import resolution for plugin modules",
+        "Enhanced module loading mechanism to support direct module execution",
+        "Improved plugin loading robustness with dynamic path handling"
+      ]
+    },
+    {
+      "version": "1.0.29-alpha",
+      "date": "2024-07-10",
+      "changes": [
+        "Fixed import paths in workspace plugin to use relative imports",
+        "Replaced absolute imports with relative imports in workspace_plugin.py",
+        "Fixed plugin loading error due to incorrect import paths in main.py",
+        "Improved plugin module resolution by using proper relative imports"
+      ]
+    },
+    {
+      "version": "1.0.28-alpha",
+      "date": "2024-06-27",
+      "changes": [
+        "Moved workspace plugin from core plugins to standalone plugin",
+        "Fixed plugin import paths for workspace plugin",
+        "Updated workspace plugin to be independent from main window",
+        "Fixed 'No module named plugins.core.workspace' error",
+        "Fixed Workspace menu appearing when plugin is disabled",
+        "Improved main menu to only show Workspace menu when plugin is enabled"
+      ]
+    },
+    {
+      "version": "1.0.27-alpha",
+      "date": "2024-06-26",
+      "changes": [
+        "Fixed workspace saving issues when loading workspaces",
+        "Improved thread safety in workspace database operations with proper locking",
+        "Added exponential backoff for database retries to handle locked database scenarios",
+        "Implemented forced save after workspace loading to ensure data consistency",
+        "Enhanced auto-save functionality to prevent database conflicts"
+      ]
+    },
+    {
+      "version": "1.0.26-alpha",
+      "date": "2024-04-30",
+      "changes": [
+        "Fixed import error in core-workspace plugin",
+        "Improved plugin loading mechanism to support absolute imports in plugins",
+        "Enhanced plugin path management for better module resolution",
+        "Fixed 'attempted relative import with no known parent package' error"
+      ]
+    },
+    {
+      "version": "1.0.25-alpha",
+      "date": "2024-04-25",
+      "changes": [
+        "Refactored workspace management into a core plugin",
+        "Added workspace startup dialog for improved workspace selection",
+        "Enhanced workspace toolbar with recent workspaces menu",
+        "Improved workspace management with plugin-based architecture",
+        "Added comprehensive API for other plugins to interact with workspaces"
+      ]
+    },
+    {
+      "version": "1.0.24-alpha",
+      "date": "2024-08-11",
+      "changes": [
+        "Enhanced device editing with custom fields support",
+        "Improved manual device addition with custom field management",
+        "Added ability to add, edit, and delete custom fields for devices",
+        "Updated device table with better usability for custom field management",
+        "Enhanced device properties dialog with improved layout and usability"
+      ]
+    },
+    {
+      "version": "1.0.23-alpha",
+      "date": "2024-08-05",
+      "changes": [
+        "Added 'Edit Device Properties' option to device table context menu",
+        "Improved device management with ability to edit existing device information",
+        "Enhanced manual device addition to be available from any area of the device table",
+        "Updated device management documentation with comprehensive editing guidelines",
+        "Added standardized device data structure documentation for plugin developers"
+      ]
+    },
+    {
+      "version": "1.0.22-alpha",
+      "date": "2024-08-05",
+      "changes": [
+        "Added ability to manually add devices through right-click context menu in device table",
+        "Enhanced device management with user-friendly dialog for manual device entry",
+        "Added support for custom device metadata when adding devices manually",
+        "Improved device table context menu to be context-aware (empty area vs device selection)"
+      ]
+    },
+    {
+      "version": "1.0.21-alpha",
+      "date": "2024-08-05",
+      "changes": [
+        "Fixed device discovery display issue in network scanner plugin",
+        "Enhanced device registration system with multiple fallback paths",
+        "Improved error handling and debugging for device integration",
+        "Added comprehensive documentation on device discovery for plugin developers",
+        "Added robust error diagnostics for plugin device registration"
+      ]
+    },
+    {
+      "version": "1.0.20-alpha",
+      "date": "2024-07-24",
+      "changes": [
+        "Fixed device discovery and display in base-network-scanner plugin",
+        "Fixed datetime comparison error in scan history panel",
+        "Improved device detection reliability during network scans",
+        "Enhanced error handling when adding devices to the device table",
+        "Added multiple fallback methods for device registration"
+      ]
+    },
+    {
+      "version": "1.5.2-alpha",
+      "date": "2023-11-24",
+      "changes": [
+        "Created comprehensive UI framework documentation for plugin developers",
+        "Added detailed examples for PySide6 usage in plugins",
+        "Documented thread safety best practices for UI components",
+        "Updated plugin documentation to clarify PySide6 migration status"
+      ]
+    },
+    {
+      "version": "1.5.1-alpha",
+      "date": "2023-11-10",
+      "changes": [
+        "Fixed compatibility issues with latest Python packages",
+        "Resolved plugin loading errors on Windows systems",
+        "Improved performance of network scanning module",
+        "Enhanced UI responsiveness during heavy operations"
+      ]
+    },
+    {
+      "version": "1.5.0-alpha",
+      "date": "2023-10-28",
+      "changes": [
+        "Migrated from PyQt5 to PySide6 for core application",
+        "Added PySide6 support for all native plugins",
+        "Maintained PyQt5 compatibility layer for legacy plugins",
+        "Updated UI framework to use PySide6 styling",
+        "Improved thread handling for background operations",
+        "Resolved multiple UI freezing issues",
+        "Fixed inconsistent behavior in plugin registration"
+      ]
+    },
+    {
+      "version": "1.0.12-alpha",
+      "date": "2024-07-10",
+      "changes": [
+        "Fixed compatibility issue with the migration from PyQt5 to PySide6",
+        "Added 'is_scanning' property to NetworkScanner class to properly expose scan status",
+        "Improved thread safety with proper signal handling between UI components"
+      ]
+    },
+    {
+      "version": "1.0.11-alpha",
+      "date": "2024-07-09",
+      "changes": [
+        "Enhanced Network Scanner plugin UI with main panel implementation",
+        "Main panel integration with NetworkScanner scan engine", 
+        "Split panel UI layout for network map, device details, and scan results",
+        "Control panel with interface selection, IP range, and scan type options",
+        "Status bar with scan progress indicators and device count",
+        "Improved thread safety in base-network-scanner plugin with proper thread checking",
+        "Enhanced error handling in scan operations within base-network-scanner plugin"
+      ]
+    },
+    {
+      "version": "1.0.10-alpha",
+      "date": "2024-06-10",
+      "changes": [
+        "Added enhanced network topology visualization with device relationship mapping",
+        "Improved network scanning engine with multi-threaded performance optimizations",
+        "Updated plugin management interface for better user experience",
+        "Fixed multiple UI responsiveness issues during active network scans"
+      ]
+    },
+    {
+      "version": "1.0.9-alpha",
+      "date": "2024-04-24",
+      "changes": [
+        "Fixed plugin UI components threading issues in base-network-scanner",
+        "Implemented thread-safe pattern for creating plugin UI components",
+        "Improved plugin documentation with thread-safety examples",
+        "Enhanced plugin panel registration to properly handle thread boundaries"
+      ]
+    },
+    {
+      "version": "1.0.8-alpha",
+      "date": "2024-04-24",
+      "changes": [
+        "Fixed plugin panels appearing outside main window",
+        "Improved thread safety for panel registration",
+        "Updated splash screen to use version from manifest.json",
+        "Added plugin UI integration documentation for proper threading"
+      ]
+    },
+    {
+      "version": "1.0.7-alpha",
+      "date": "2024-04-24",
+      "changes": [
+        "Fixed version manifest compatibility with main window",
+        "Added missing version_string and min_python_version fields to version manifest",
+        "Improved application startup reliability"
+      ]
+    },
+    {
+      "version": "1.0.6-alpha",
+      "date": "2024-06-10",
+      "changes": [
+        "Added base-network-scanner plugin for network device discovery",
+        "Enhanced device management capabilities",
+        "Improved scan history tracking and visualization"
+      ]
+    },
+    {
+      "version": "1.0.5-alpha",
+      "date": "2024-06-05",
+      "changes": [
+        "Improved plugin dependency management - plugins now use the main app's virtual environment",
+        "Optimized plugin loading with reduced memory footprint",
+        "Added dynamic installation/uninstallation of plugin requirements"
+      ]
+    },
+    {
+      "version": "1.0.4-alpha",
+      "date": "2024-06-01",
+      "changes": [
+        "Added dedicated documentation_requirements.md for plugin developers",
+        "Improved API documentation template for better plugin interoperability",
+        "Reorganized documentation structure for clarity"
+      ]
+    },
+    {
+      "version": "1.0.3-alpha",
+      "date": "2024-05-24",
+      "changes": [
+        "Added formal API.md documentation requirement for plugins",
+        "Enhanced plugin manifest documentation standards",
+        "Provided standardized API documentation format for better interoperability"
+      ]
+    },
+    {
+      "version": "1.0.2-alpha",
+      "date": "2024-05-19",
+      "changes": [
+        "Enhanced plugin documentation requirements",
+        "Added API documentation format specifications",
+        "Improved plugin development guidelines"
+      ]
+    },
+    {
+      "version": "1.0.1-alpha",
+      "date": "2023-08-01",
+      "changes": [
+        "Added restart notification dialog when enabling or disabling plugins"
+      ]
+    },
+    {
+      "version": "1.0.0-alpha",
+      "date": "2023-07-23",
+      "changes": [
+        "Initial release",
+        "Implemented modular plugin architecture",
+        "Added core networking functionality",
+        "Basic UI framework established"
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "date": "2024-04-25",
+      "changes": [
+        "Added multi-device selection support in device table",
+        "Added device groups functionality for organizing devices",
+        "Updated plugin API to support multi-device operations",
+        "Improved context menu to support operations on multiple selected devices",
+        "Fixed bug with menu mouse grab on Windows systems"
+      ],
+      "type": "feature"
+    }
+  ],
+  "current_version": "1.0.44-alpha",
+  "description": "Reorganized project structure for better maintainability",
+  "plugin_api": {
+    "version": "1.0.1",
+    "compatibility": ["1.0.0", "1.0.1"]
+  },
+  "python_compatibility": {
+    "min_version": "3.9.0",
+    "max_version": "3.11.4"
+  },
+  "changes": {
+    "1.0.44-alpha": {
+      "type": "minor",
+      "date": "2024-09-05",
+      "changes": [
+        "Reorganized project structure for better maintainability",
+        "Moved utility scripts to utils/ directory",
+        "Moved batch files and setup scripts to scripts/ directory",
+        "Moved version_manager.py to core/ directory",
+        "Moved DEBUG.md to docs/ folder",
+        "Updated file paths and import references to reflect new structure",
+        "Added start.py launcher with improved error handling",
+        "Updated launch.bat to use new project structure"
+      ]
+    },
+    "1.0.43-alpha": {
+      "type": "minor",
+      "date": "2024-09-05",
+      "changes": [
+        "Removed workspace functionality from the program",
+        "Replaced workspace system with direct database storage for devices",
+        "Implemented DeviceDatabaseManager for centralized device data management",
+        "Cleaned up all workspace references from UI components",
+        "Simplified program architecture by removing workspace dependencies",
+        "Improved memory usage by eliminating workspace storage",
+        "Updated documentation to reflect database-centric approach"
+      ]
+    },
+    "1.0.42-alpha": {
+      "type": "minor",
+      "date": "2024-09-04",
+      "changes": [
+        "Fixed workspace loading to properly restore device information from database",
+        "Enhanced DefaultWorkspaceManager to load all device details when opening workspaces",
+        "Improved workspace loading to apply saved table settings when opening workspaces"
+      ]
+    },
+    "1.0.41-alpha": {
+      "type": "minor",
+      "date": "2024-09-03",
+      "changes": [
+        "Enhanced workspace file naming using descriptive names for better organization",
+        "Added workspace deletion capability with confirmation dialog",
+        "Added quick save button to workspace toolbar for faster access",
+        "Implemented auto-save functionality with configurable timer",
+        "Improved workspace management UI with more intuitive controls"
+      ]
+    },
+    "1.0.40-alpha": {
+      "type": "minor",
+      "date": "2024-09-03",
+      "changes": [
+        "Enhanced DefaultWorkspaceManager with proper database storage for device information",
+        "Improved workspace toolbar UI with larger buttons and better visual style",
+        "Added comprehensive device storage and retrieval functionality to default workspaces",
+        "Enhanced UI elements with better spacing, font sizing, and visual feedback"
+      ]
+    },
+    "1.0.39-alpha": {
+      "type": "minor",
+      "date": "2024-09-03",
+      "changes": [
+        "Fixed workspace opening functionality in DefaultWorkspaceManager",
+        "Added proper file dialog for opening workspaces without a plugin",
+        "Enhanced DefaultWorkspaceManager with no-argument open_workspace method",
+        "Improved error handling in workspace operations"
+      ]
+    },
+    "1.0.38-alpha": {
+      "type": "minor",
+      "date": "2024-09-03",
+      "changes": [
+        "Updated DefaultWorkspaceManager to use PySide6 instead of PyQt5",
+        "Fixed Qt framework compatibility in default workspace management",
+        "Improved cross-framework compatibility in workspace handling",
+        "Enhanced consistency in Qt library usage"
+      ]
+    },
+    "1.0.37-alpha": {
+      "type": "minor",
+      "date": "2024-08-31",
+      "changes": [
+        "Redesigned workspace toolbar with dropdown menu for better space efficiency",
+        "Added consolidated Workspace Manager button with full menu of workspace operations",
+        "Improved workspace controls with integrated dropdown selector and rename capability",
+        "Enhanced UI experience with contextual workspace button showing current workspace name"
+      ]
+    },
+    "1.0.36-alpha": {
+      "type": "minor",
+      "date": "2024-08-30",
+      "changes": [
+        "Fixed workspace toolbar integration to always display in main window",
+        "Improved toolbar layout with consistent workspace management controls",
+        "Enhanced usability by making workspace toolbar available regardless of plugin status"
+      ]
+    },
+    "1.0.35-alpha": {
+      "type": "minor",
+      "date": "2024-08-30",
+      "changes": [
+        "Added WorkspaceToolbar integration to the main window for better workspace management",
+        "Enhanced workspace management with dedicated toolbar component",
+        "Improved user experience for common workspace operations"
+      ]
+    },
+    "1.0.34-alpha": {
+      "type": "minor",
+      "date": "2024-08-29",
+      "changes": [
+        "Added proper database storage for all application data",
+        "Created WorkspaceDBManager for integrated database management",
+        "Standardized the workspace data structure and database schema",
+        "Enhanced base-network-scanner to write directly to the database",
+        "Added comprehensive workspace integration with loadable/saveable workspaces",
+        "Improved plugin modularity with standardized database access",
+        "Updated documentation for database storage and workspace integration",
+        "Enhanced device management with better database persistence"
+      ]
+    },
+    "1.0.33-alpha": {
+      "type": "minor",
+      "date": "2024-07-26",
+      "changes": [
+        "Removed workspace integration code from the base-network-scanner plugin",
+        "Made base-network-scanner plugin independent of workspace functionality",
+        "Improved plugin isolation for better modularity",
+        "Enhanced device storage with in-memory scan history"
+      ]
+    },
+    "1.0.32-alpha": {
+      "type": "minor",
+      "date": "2024-07-26",
+      "changes": [
+        "Fixed error in base-network-scanner plugin's workspace_saved hook handler",
+        "Updated hook handler to properly handle workspace_id as a string instead of expecting a dictionary",
+        "Improved error handling in workspace plugin hook dispatching"
+      ]
+    },
+    "1.0.31-alpha": {
+      "type": "minor",
+      "date": "2024-07-26",
+      "changes": [
+        "Fixed race conditions and potential deadlocks in workspace auto-save functionality",
+        "Improved database connection handling with enhanced cleanup and retry mechanism",
+        "Fixed potential memory leaks by ensuring database connections are properly closed",
+        "Enhanced thread safety in concurrent database operations with improved locking strategy",
+        "Improved reliability of workspace saving during high system load"
+      ]
+    },
+    "1.0.30-alpha": {
+      "type": "minor",
+      "date": "2024-07-10",
+      "changes": [
+        "Fixed 'attempted relative import with no known parent package' error in workspace plugin",
+        "Fixed 'No module named ui.left_panel' error in base-network-scanner plugin",
+        "Enhanced workspace plugin dynamic loading with importlib for more reliable imports",
+        "Implemented dynamic module loading with importlib for better plugin compatibility",
+        "Implemented path-based import resolution for plugin modules",
+        "Enhanced module loading mechanism to support direct module execution",
+        "Improved plugin loading robustness with dynamic path handling"
+      ]
+    },
+    "1.0.29-alpha": {
+      "type": "minor",
+      "date": "2024-07-10",
+      "changes": [
+        "Fixed import paths in workspace plugin to use relative imports",
+        "Replaced absolute imports with relative imports in workspace_plugin.py",
+        "Fixed plugin loading error due to incorrect import paths in main.py",
+        "Improved plugin module resolution by using proper relative imports"
+      ]
+    },
+    "1.0.28-alpha": {
+      "type": "minor",
+      "date": "2024-06-27",
+      "changes": [
+        "Moved workspace plugin from core plugins to standalone plugin",
+        "Fixed plugin import paths for workspace plugin",
+        "Updated workspace plugin to be independent from main window",
+        "Fixed 'No module named plugins.core.workspace' error",
+        "Fixed Workspace menu appearing when plugin is disabled",
+        "Improved main menu to only show Workspace menu when plugin is enabled"
+      ]
+    },
+    "1.0.27-alpha": {
+      "type": "minor",
+      "date": "2024-06-26",
+      "changes": [
+        "Fixed workspace saving issues when loading workspaces",
+        "Improved thread safety in workspace database operations with proper locking",
+        "Added exponential backoff for database retries to handle locked database scenarios",
+        "Implemented forced save after workspace loading to ensure data consistency",
+        "Enhanced auto-save functionality to prevent database conflicts"
+      ]
+    },
+    "1.0.26-alpha": {
+      "type": "minor",
+      "date": "2024-04-30",
+      "changes": [
+        "Fixed import error in core-workspace plugin",
+        "Improved plugin loading mechanism to support absolute imports in plugins",
+        "Enhanced plugin path management for better module resolution",
+        "Fixed 'attempted relative import with no known parent package' error"
+      ]
+    },
+    "1.0.25-alpha": {
+      "type": "minor",
+      "date": "2024-04-25",
+      "changes": [
+        "Refactored workspace management into a core plugin",
+        "Added workspace startup dialog for improved workspace selection",
+        "Enhanced workspace toolbar with recent workspaces menu",
+        "Improved workspace management with plugin-based architecture",
+        "Added comprehensive API for other plugins to interact with workspaces"
+      ]
+    },
+    "1.0.24-alpha": {
+      "type": "patch",
+      "date": "2024-08-11",
+      "changes": [
+        "Enhanced device editing with custom fields support",
+        "Improved manual device addition with custom field management",
+        "Added ability to add, edit, and delete custom fields for devices",
+        "Updated device table with better usability for custom field management",
+        "Enhanced device properties dialog with improved layout and usability"
+      ]
+    },
+    "1.0.23-alpha": {
+      "type": "patch",
+      "date": "2024-08-05",
+      "changes": [
+        "Added 'Edit Device Properties' option to device table context menu",
+        "Improved device management with ability to edit existing device information",
+        "Enhanced manual device addition to be available from any area of the device table",
+        "Updated device management documentation with comprehensive editing guidelines",
+        "Added standardized device data structure documentation for plugin developers"
+      ]
+    },
+    "1.0.22-alpha": {
+      "type": "patch",
+      "date": "2024-08-05",
+      "changes": [
+        "Added ability to manually add devices through right-click context menu in device table",
+        "Enhanced device management with user-friendly dialog for manual device entry",
+        "Added support for custom device metadata when adding devices manually",
+        "Improved device table context menu to be context-aware (empty area vs device selection)"
+      ]
+    },
+    "1.0.21-alpha": {
+      "type": "patch",
+      "date": "2024-08-05",
+      "changes": [
+        "Fixed device discovery display issue in network scanner plugin",
+        "Enhanced device registration system with multiple fallback paths",
+        "Improved error handling and debugging for device integration",
+        "Added comprehensive documentation on device discovery for plugin developers",
+        "Added robust error diagnostics for plugin device registration"
+      ]
+    },
+    "1.0.20-alpha": {
+      "type": "patch",
+      "date": "2024-07-24",
+      "changes": [
+        "Fixed device discovery and display in base-network-scanner plugin",
+        "Fixed datetime comparison error in scan history panel",
+        "Improved device detection reliability during network scans",
+        "Enhanced error handling when adding devices to the device table",
+        "Added multiple fallback methods for device registration"
+      ]
+    },
+    "1.5.2-alpha": {
+      "type": "patch",
+      "date": "2023-11-24",
+      "changes": [
+        "Created comprehensive UI framework documentation for plugin developers",
+        "Added detailed examples for PySide6 usage in plugins",
+        "Documented thread safety best practices for UI components",
+        "Updated plugin documentation to clarify PySide6 migration status"
+      ]
+    },
+    "1.5.1-alpha": {
+      "type": "patch",
+      "date": "2023-11-10",
+      "changes": [
+        "Fixed compatibility issues with latest Python packages",
+        "Resolved plugin loading errors on Windows systems",
+        "Improved performance of network scanning module",
+        "Enhanced UI responsiveness during heavy operations"
+      ]
+    },
+    "1.5.0-alpha": {
+      "type": "minor",
+      "date": "2023-10-28",
+      "changes": [
+        "Migrated from PyQt5 to PySide6 for core application",
+        "Added PySide6 support for all native plugins",
+        "Maintained PyQt5 compatibility layer for legacy plugins",
+        "Updated UI framework to use PySide6 styling",
+        "Improved thread handling for background operations",
+        "Resolved multiple UI freezing issues",
+        "Fixed inconsistent behavior in plugin registration"
+      ]
+    },
+    "1.0.12-alpha": {
+      "type": "patch",
+      "date": "2024-07-10",
+      "changes": [
+        "Fixed compatibility issue with the migration from PyQt5 to PySide6",
+        "Added 'is_scanning' property to NetworkScanner class to properly expose scan status",
+        "Improved thread safety with proper signal handling between UI components"
+      ]
+    },
+    "1.0.11-alpha": {
+      "type": "minor",
+      "date": "2024-07-09",
+      "changes": [
+        "Enhanced Network Scanner plugin UI with main panel implementation",
+        "Main panel integration with NetworkScanner scan engine", 
+        "Split panel UI layout for network map, device details, and scan results",
+        "Control panel with interface selection, IP range, and scan type options",
+        "Status bar with scan progress indicators and device count",
+        "Improved thread safety in base-network-scanner plugin with proper thread checking",
+        "Enhanced error handling in scan operations within base-network-scanner plugin"
+      ]
+    },
+    "1.0.10-alpha": {
+      "type": "minor",
+      "date": "2024-06-10",
+      "changes": [
+        "Added enhanced network topology visualization with device relationship mapping",
+        "Improved network scanning engine with multi-threaded performance optimizations",
+        "Updated plugin management interface for better user experience",
+        "Fixed multiple UI responsiveness issues during active network scans"
+      ]
+    },
+    "1.0.9-alpha": {
+      "type": "patch",
+      "date": "2024-04-24",
+      "changes": [
+        "Fixed plugin UI components threading issues in base-network-scanner",
+        "Implemented thread-safe pattern for creating plugin UI components",
+        "Improved plugin documentation with thread-safety examples",
+        "Enhanced plugin panel registration to properly handle thread boundaries"
+      ]
+    },
+    "1.0.8-alpha": {
+      "type": "patch",
+      "date": "2024-04-24",
+      "changes": [
+        "Fixed plugin panels appearing outside main window",
+        "Improved thread safety for panel registration",
+        "Updated splash screen to use version from manifest.json",
+        "Added plugin UI integration documentation for proper threading"
+      ]
+    },
+    "1.0.7-alpha": {
+      "type": "patch",
+      "date": "2024-04-24",
+      "changes": [
+        "Fixed version manifest compatibility with main window",
+        "Added missing version_string and min_python_version fields to version manifest",
+        "Improved application startup reliability"
+      ]
+    },
+    "1.0.6-alpha": {
+      "type": "minor",
+      "date": "2024-06-10",
+      "changes": [
+        "Added base-network-scanner plugin for network device discovery",
+        "Enhanced device management capabilities",
+        "Improved scan history tracking and visualization"
+      ]
+    },
+    "1.0.5-alpha": {
+      "type": "minor",
+      "date": "2024-06-05",
+      "changes": [
+        "Improved plugin dependency management - plugins now use the main app's virtual environment",
+        "Optimized plugin loading with reduced memory footprint",
+        "Added dynamic installation/uninstallation of plugin requirements"
+      ]
+    },
+    "1.0.4-alpha": {
+      "type": "minor",
+      "date": "2024-06-01",
+      "changes": [
+        "Added dedicated documentation_requirements.md for plugin developers",
+        "Improved API documentation template for better plugin interoperability",
+        "Reorganized documentation structure for clarity"
+      ]
+    },
+    "1.0.3-alpha": {
+      "type": "minor",
+      "date": "2024-05-24",
+      "changes": [
+        "Added formal API.md documentation requirement for plugins",
+        "Enhanced plugin manifest documentation standards",
+        "Provided standardized API documentation format for better interoperability"
+      ]
+    },
+    "1.0.2-alpha": {
+      "type": "minor",
+      "date": "2024-05-19",
+      "changes": [
+        "Enhanced plugin documentation requirements",
+        "Added API documentation format specifications",
+        "Improved plugin development guidelines"
+      ]
+    },
+    "1.0.1-alpha": {
+      "type": "minor",
+      "date": "2023-08-01",
+      "changes": [
+        "Added restart notification dialog when enabling or disabling plugins"
+      ]
+    },
+    "1.0.0-alpha": {
+      "type": "major",
+      "date": "2023-07-23",
+      "changes": [
+        "Initial release",
+        "Implemented modular plugin architecture",
+        "Added core networking functionality",
+        "Basic UI framework established"
+      ]
+    },
+    "1.3.0": {
+      "type": "feature",
+      "date": "2024-04-25",
+      "changes": [
+        "Added multi-device selection support in device table",
+        "Added device groups functionality for organizing devices",
+        "Updated plugin API to support multi-device operations",
+        "Improved context menu to support operations on multiple selected devices",
+        "Fixed bug with menu mouse grab on Windows systems"
+      ]
+    }
+  }
+} 

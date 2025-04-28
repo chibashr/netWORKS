@@ -1,0 +1,43 @@
+{
+    "name": "example-plugin",
+    "displayName": "Example Plugin",
+    "version": "1.0.0",
+    "description": "An example plugin for netWORKS showcasing basic functionality",
+    "author": "netWORKS Team",
+    "main": "main.py",
+    "dependencies": [],
+    "ui": {
+        "panels": ["left", "bottom"]
+    },
+    "hooks": {
+        "device_select": {
+            "description": "Called when a device is selected"
+        },
+        "scan_complete": {
+            "description": "Called when a scan is completed"
+        }
+    },
+    "api": {
+        "documentation": "API.md",
+        "exports": {
+            "ping_device": {
+                "description": "Pings the specified IP address and returns the results",
+                "parameters": ["ip_address"],
+                "returns": "Dictionary with ping results"
+            },
+            "get_device_info": {
+                "description": "Retrieves detailed information about a device",
+                "parameters": ["ip_address"],
+                "returns": "Dictionary with device information"
+            }
+        },
+        "events": {
+            "example:device_pinged": {
+                "description": "Triggered when a device is pinged by the plugin"
+            },
+            "example:device_info_retrieved": {
+                "description": "Triggered when device information is retrieved"
+            }
+        }
+    }
+} 

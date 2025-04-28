@@ -1,0 +1,85 @@
+{
+  "plugins": {
+    "port-scanner": {
+      "enabled": true,
+      "settings": {}
+    },
+    "core-scanner": {
+      "enabled": true,
+      "locked": true,
+      "settings": {}
+    },
+    "core-workspace": {
+      "enabled": true,
+      "locked": true,
+      "settings": {}
+    },
+    "test-menu": {
+      "enabled": false,
+      "locked": false,
+      "settings": {}
+    },
+    "log-viewer": {
+      "enabled": true,
+      "locked": false,
+      "settings": {}
+    },
+    "Core Scanner": {
+      "enabled": true,
+      "locked": true,
+      "settings": {}
+    },
+    "example-plugin": {
+      "enabled": false,
+      "locked": false,
+      "settings": {}
+    },
+    "base-network-scanner": {
+      "enabled": true,
+      "locked": false,
+      "settings": {
+        "settings": {
+          "scan_history": [
+            {
+              "id": "scan_1745875282",
+              "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
+              "range": "192.168.1.1-254",
+              "scan_type": "ping_sweep",
+              "start_time": "2025-04-28 16:21:22",
+              "status": "completed",
+              "devices_found": 1,
+              "total_devices": 254,
+              "end_time": "2025-04-28 16:21:28",
+              "name": "Quick Scan",
+              "description": "Fast ping sweep of network",
+              "timeout": 1,
+              "retries": 1,
+              "parallel": 50
+            },
+            {
+              "id": "scan_1745875813",
+              "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
+              "range": "10.1.8.1-254",
+              "scan_type": "quick_scan",
+              "start_time": "2025-04-28 16:30:13",
+              "status": "starting",
+              "devices_found": 0,
+              "total_devices": 0,
+              "end_time": null,
+              "name": "Quick Scan",
+              "description": "Fast ping sweep of network",
+              "timeout": 1,
+              "retries": 1,
+              "parallel": 50
+            }
+          ]
+        }
+      }
+    },
+    "network-device-manager": {
+      "enabled": true,
+      "locked": false,
+      "settings": {}
+    }
+  }
+}

@@ -1,0 +1,22 @@
+PySide6==6.5.2
+PyQt5==5.15.9  # Added for plugin compatibility
+netifaces==0.11.0
+scapy==2.5.0
+python-nmap==0.7.1
+psutil==5.9.5
+pyinstaller==5.13.0
+cryptography==41.0.1
+wmi==1.5.1  # For Windows network interface information
+pysnmp==4.4.12  # For SNMP scanning
+python-whois==0.8.0  # For domain information
+dnspython==2.4.2  # For DNS resolution
+netaddr==0.8.0  # For IP address manipulation
+
+# Core dependencies
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Development dependencies
+pytest>=7.4.0
+black>=23.7.0
+flake8>=6.1.0 

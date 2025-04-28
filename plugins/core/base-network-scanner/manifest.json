@@ -1,0 +1,45 @@
+{
+    "name": "base-network-scanner",
+    "displayName": "Network Scanner",
+    "version": "1.0.0",
+    "description": "Scan devices on the network and add them to the device table",
+    "author": "chibashr",
+    "main": "main.py",
+    "dependencies": [],
+    "ui": {
+        "panels": ["left", "right", "bottom"]
+    },
+    "hooks": {
+        "after_scan": {
+            "description": "Called after a network scan is completed"
+        },
+        "before_scan": {
+            "description": "Called before a network scan starts"
+        },
+        "device_found": {
+            "description": "Called when a device is found during a scan"
+        }
+    },
+    "exports": {
+        "start_scan": {
+            "description": "Start a network scan with the given parameters",
+            "parameters": ["interface", "range", "scan_type"],
+            "returns": "Scan ID that can be used to track the scan"
+        },
+        "get_scan_history": {
+            "description": "Get the history of previous scans",
+            "parameters": [],
+            "returns": "List of previous scans with results"
+        },
+        "get_scan_templates": {
+            "description": "Get available scan templates",
+            "parameters": [],
+            "returns": "List of scan templates"
+        },
+        "get_scan_devices": {
+            "description": "Get devices discovered during a specific scan",
+            "parameters": ["scan_id"],
+            "returns": "List of devices discovered during the scan"
+        }
+    }
+} 
