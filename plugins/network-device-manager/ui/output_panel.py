@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication
 
 class QuickCommandPanel(QWidget):
     """
@@ -513,18 +514,46 @@ class OutputPanel(QWidget):
             QMessageBox.warning(self, "Download Error", f"Error downloading output: {str(e)}")
     
     def view_output_text(self, command, output_text, device_ip):
-        """Display command output text directly in the panel without reading from a file."""
+        """Display raw text output."""
         try:
-            # Update info
+            # Update the tab title
+            if hasattr(self, 'parent') and isinstance(self.parent(), QTabWidget):
+                self.parent().setTabText(self.parent().indexOf(self), f"Output: {command}")
+            
+            # Update info label
             self.output_info.setText(f"Device: {device_ip}, Command: {command}")
             
-            # Display content
-            self.output_viewer.setText(output_text)
+            # Set output text with proper formatting
+            self.output_viewer.clear()
             
-            # No output path, so disable download button
-            self.download_button.setEnabled(False)
+            # Format the output for better display
+            if output_text:
+                # Set a monospace font for command output
+                self.output_viewer.setCurrentFont(QFont("Courier New", 10))
+                
+                # Add a header
+                header = f"--- Command: {command} on {device_ip} ---\n"
+                self.output_viewer.append(header)
+                
+                # Add a separator
+                self.output_viewer.append("=" * 50)
+                
+                # Add the output with preserved formatting
+                self.output_viewer.append(output_text)
+                
+                # Re-enable the download button
+                self.download_button.setEnabled(True)
+            else:
+                self.output_viewer.append("No output available.")
+                self.download_button.setEnabled(False)
             
-            self.api.log(f"Displayed command output for {command} on {device_ip}", level="DEBUG")
+            # Make this tab visible
+            if hasattr(self, 'parent') and isinstance(self.parent(), QTabWidget):
+                self.parent().setCurrentWidget(self)
+            
+            # Force UI update
+            self.output_viewer.update()
+            QApplication.processEvents()
         except Exception as e:
-            self.api.log(f"Error displaying output text: {str(e)}", level="ERROR")
+            self.api.log(f"Error displaying output: {str(e)}", level="ERROR")
             self.output_viewer.setText(f"Error displaying output: {str(e)}") 

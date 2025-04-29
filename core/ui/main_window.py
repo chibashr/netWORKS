@@ -9,7 +9,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, 
     QSplitter, QToolBar, QStatusBar, QMessageBox, QLabel, QProgressBar, QTabWidget,
-    QToolButton, QSizePolicy
+    QToolButton, QSizePolicy, QSpacerItem
 )
 from PySide6.QtCore import Qt, QSize, QEvent, QTimer
 from PySide6.QtGui import QIcon, QAction
@@ -20,6 +20,7 @@ from core.ui.panels.bottom_panel import BottomPanel
 from core.ui.table.device_table import DeviceTable
 from core.ui.menu.main_menu import setup_main_menu
 from core.database.device_manager import DeviceDatabaseManager
+from core.database.bridge_db_manager import BridgeDatabaseManager
 
 class MainWindow(QMainWindow):
     """Main application window for NetSCAN."""
@@ -38,7 +39,7 @@ class MainWindow(QMainWindow):
         self.menu_actions = {}
         
         # Initialize database manager
-        self.database_manager = DeviceDatabaseManager(self)
+        self.database_manager = BridgeDatabaseManager(self)
         self.logger.debug("Database manager initialized")
         
         # Initialize config first
@@ -52,6 +53,15 @@ class MainWindow(QMainWindow):
         
         # Initialize UI components
         self.init_ui()
+        
+        # Set up autosave timer
+        from PySide6.QtCore import QTimer
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.timeout.connect(self.autosave_workspace)
+        # Get autosave interval from config (in seconds, default 5 minutes)
+        autosave_interval = self.config.get("app", {}).get("auto_save_interval", 300) * 1000  # Convert to milliseconds
+        self.autosave_timer.start(autosave_interval)
+        self.logger.info(f"Autosave timer started with interval of {autosave_interval/1000} seconds")
         
         # Set main window reference in plugin APIs after UI is initialized
         try:
@@ -127,6 +137,13 @@ class MainWindow(QMainWindow):
         self.logger.debug("Setting up main window UI")
         self.setWindowTitle("NetSCAN")
         self.resize(1200, 800)
+        
+        # Import global styles
+        try:
+            from core.ui.styles import apply_button_styles, BUTTON_STYLE, TOOL_BUTTON_STYLE
+            self.logger.debug("Imported global UI styles")
+        except ImportError:
+            self.logger.warning("Global UI styles not found, using default styles")
         
         # Set application-wide style
         self.setStyleSheet("""
@@ -483,16 +500,29 @@ class MainWindow(QMainWindow):
         # Add splitter to main layout
         main_layout.addWidget(self.h_splitter)
         
-        # Setup status bar
+        # Status bar setup
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
-        self.statusBar.showMessage("Ready")
         
-        # Add progress bar to status bar
+        # Progress bar
         self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
         self.progress_bar.setMaximumWidth(200)
-        self.progress_bar.hide()
+        self.progress_bar.setVisible(False)
         self.statusBar.addPermanentWidget(self.progress_bar)
+        
+        # Status message
+        self.status_label = QLabel("Ready")
+        self.statusBar.addWidget(self.status_label)
+        
+        # Apply global button styles to all buttons
+        try:
+            from core.ui.styles import apply_button_styles
+            apply_button_styles(self)
+            self.logger.debug("Applied global button styles to UI components")
+        except (ImportError, NameError) as e:
+            self.logger.warning(f"Could not apply global button styles: {str(e)}")
         
         # Update toolbar groups visibility after all initialization is done
         QTimer.singleShot(100, self.update_toolbar_groups_visibility)
@@ -1612,6 +1642,10 @@ class MainWindow(QMainWindow):
     def save_workspace_data(self):
         """Save current devices and settings to the database."""
         try:
+            # Make sure @data directory exists
+            data_dir = Path("@data")
+            data_dir.mkdir(parents=True, exist_ok=True)
+            
             # Save the current devices if we have a device table
             if hasattr(self, 'device_table') and self.device_table:
                 devices = self.device_table.get_all_devices()
@@ -1639,6 +1673,59 @@ class MainWindow(QMainWindow):
             self.logger.error(f"Error saving workspace data: {str(e)}")
             self.statusBar.showMessage(f"Error saving data: {str(e)}", 5000)
 
+    def autosave_workspace(self):
+        """Automatically save workspace with a random name for recovery purposes."""
+        try:
+            import uuid
+            import datetime
+            import json
+            
+            # Create @data/autosave directory if it doesn't exist
+            autosave_dir = Path("@data/autosave")
+            autosave_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate random filename with timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            random_id = str(uuid.uuid4())[:8]
+            filename = f"autosave_{timestamp}_{random_id}.json"
+            autosave_path = autosave_dir / filename
+            
+            # Prepare export data structure
+            export_data = {
+                "export_version": "2.0",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "autosave": True,
+                "settings": self.config if hasattr(self, 'config') else {},
+                "devices": [],
+                "device_groups": {}
+            }
+            
+            # Get device data if available
+            if hasattr(self, 'device_table') and self.device_table:
+                export_data["devices"] = self.device_table.get_all_devices()
+                
+                # Extract device groups
+                if hasattr(self.device_table, 'device_groups'):
+                    export_data["device_groups"] = self.device_table.device_groups
+            
+            # Write to file
+            with open(autosave_path, 'w') as f:
+                json.dump(export_data, f, indent=2)
+                
+            self.logger.info(f"Autosaved workspace to {autosave_path}")
+            
+            # Limit the number of autosave files (keep most recent 10)
+            autosave_files = sorted(autosave_dir.glob("autosave_*.json"), key=lambda x: x.stat().st_mtime, reverse=True)
+            if len(autosave_files) > 10:
+                for old_file in autosave_files[10:]:
+                    old_file.unlink()
+                    self.logger.debug(f"Removed old autosave file: {old_file}")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Error during workspace autosave: {str(e)}")
+            return False
+
     def export_workspace_data(self):
         """Export devices and settings to a file."""
         try:
@@ -1647,12 +1734,22 @@ class MainWindow(QMainWindow):
             import datetime
             import platform
             import os
+            from pathlib import Path
+            
+            # Create @data/exports directory if it doesn't exist
+            exports_dir = Path("@data/exports")
+            exports_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate default filename with timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"workspace_export_{timestamp}.json"
+            default_path = str(exports_dir / default_filename)
             
             # Ask user for export file location
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Export Workspace Data",
-                "",
+                default_path,
                 "JSON Files (*.json);;All Files (*.*)"
             )
             
@@ -1711,6 +1808,17 @@ class MainWindow(QMainWindow):
                 # Extract device groups
                 if hasattr(self.device_table, 'device_groups'):
                     export_data["device_groups"] = self.device_table.device_groups
+                    group_count = len(self.device_table.device_groups)
+                    group_info = f"with {group_count} device groups"
+                else:
+                    group_info = "without device groups"
+                
+                device_count = len(export_data["devices"])
+                self.statusBar.showMessage(
+                    f"Exported {device_count} devices {group_info} and all settings to {file_path}", 
+                    5000
+                )
+                self.logger.info(f"Exported {device_count} devices {group_info} and settings to {file_path}")
             
             # Add information about enabled plugins and their versions
             if hasattr(self, 'plugin_manager') and self.plugin_manager:
@@ -1766,12 +1874,30 @@ class MainWindow(QMainWindow):
         try:
             from PySide6.QtWidgets import QFileDialog, QMessageBox
             import json
+            from pathlib import Path
+            
+            # Default to @data directory for imports
+            data_dir = Path("@data")
+            if not data_dir.exists():
+                data_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Look for exports or autosaves
+            exports_dir = data_dir / "exports"
+            autosave_dir = data_dir / "autosave"
+            
+            # Choose initial directory based on what exists
+            if exports_dir.exists() and any(exports_dir.glob("*.json")):
+                default_dir = str(exports_dir)
+            elif autosave_dir.exists() and any(autosave_dir.glob("*.json")):
+                default_dir = str(autosave_dir)
+            else:
+                default_dir = str(data_dir)
             
             # Ask user for import file
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
                 "Import Workspace Data",
-                "",
+                default_dir,
                 "JSON Files (*.json);;All Files (*.*)"
             )
             
@@ -1986,14 +2112,49 @@ class MainWindow(QMainWindow):
             
             # Save imported data to database if available
             if hasattr(self, 'database_manager') and self.database_manager:
-                # Save devices if imported
-                if import_devices.isChecked():
-                    for device in import_data["devices"]:
-                        self.database_manager.save_device(device)
-                
-                # Save settings if imported
-                if import_settings.isChecked():
-                    self.database_manager.store_plugin_data('core', 'app_settings', self.config)
+                try:
+                    # Save devices if imported
+                    if import_devices.isChecked():
+                        # Use a transaction to prevent partial imports
+                        success_count = 0
+                        error_count = 0
+                        self.logger.info(f"Importing {len(import_data['devices'])} devices to database...")
+                        
+                        for device in import_data["devices"]:
+                            try:
+                                if self.database_manager.save_device(device):
+                                    success_count += 1
+                                else:
+                                    error_count += 1
+                            except Exception as e:
+                                self.logger.error(f"Error importing device {device.get('ip', 'Unknown')}: {str(e)}")
+                                error_count += 1
+                        
+                        self.logger.info(f"Device import completed: {success_count} successful, {error_count} failed")
+                    
+                    # Save device groups if imported
+                    if import_groups.isChecked() and "device_groups" in import_data:
+                        try:
+                            self.database_manager.save_device_groups(import_data["device_groups"])
+                            self.logger.info("Imported device groups to database")
+                        except Exception as e:
+                            self.logger.error(f"Error importing device groups: {str(e)}")
+                    
+                    # Save settings if imported
+                    if import_settings.isChecked():
+                        try:
+                            self.database_manager.store_plugin_data('core', 'app_settings', self.config)
+                            self.logger.info("Imported application settings to database")
+                        except Exception as e:
+                            self.logger.error(f"Error importing application settings: {str(e)}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error saving imported data to database: {str(e)}")
+                    QMessageBox.warning(
+                        self, 
+                        "Database Error", 
+                        f"Some data could not be saved to the database: {str(e)}\n\nYour data is still loaded in the application, but may not persist after restart."
+                    )
             
             # Update status
             self.statusBar.showMessage(f"Imported {device_count} devices with complete metadata from {file_path}", 5000)

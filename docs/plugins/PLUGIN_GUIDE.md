@@ -375,10 +375,30 @@ Here's a summary of the available PluginAPI methods:
 - `update_progress(value, maximum)`: Update the progress bar value
 
 ### Settings and Data
-- `get_setting(key, default=None)`: Get a plugin setting
-- `set_setting(key, value)`: Set a plugin setting
-- `get_plugin_data(key, default=None)`: Get plugin data from the database
-- `set_plugin_data(key, value)`: Set plugin data in the database
+```python
+# Get plugin configuration
+config = api.get_config()
+
+# Save plugin configuration
+api.save_config(config)
+
+# Get application configuration
+app_config = api.get_app_config()
+
+# Accessing device data
+selected_device = api.get_selected_devices()
+all_devices = api.get_all_devices()
+api.add_device(device_data)
+api.update_device(device_data)
+api.remove_device(device_id)
+results = api.search_devices("query")
+
+# Managing device groups
+groups = api.get_device_groups()
+api.create_device_group("Servers")
+api.add_device_to_group(device_id, "Servers")
+devices_in_group = api.get_devices_in_group("Servers")
+```
 
 ### Application Information
 - `get_network_interfaces()`: Get list of network interfaces

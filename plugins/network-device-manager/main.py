@@ -289,14 +289,14 @@ class NetworkDeviceManagerPlugin:
                 self.api.register_menu_item(
                     label="Connect to Device",
                     callback=self.connect_to_selected_device,
-                    enabled_callback=lambda: self.current_device is not None,
+                    enabled_callback=lambda device: self.current_device is not None,
                     parent_menu="Tools/Network Device Manager"
                 )
                 
                 self.api.register_menu_item(
                     label="Run Command",
                     callback=self.run_command_dialog,
-                    enabled_callback=lambda: self.current_device is not None,
+                    enabled_callback=lambda device: self.current_device is not None,
                     parent_menu="Tools/Network Device Manager"
                 )
                 
@@ -325,13 +325,13 @@ class NetworkDeviceManagerPlugin:
                 self.api.register_menu_item(
                     label="NDM: Connect to Device",
                     callback=self.connect_to_selected_device,
-                    enabled_callback=lambda: self.current_device is not None
+                    enabled_callback=lambda device: self.current_device is not None
                 )
                 
                 self.api.register_menu_item(
                     label="NDM: Run Command",
                     callback=self.run_command_dialog,
-                    enabled_callback=lambda: self.current_device is not None
+                    enabled_callback=lambda device: self.current_device is not None
                 )
                 
                 self.api.register_menu_item(
@@ -549,7 +549,6 @@ class NetworkDeviceManagerPlugin:
             from ui.credential_dialog import CredentialDialog
             
             # Create and show the dialog with our credential_manager instance directly
-            # The error was trying to use api.get_plugin_instance() which doesn't exist
             dialog = CredentialDialog(self.api.main_window, self.credential_manager)
             dialog.exec()
             

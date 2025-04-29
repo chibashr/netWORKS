@@ -4,6 +4,9 @@
 import os
 import json
 from pathlib import Path
+import csv
+import datetime
+from core.database.models import Device  # Import the Device model
 
 class DeviceManager:
     """
@@ -83,6 +86,13 @@ class DeviceManager:
     def get_device(self, ip):
         """Get a device by IP address."""
         try:
+            # Try to use the new object API if available
+            if hasattr(self.db_manager, 'get_device_object'):
+                device_obj = self.db_manager.get_device_object(ip)
+                if device_obj:
+                    return device_obj.to_dict()
+            
+            # Fall back to the legacy API
             result = self.db_manager.execute_query(
                 "SELECT * FROM devices WHERE ip = ?",
                 [ip]
@@ -148,6 +158,14 @@ class DeviceManager:
     def update_device_type(self, ip, device_type):
         self.ensure_device_type_column()
         try:
+            # Try to use the new object API if available
+            if hasattr(self.db_manager, 'get_device_object'):
+                device_obj = self.db_manager.get_device_object(ip)
+                if device_obj:
+                    device_obj.set_metadata('device_type', device_type)
+                    return self.db_manager.add_device_object(device_obj)
+            
+            # Fall back to the legacy API
             self.db_manager.execute_query(
                 "UPDATE devices SET device_type = ? WHERE ip = ?",
                 [device_type, ip]
@@ -160,6 +178,16 @@ class DeviceManager:
     def get_devices_by_type(self, device_type):
         self.ensure_device_type_column()
         try:
+            # Try to use the new object API first
+            if hasattr(self.db_manager, 'get_device_objects'):
+                all_devices = self.db_manager.get_device_objects()
+                matching_devices = []
+                for device in all_devices:
+                    if device.get_metadata('device_type') == device_type:
+                        matching_devices.append(device.to_dict())
+                return matching_devices
+            
+            # Fall back to the legacy API
             return self.db_manager.execute_query(
                 "SELECT * FROM devices WHERE device_type = ?",
                 [device_type]
@@ -181,35 +209,118 @@ class DeviceManager:
     
     def add_command_output(self, device_ip, command, output_path, output_type="text", comment=None):
         """Add a command output record."""
-        try:
-            self.db_manager.execute_query(
-                """
-                INSERT INTO command_outputs 
-                (device_ip, command, output_path, output_type, comment)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                [device_ip, command, output_path, output_type, comment]
-            )
-            return True
-        except Exception as e:
-            self.api.log(f"Error adding command output: {str(e)}", level="ERROR")
+        # Validate input parameters
+        if not device_ip or not command or not output_path:
+            self.api.log("Missing required parameters for add_command_output", level="ERROR")
             return False
+            
+        # Always try to save to a local file first as a backup
+        # This ensures we never lose data even if the database is completely unavailable
+        local_save_success = False
+        try:
+            # Use the output directory's root to store the index
+            index_file = self.output_dir / "command_output_index.csv"
+            
+            # Create or append to index file
+            mode = 'a' if index_file.exists() else 'w'
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            with open(index_file, mode, newline='') as f:
+                writer = csv.writer(f)
+                if mode == 'w':
+                    writer.writerow(['device_ip', 'command', 'output_path', 'output_type', 'timestamp', 'comment'])
+                writer.writerow([device_ip, command, output_path, output_type, timestamp, comment])
+            
+            self.api.log(f"Command output record saved to local index: {device_ip} - {command}", level="DEBUG")
+            local_save_success = True
+        except Exception as e:
+            self.api.log(f"Error saving command output to local index: {str(e)}", level="ERROR")
+            
+        # Then try to save it to the database
+        db_success = False
+        if hasattr(self, 'db_manager') and self.db_manager:
+            try:
+                db_success = self.db_manager.execute_query(
+                    """
+                    INSERT INTO command_outputs 
+                    (device_ip, command, output_path, output_type, comment)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [device_ip, command, output_path, output_type, comment]
+                )
+                if db_success:
+                    self.api.log(f"Command output record saved to database: {device_ip} - {command}", level="DEBUG")
+            except Exception as e:
+                self.api.log(f"Error adding command output to database: {str(e)}", level="WARNING")
+                # Continue with fallback
+        
+        # Return success if either method worked
+        return local_save_success or db_success
     
     def get_command_outputs(self, device_ip=None):
         """Get command outputs for a device."""
+        outputs = []
+        db_success = False
+        
+        # Try to get from database first
+        if hasattr(self, 'db_manager') and self.db_manager:
+            try:
+                if device_ip:
+                    outputs = self.db_manager.execute_query(
+                        "SELECT * FROM command_outputs WHERE device_ip = ? ORDER BY timestamp DESC",
+                        [device_ip]
+                    )
+                else:
+                    outputs = self.db_manager.execute_query(
+                        "SELECT * FROM command_outputs ORDER BY timestamp DESC"
+                    )
+                db_success = (outputs is not None and len(outputs) > 0)
+                if db_success:
+                    self.api.log(f"Retrieved {len(outputs)} command outputs from database", level="DEBUG")
+            except Exception as e:
+                self.api.log(f"Error getting command outputs from database: {str(e)}", level="ERROR")
+                # Continue to try local backup
+        
+        # Always try to get from local index file and merge results
         try:
-            if device_ip:
-                return self.db_manager.execute_query(
-                    "SELECT * FROM command_outputs WHERE device_ip = ? ORDER BY timestamp DESC",
-                    [device_ip]
-                )
-            else:
-                return self.db_manager.execute_query(
-                    "SELECT * FROM command_outputs ORDER BY timestamp DESC"
-                )
+            index_file = self.output_dir / "command_output_index.csv"
+            if index_file.exists():
+                local_outputs = []
+                with open(index_file, 'r', newline='') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        # Filter by device_ip if specified
+                        if device_ip and row['device_ip'] != device_ip:
+                            continue
+                        # Convert row to match database format
+                        local_outputs.append({
+                            'id': f"local_{len(local_outputs)}",
+                            'device_ip': row['device_ip'],
+                            'command': row['command'],
+                            'output_path': row['output_path'],
+                            'timestamp': row.get('timestamp', ''),
+                            'output_type': row.get('output_type', 'text'),
+                            'comment': row.get('comment', '')
+                        })
+                
+                if db_success:
+                    # If we have database results, only add local outputs not in the database
+                    # to avoid duplicates
+                    existing_paths = {output['output_path'] for output in outputs}
+                    for local_output in local_outputs:
+                        if local_output['output_path'] not in existing_paths:
+                            outputs.append(local_output)
+                else:
+                    # No database results, use only local outputs
+                    outputs = local_outputs
+                
+                self.api.log(f"Retrieved {len(local_outputs)} command outputs from local index", level="DEBUG")
         except Exception as e:
-            self.api.log(f"Error getting command outputs: {str(e)}", level="ERROR")
-            return []
+            self.api.log(f"Error getting command outputs from local index: {str(e)}", level="ERROR")
+        
+        # Sort all outputs by timestamp descending (newest first)
+        outputs = sorted(outputs, key=lambda x: x.get('timestamp', ''), reverse=True)
+        return outputs
     
     def remove_command_output(self, output_id):
         """Remove a command output record."""

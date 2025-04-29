@@ -49,6 +49,7 @@ class BaseNetworkScannerPlugin(QObject):
         self.active_scans = {}
         self.interfaces = {}
         self.devices = {}
+        self.ui_initialized = False  # Flag to track UI initialization
         
         # Initialize scanner
         self.scanner = NetworkScanner(self)

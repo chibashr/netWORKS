@@ -21,6 +21,7 @@ var/
 *.egg
 venv/
 logs/
+.cursor/
 
 # Virtual Environment
 venv/

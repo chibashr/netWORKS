@@ -178,19 +178,34 @@ api.log(message, level="INFO")  # Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
 # Returns a list of device dictionaries if multiple devices are selected
 selected = api.get_selected_devices()
 
-# Get all devices
+# Get all devices from the device table
 devices = api.get_all_devices()
 
-# Add a device to the workspace
-api.add_device(device_data)
+# Add a device to the device table
+api.add_device({
+    'ip': '192.168.1.100',
+    'hostname': 'device-100',
+    'mac': '00:11:22:33:44:55',
+    'vendor': 'Cisco',
+    'metadata': {
+        'discovery_source': 'my-plugin-id',
+        'custom_field': 'value'
+    }
+})
 
-# Update a device
-api.update_device(device_data)
+# Update an existing device
+api.update_device({
+    'ip': '192.168.1.100',  # IP is required to identify the device
+    'hostname': 'updated-hostname',
+    'metadata': {
+        'updated_field': 'new-value'
+    }
+})
 
 # Remove a device
 api.remove_device(device_id)
 
-# Search for devices
+# Search for devices across all device properties
 results = api.search_devices(query)
 ```
 

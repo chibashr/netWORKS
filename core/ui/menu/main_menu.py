@@ -4,12 +4,17 @@
 import sys
 import os
 import logging
-from PySide6.QtWidgets import QMenuBar, QMenu, QDialog, QFileDialog, QInputDialog, QVBoxLayout, QTextBrowser, QPushButton, QLabel, QHBoxLayout, QMessageBox
-from PySide6.QtGui import QAction, QKeySequence, QIcon, QFont, QPixmap
+from PySide6.QtWidgets import (
+    QMenuBar, QMenu, QDialog, QFileDialog, QInputDialog, 
+    QVBoxLayout, QTextBrowser, QPushButton, QLabel, QHBoxLayout, 
+    QMessageBox, QSplitter, QListWidget, QListWidgetItem
+)
+from PySide6.QtGui import QAction, QKeySequence, QIcon, QFont, QPixmap, QColor
 from PySide6.QtCore import Qt
 from core.ui.dialogs.plugin_manager_dialog import PluginManagerDialog
 from core.version import get_version_string, load_manifest
 import datetime
+import shiboken6
 
 logger = logging.getLogger(__name__)
 
@@ -135,18 +140,19 @@ def refresh_plugin_menus(main_window):
             menu_groups[parent] = []
         menu_groups[parent].append(item)
     
+    # Initialize plugin action storage if not already there
+    if not hasattr(main_window, 'plugin_menu_actions'):
+        main_window.plugin_menu_actions = {}
+    
     # Process each menu
     for menu_name, menu in main_window.menus.items():
+        # Store new actions for this menu
+        new_actions = []
+        
         # Ensure menu is visible before adding items
         menu.menuAction().setVisible(True)
         menu.setVisible(True)
         menu.setMouseTracking(True)
-        
-        # Store old actions to properly clean them up
-        old_actions = []
-        for action in menu.actions():
-            if action not in main_window.menu_actions.get(menu_name, []):
-                old_actions.append(action)
         
         # Handle core menus (always shown)
         if menu_name in ["File", "View", "Tools", "Plugins", "Help"]:
@@ -175,6 +181,7 @@ def refresh_plugin_menus(main_window):
                         if item['enabled_callback']:
                             action.setEnabled(item['enabled_callback'](None))
                         menu.addAction(action)
+                        new_actions.append(action)
             
             # Ensure menu is visible and properly styled
             menu.setVisible(True)
@@ -202,6 +209,7 @@ def refresh_plugin_menus(main_window):
                         if item['enabled_callback']:
                             action.setEnabled(item['enabled_callback'](None))
                         menu.addAction(action)
+                        new_actions.append(action)
                 
                 if not menu.isEmpty():
                     help_action = main_window.menus["Help"].menuAction()
@@ -210,9 +218,20 @@ def refresh_plugin_menus(main_window):
                     menu.setVisible(True)
                     menu.setStyle(main_window.style())
         
-        # Clean up old actions
-        for action in old_actions:
-            action.deleteLater()
+        # Store the new actions and properly clean up old ones
+        if menu_name in main_window.plugin_menu_actions:
+            # Disconnect signals from old actions to prevent "already deleted" errors
+            for old_action in main_window.plugin_menu_actions[menu_name]:
+                try:
+                    # Ensure action is valid before attempting to disconnect
+                    if old_action and not shiboken6.isValid(old_action):
+                        old_action.triggered.disconnect()
+                except (RuntimeError, TypeError):
+                    # Handle case where object might already be deleted or disconnection fails
+                    pass
+                
+        # Update stored actions
+        main_window.plugin_menu_actions[menu_name] = new_actions
 
 def show_plugin_manager(main_window):
     """Show the plugin manager dialog."""
@@ -315,26 +334,176 @@ def show_documentation(main_window):
     """Show the documentation."""
     # Create dialog
     dialog = QDialog(main_window)
-    dialog.setWindowTitle("NetSCAN Documentation")
-    dialog.setMinimumSize(800, 600)
+    dialog.setWindowTitle("netWORKS Documentation")
+    dialog.setMinimumSize(900, 700)
     
     # Create layout
     layout = QVBoxLayout(dialog)
     
-    # Create text browser for documentation
-    browser = QTextBrowser()
-    browser.setOpenExternalLinks(True)
-    layout.addWidget(browser)
-    
-    # Load documentation content
+    # Get docs path - try different methods to find it
+    # Method 1: Using relative path from the module
     docs_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "docs")
     
-    # Read main README.md
-    readme_path = os.path.join(docs_path, "README.md")
-    if os.path.exists(readme_path):
-        with open(readme_path, "r", encoding="utf-8") as f:
-            content = f.read()
-            browser.setMarkdown(content)
+    # Method 2: Using absolute path from current working directory
+    if not os.path.exists(docs_path):
+        cwd = os.getcwd()
+        docs_path = os.path.join(cwd, "docs")
+    
+    # Method 3: Using path relative to main application directory
+    if not os.path.exists(docs_path):
+        app_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        docs_path = os.path.join(app_dir, "docs")
+    
+    # Debug info
+    debug_info = f"Docs path: {docs_path}\nExists: {os.path.exists(docs_path)}\n"
+    if os.path.exists(docs_path):
+        debug_info += f"Files in directory: {os.listdir(docs_path)}\n"
+    
+    # Create a splitter to divide the documentation selector and content
+    splitter = QSplitter(Qt.Horizontal)
+    layout.addWidget(splitter)
+    
+    # Create a list widget for documentation files
+    doc_list = QListWidget()
+    doc_list.setMaximumWidth(250)
+    doc_list.setMinimumWidth(200)
+    splitter.addWidget(doc_list)
+    
+    # Create text browser for documentation content
+    browser = QTextBrowser()
+    browser.setOpenExternalLinks(True)
+    splitter.addWidget(browser)
+    
+    # Function to load documentation file
+    def load_doc_file(file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                if file_path.endswith('.md'):
+                    browser.setMarkdown(content)
+                elif file_path.endswith('.json'):
+                    # Format JSON for better display
+                    import json
+                    try:
+                        parsed = json.loads(content)
+                        formatted = json.dumps(parsed, indent=2)
+                        browser.setPlainText(formatted)
+                    except:
+                        browser.setPlainText(content)
+                else:
+                    browser.setPlainText(content)
+        except Exception as e:
+            browser.setPlainText(f"Error loading documentation: {str(e)}")
+    
+    # Keep track if we found any documentation
+    found_docs = False
+    
+    # Load core documentation files from docs directory
+    if os.path.exists(docs_path):
+        # Add a header for core documentation
+        core_header = QListWidgetItem("Core Documentation")
+        core_header.setFlags(Qt.ItemIsEnabled)  # Make it non-selectable
+        core_header.setBackground(QColor(240, 240, 240))
+        doc_list.addItem(core_header)
+        
+        # Get all markdown and JSON files
+        doc_files = []
+        for file in os.listdir(docs_path):
+            full_path = os.path.join(docs_path, file)
+            if os.path.isfile(full_path) and (file.endswith('.md') or file.endswith('.json')):
+                doc_files.append(file)
+                found_docs = True
+        
+        # Add documentation files to list
+        doc_files.sort()  # Sort alphabetically
+        for file in doc_files:
+            item = QListWidgetItem(file.replace('_', ' ').replace('.md', '').replace('.json', '').title())
+            item.setData(Qt.UserRole, os.path.join(docs_path, file))
+            doc_list.addItem(item)
+        
+        # Add documentation from docs/plugins if available
+        plugin_docs_path = os.path.join(docs_path, "plugins")
+        if os.path.exists(plugin_docs_path):
+            plugin_category = QListWidgetItem("Plugin Documentation (docs)")
+            plugin_category.setFlags(Qt.ItemIsEnabled)  # Make it non-selectable
+            plugin_category.setBackground(QColor(240, 240, 240))
+            doc_list.addItem(plugin_category)
+            
+            # List plugin documentation folders
+            plugin_folders = []
+            for item in os.listdir(plugin_docs_path):
+                item_path = os.path.join(plugin_docs_path, item)
+                if os.path.isdir(item_path):
+                    plugin_folders.append(item)
+            
+            # Add each plugin's docs
+            plugin_folders.sort()
+            for folder in plugin_folders:
+                folder_path = os.path.join(plugin_docs_path, folder)
+                # Look for main doc files in plugin folder
+                for doc_file in ['README.md', 'API.md']:
+                    file_path = os.path.join(folder_path, doc_file)
+                    if os.path.exists(file_path):
+                        item = QListWidgetItem(f"  {folder} - {doc_file.replace('.md', '')}")
+                        item.setData(Qt.UserRole, file_path)
+                        doc_list.addItem(item)
+                        found_docs = True
+    
+    # Add documentation from actual plugin folders
+    plugins_dir = os.path.join(os.getcwd(), "plugins")
+    if os.path.exists(plugins_dir):
+        # Add a header for actual plugin documentation
+        plugins_header = QListWidgetItem("Plugin Source Documentation")
+        plugins_header.setFlags(Qt.ItemIsEnabled)  # Make it non-selectable
+        plugins_header.setBackground(QColor(240, 240, 240))
+        doc_list.addItem(plugins_header)
+        
+        # Get plugin categories (core, etc.)
+        plugin_categories = []
+        for item in os.listdir(plugins_dir):
+            category_path = os.path.join(plugins_dir, item)
+            if os.path.isdir(category_path):
+                plugin_categories.append(item)
+        
+        # Process each category
+        plugin_categories.sort()
+        for category in plugin_categories:
+            category_path = os.path.join(plugins_dir, category)
+            
+            # Get plugins in this category
+            plugin_folders = []
+            for item in os.listdir(category_path):
+                plugin_path = os.path.join(category_path, item)
+                if os.path.isdir(plugin_path):
+                    plugin_folders.append((item, plugin_path))
+            
+            # Process each plugin
+            plugin_folders.sort()
+            for plugin_name, plugin_path in plugin_folders:
+                # Look for documentation files
+                for doc_file in ['README.md', 'API.md', 'manifest.json']:
+                    file_path = os.path.join(plugin_path, doc_file)
+                    if os.path.exists(file_path):
+                        display_name = f"  {category}/{plugin_name} - {doc_file}"
+                        item = QListWidgetItem(display_name)
+                        item.setData(Qt.UserRole, file_path)
+                        doc_list.addItem(item)
+                        found_docs = True
+    
+    # Connect selection changed signal
+    doc_list.currentItemChanged.connect(lambda item: load_doc_file(item.data(Qt.UserRole)) if item and item.data(Qt.UserRole) else None)
+    
+    # Load first item if available
+    if doc_list.count() > 0:
+        # Find first selectable item
+        for i in range(doc_list.count()):
+            if doc_list.item(i).flags() & Qt.ItemIsSelectable:
+                doc_list.setCurrentRow(i)
+                break
+    
+    # If no documentation files found, show debug info and a message
+    if not found_docs:
+        browser.setPlainText(f"No documentation files found in the docs directory.\n\nDebug Info:\n{debug_info}")
     
     # Add close button
     close_button = QPushButton("Close")

@@ -17,15 +17,15 @@
     "panels": {
       "left": {
         "visible": true,
-        "width": 313
+        "width": 373
       },
       "right": {
         "visible": true,
-        "width": 356
+        "width": 422
       },
       "bottom": {
         "visible": true,
-        "height": 230
+        "height": 207
       }
     },
     "table": {

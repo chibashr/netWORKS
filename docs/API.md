@@ -213,43 +213,51 @@ def initialize(self):
 
 ### Database Access
 
-The main window provides access to the device database manager, but implementations may vary:
+The main window provides access to devices through an object-oriented API:
 
 ```python
-# Get the database manager
-db_manager = main_window.database_manager
-
-# Verify database methods are available before using them
-if hasattr(db_manager, 'execute_query'):
-    # Use execute_query method for database operations
-    db_manager.execute_query(
-        "INSERT INTO devices (ip, mac, hostname) VALUES (?, ?, ?)",
-        ['192.168.1.1', '00:11:22:33:44:55', 'router']
-    )
-elif hasattr(db_manager, 'add_device'):
-    # Use add_device method as alternative
-    db_manager.add_device({
+# Access the device table (always check if it exists)
+if hasattr(main_window, 'device_table'):
+    device_table = main_window.device_table
+    
+    # Get selected devices
+    selected_devices = device_table.get_selected_devices()
+    
+    # Get all devices
+    all_devices = device_table.get_all_devices()
+    
+    # Add a device to the table
+    device_table.add_device({
         'ip': '192.168.1.1',
-        'mac': '00:11:22:33:44:55',
         'hostname': 'router',
+        'mac': '00:11:22:33:44:55',
         'vendor': 'Cisco',
         'metadata': {
             'custom_field': 'value'
         }
     })
-else:
-    # Log warning that database operations are not available
-    self.api.log("Database operations not supported in this version", level="WARNING")
-
-# Access plugin-specific storage (if available)
-try:
-    # Store plugin-specific data
-    db_manager.store_plugin_data('my-plugin-id', 'key', value)
-
-    # Retrieve plugin-specific data
-    data = db_manager.get_plugin_data('my-plugin-id', 'key', default=None)
-except Exception as e:
-    self.api.log(f"Plugin data storage not available: {str(e)}", level="ERROR")
+    
+    # Update a device
+    device_table.update_device({
+        'ip': '192.168.1.1',
+        'hostname': 'updated-router',
+        'metadata': {
+            'updated_field': 'new-value'
+        }
+    })
+    
+    # Find a device by IP address
+    row = device_table.find_device_row('192.168.1.1')
+    
+    # Access plugin-specific storage
+    try:
+        # Store plugin-specific data using settings API
+        self.api.set_setting('my_key', value)
+        
+        # Retrieve plugin-specific data
+        data = self.api.get_setting('my_key', default=None)
+    except Exception as e:
+        self.api.log(f"Plugin data storage not available: {str(e)}", level="ERROR")
 ```
 
 ### Progress Display

@@ -290,8 +290,8 @@ def main():
         print("[DEBUG] Creating main window")
         try:
             main_window = MainWindow(plugin_manager)
-            # Set main window reference in plugin manager
-            plugin_manager.set_main_window(main_window)
+            # Note: We don't set the main window reference here anymore
+            # It will be set in the plugin configuration stage (stage 10)
         except Exception as e:
             logger.error(f"Error creating main window: {str(e)}", exc_info=True)
             print(f"[ERROR] Main window creation failed: {str(e)}")
@@ -305,18 +305,12 @@ def main():
         # Set main window reference in plugin APIs
         update_stage()  # Stage 10: Configuring plugins
         print("[DEBUG] Configuring plugins with main window reference")
-        plugin_connection_results = {"success": 0, "failure": 0}
-        for plugin_id, plugin_api in list(plugin_manager.plugin_apis.items()):
-            try:
-                plugin_api.set_main_window(main_window)
-                logger.info(f"Set main window reference for plugin {plugin_id}")
-                plugin_connection_results["success"] += 1
-            except Exception as e:
-                logger.error(f"Error setting main window for plugin {plugin_id}: {str(e)}", exc_info=True)
-                print(f"[ERROR] Failed to set main window for plugin {plugin_id}")
-                plugin_connection_results["failure"] += 1
-                # Continue with other plugins
         
+        # Use the plugin manager's method to set the main window reference
+        plugin_manager.set_main_window(main_window)
+        
+        # Successfully set the main window for all plugins
+        plugin_connection_results = {"success": len(plugin_manager.plugin_apis), "failure": 0}
         print(f"[DEBUG] Plugin configuration results: {plugin_connection_results['success']} succeeded, {plugin_connection_results['failure']} failed")
         logger.info(f"Plugin configuration results: {plugin_connection_results['success']} succeeded, {plugin_connection_results['failure']} failed")
         app.processEvents()

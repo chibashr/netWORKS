@@ -53,6 +53,9 @@ class NetworkScannerPlugin(QObject):
         # Initialize scan history
         self.scan_history = self._load_scan_history()
         
+        # Track UI initialization status
+        self.ui_initialized = False
+        
         # UI panels will be created when main window is ready
         self.left_panel = None
         self.right_panel = None
@@ -72,6 +75,11 @@ class NetworkScannerPlugin(QObject):
     def init_ui(self):
         """Initialize UI components once main window is available."""
         try:
+            # Check if UI components have already been initialized
+            if hasattr(self, 'ui_initialized') and self.ui_initialized:
+                self.logger.debug("UI components already initialized, skipping")
+                return
+
             self.logger.debug(f"Creating UI components in thread: {QThread.currentThread()}")
             
             # Import UI components here to ensure they're loaded in the main thread
@@ -109,35 +117,27 @@ class NetworkScannerPlugin(QObject):
             
             # Import UI modules
             left_panel_path = os.path.join(ui_dir, 'left_panel.py')
-            right_panel_path = os.path.join(ui_dir, 'right_panel.py')
             bottom_panel_path = os.path.join(ui_dir, 'bottom_panel.py')
             
             left_panel = import_module_from_path('left_panel', left_panel_path)
-            right_panel = import_module_from_path('right_panel', right_panel_path)
             bottom_panel = import_module_from_path('bottom_panel', bottom_panel_path)
             
             # Get classes from modules
             ScanControlPanel = left_panel.ScanControlPanel
-            ScanSettingsPanel = right_panel.ScanSettingsPanel
             ScanHistoryPanel = bottom_panel.ScanHistoryPanel
             
             # Create UI components - this is already in the main thread thanks to on_main_window_ready
             self.left_panel = ScanControlPanel(self)
-            self.right_panel = ScanSettingsPanel(self)
             self.bottom_panel = ScanHistoryPanel(self)
             
             # Set plugin_id property on all panels for identification
-            for panel in [self.left_panel, self.right_panel, self.bottom_panel]:
+            for panel in [self.left_panel, self.bottom_panel]:
                 panel.setProperty("plugin_id", "base-network-scanner")
             
             # Register UI components with the main window
             self.logger.debug("Registering left panel")
             result = self.api.register_panel(self.left_panel, "left", "Scanner")
             self.logger.debug(f"Left panel registration result: {result}")
-            
-            self.logger.debug("Registering right panel")
-            result = self.api.register_panel(self.right_panel, "right", "Scan Settings")
-            self.logger.debug(f"Right panel registration result: {result}")
             
             self.logger.debug("Registering bottom panel")
             result = self.api.add_tab(self.bottom_panel, "Scan History")
@@ -159,6 +159,7 @@ class NetworkScannerPlugin(QObject):
             self.setup_toolbar_templates()
             
             self.logger.debug("UI components created and registered successfully")
+            self.ui_initialized = True
         except Exception as e:
             self.logger.error(f"Error creating UI components: {str(e)}", exc_info=True)
             # Attempt to show an error message to the user
@@ -215,7 +216,7 @@ class NetworkScannerPlugin(QObject):
                 action = QAction(name, templates_menu)
                 action.setToolTip(desc)
                 action.setData(template_id)
-                action.triggered.connect(lambda checked, tid=template_id: self.select_scan_template(tid))
+                action.triggered.connect(lambda checked=False, tid=template_id: self.select_scan_template(tid))
                 templates_menu.addAction(action)
             
             # Add separator and management options
@@ -285,7 +286,7 @@ class NetworkScannerPlugin(QObject):
                         action = QAction(name, menu)
                         action.setToolTip(desc)
                         action.setData(template_id)
-                        action.triggered.connect(lambda checked, tid=template_id: self.select_scan_template(tid))
+                        action.triggered.connect(lambda checked=False, tid=template_id: self.select_scan_template(tid))
                         menu.insertAction(actions[0], action)  # Insert before separator
         except Exception as e:
             self.logger.error(f"Error updating templates menu: {str(e)}")
@@ -665,6 +666,15 @@ class NetworkScannerPlugin(QObject):
                     "timeout": 3,
                     "retries": 1,
                     "parallel": 5
+                },
+                "manual_scan": {
+                    "name": "Manual Scan",
+                    "description": "Configure scan settings manually",
+                    "timeout": 2,
+                    "retries": 2,
+                    "parallel": 25,
+                    "manual": True,
+                    "first_use": True
                 }
             },
             "default_interface": "",

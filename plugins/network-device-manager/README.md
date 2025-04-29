@@ -1,101 +1,58 @@
 # Network Device Manager Plugin
 
-A netWORKS plugin for connecting to and managing network devices via SSH and telnet. This plugin allows network administrators to run commands, collect information, and store outputs from various types of network devices.
+This plugin allows you to manage and interact with network devices directly from within netWORKS.
 
 ## Features
 
-- Connect to network devices using SSH or telnet
-- Run commands and collect output from devices
-- Store command outputs in text or CSV format
-- Secure credential management with encryption
-- Support for multiple device types
-- Extensible command sets via JSON files
-- Credential management by device, subnet, or group
-- Command output viewer and export options
+- Connect to network devices via SSH and Telnet
+- Execute commands and view output
+- Store and manage command outputs
+- Create and manage device credentials
+- Group devices by type
+- Execute common commands with a single click
 
 ## Installation
 
-1. Copy the `network-device-manager` directory to the `plugins` directory of your netWORKS installation
-2. Install required dependencies:
-   ```
-   pip install -r plugins/network-device-manager/requirements.txt
-   ```
-3. Restart netWORKS
+This plugin is included with netWORKS by default. No additional installation is required.
 
-## Getting Started
+## Usage
 
-1. Select a device in the device table
-2. In the right panel, set the device type (e.g., Cisco IOS, Juniper)
-3. Click "Connect (SSH)" or "Connect (Telnet)" to establish a connection
-4. Use the bottom panel to run commands on the connected device
-5. View and download command outputs
-
-## Credential Management
-
-Credentials are stored securely in an encrypted format. You can set credentials for:
-
-- Individual devices
-- Subnets (e.g., 192.168.1.0/24)
-- Device groups
-- Default fallback credentials
-
-To manage credentials:
-1. Go to Tools > Network Device Manager > Manage Credentials
-2. Use the Credentials tab to add, edit, or remove credential entries
+1. Select a device in the main device table
+2. The Network Device Manager panel will show available commands for this device
+3. Click "Run Command" to execute a command on the device
+4. View the output and save it if desired
 
 ## Command Sets
 
-Commands are organized into sets based on device type. Each command has:
-- A unique ID
-- The actual command string to execute
-- A description
-- Output type (text or tabular)
+The plugin includes predefined command sets for common device types:
 
-The plugin comes with built-in command sets for:
 - Cisco IOS
 - Juniper JunOS
 
-You can import additional command sets or create your own:
-1. Go to the Commands tab in the bottom panel
-2. Click "Import Commands" to import a JSON command set
-3. Future versions will include a command set editor
+You can customize these command sets or add new ones using the Command Set Manager.
 
-## Custom Command Sets
+## Database Resilience
 
-You can create custom command sets in JSON format:
+The plugin now includes enhanced database resilience features to prevent data loss when database issues occur:
 
-```json
-{
-    "name": "Custom Device Type",
-    "description": "Commands for My Custom Device",
-    "commands": {
-        "show_version": {
-            "command": "show version",
-            "description": "Display version information",
-            "output_type": "text"
-        },
-        "show_interfaces": {
-            "command": "show interfaces",
-            "description": "Display interfaces",
-            "output_type": "tabular"
-        }
-    }
-}
-```
+- Command outputs are always saved to files in the `data/outputs/` directory
+- If the database is unavailable, the plugin maintains a local index of command outputs
+- The plugin will automatically recover and display command outputs even if the database is temporarily unavailable
+- When the database becomes available again, the plugin will continue to use it without any user intervention
 
-## UI Integration
+This ensures that your command outputs are never lost, even if database corruption occurs.
 
-The plugin integrates with the netWORKS UI in several ways:
+## Troubleshooting
 
-- Right panel: Device information and connection controls
-- Bottom panel: Command execution and output viewing
-- Context menu: Right-click options on devices in the device table
-- Tools menu: Network Device Manager submenu with plugin options
+If you encounter issues with the plugin, check the following:
+
+1. Ensure the device is reachable via SSH or Telnet
+2. Verify that the credentials are correct
+3. Check the netWORKS log for error messages
+4. Try restarting the application if commands are not displaying properly
+
+If command outputs are not displaying, check the `data/outputs/` directory in the plugin folder. The command outputs should be stored there even if database issues occur.
 
 ## License
 
-This plugin is distributed under the same license as netWORKS.
-
-## Author
-
-chibashr 
+This plugin is licensed under the same license as netWORKS. 

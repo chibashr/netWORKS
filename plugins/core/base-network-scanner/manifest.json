@@ -1,13 +1,13 @@
 {
     "name": "base-network-scanner",
     "displayName": "Network Scanner",
-    "version": "1.0.0",
+    "version": "1.1.2",
     "description": "Scan devices on the network and add them to the device table",
     "author": "chibashr",
     "main": "main.py",
     "dependencies": [],
     "ui": {
-        "panels": ["left", "right", "bottom"]
+        "panels": ["left", "bottom"]
     },
     "hooks": {
         "after_scan": {
@@ -41,5 +41,26 @@
             "parameters": ["scan_id"],
             "returns": "List of devices discovered during the scan"
         }
+    },
+    "changelog": {
+        "1.1.2": [
+            "Fixed missing imports for manual scan dialog",
+            "Improved layout to prevent Configure button from overlapping dropdown"
+        ],
+        "1.1.1": [
+            "Added dedicated Configure button for manual scan settings"
+        ],
+        "1.1.0": [
+            "Added manual scan type with configurable settings",
+            "Added automatic interface selector",
+            "Fixed template menu error",
+            "Improved scan history with better device loading",
+            "Only showing connected interfaces",
+            "Removed right panel and improved UI",
+            "Fixed squished buttons in scan history"
+        ],
+        "1.0.0": [
+            "Initial release"
+        ]
     }
 } 

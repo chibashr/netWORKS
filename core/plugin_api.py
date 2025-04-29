@@ -1,5 +1,6 @@
 import logging
 import datetime
+from pathlib import Path
 
 class PluginAPI:
     """API for plugins to interact with the main application."""
@@ -12,7 +13,19 @@ class PluginAPI:
     
     def set_main_window(self, main_window):
         """Set the main window reference."""
-        self.main_window = main_window
+        try:
+            # Store main window reference
+            self.main_window = main_window
+            
+            # Call on_main_window_ready callbacks
+            if hasattr(self, 'main_window_callbacks'):
+                for callback in self.main_window_callbacks:
+                    try:
+                        callback(main_window)
+                    except Exception as e:
+                        self.logger.error(f"Error in main window callback: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Error setting main window: {str(e)}")
     
     # UI Integration
     
@@ -49,9 +62,32 @@ class PluginAPI:
         Returns:
             bool: True if registration was successful
         """
-        return self.plugin_manager.register_menu_item(
-            self.plugin_id, label, callback, parent_menu, icon_path, shortcut, enabled_callback
-        )
+        try:
+            # Initialize menu items list if this PluginAPI instance doesn't have one
+            if not hasattr(self, '_menu_items'):
+                self._menu_items = []
+                
+            # Create menu item directly
+            menu_item = {
+                'plugin_id': self.plugin_id,
+                'label': label,
+                'callback': callback,
+                'parent_menu': parent_menu,
+                'icon_path': icon_path,
+                'shortcut': shortcut,
+                'enabled_callback': enabled_callback if enabled_callback else lambda x: True
+            }
+            
+            # Add to our own menu items list
+            self._menu_items.append(menu_item)
+            
+            # Delegate to the plugin manager's register_menu_item method
+            return self.plugin_manager.register_menu_item(
+                self.plugin_id, label, callback, parent_menu, icon_path, shortcut, enabled_callback
+            )
+        except Exception as e:
+            self.logger.error(f"Error registering menu item: {str(e)}")
+            return False
     
     def register_multi_device_menu_item(self, label, callback, parent_menu=None, icon_path=None, shortcut=None):
         """Register a menu item for operating on multiple selected devices.
@@ -330,4 +366,32 @@ class PluginAPI:
         if not self.main_window or not hasattr(self.main_window, 'device_table'):
             return []
             
-        return self.main_window.device_table.get_device_groups(device_id) 
+        return self.main_window.device_table.get_device_groups(device_id)
+    
+    def get_plugin_id(self):
+        """Get the plugin ID."""
+        return self.plugin_id
+    
+    def get_data_directory(self):
+        """Get the plugin's data directory.
+        
+        Returns:
+            str: Path to the plugin's data directory (data/<plugin_id>)
+        """
+        # Create data directory if it doesn't exist
+        data_dir = Path("data")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create plugin-specific directory
+        plugin_data_dir = data_dir / self.plugin_id
+        plugin_data_dir.mkdir(parents=True, exist_ok=True)
+        
+        return str(plugin_data_dir)
+    
+    def get_database_manager(self):
+        """Get the database manager instance."""
+        if not self.main_window:
+            self.logger.warning("Cannot get database manager: main window not available")
+            return None
+            
+        return self.main_window.database_manager 

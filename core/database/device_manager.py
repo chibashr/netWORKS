@@ -7,6 +7,7 @@ import uuid
 import sqlite3
 import logging
 import datetime
+import time
 from pathlib import Path
 from typing import Dict, List, Any, Union, Optional
 
@@ -98,6 +99,14 @@ class DeviceDatabaseManager:
             self.logger.error(f"Error initializing database: {str(e)}")
             return False
     
+    def _initialize_database(self) -> bool:
+        """Initialize the SQLite database. Alias for _init_database for backward compatibility.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return self._init_database()
+    
     def add_device(self, device: Dict[str, Any]) -> bool:
         """Add or update a device in the database.
         
@@ -112,27 +121,43 @@ class DeviceDatabaseManager:
             return False
             
         try:
-            # Ensure device has an ID
-            if 'id' not in device:
-                device['id'] = str(uuid.uuid4())
+            # Use the retry mechanism for database operations
+            return self._execute_with_retry(self._add_device_internal, device)
+        except Exception as e:
+            self.logger.error(f"Error adding device to database: {str(e)}")
+            return False
+    
+    def _add_device_internal(self, device: Dict[str, Any]) -> bool:
+        """Internal method to add or update a device with transaction handling.
+        
+        Args:
+            device: Device data dictionary
             
-            # Set timestamps if missing
-            now = datetime.datetime.now().isoformat()
-            if 'first_seen' not in device:
-                device['first_seen'] = now
-            if 'last_seen' not in device:
-                device['last_seen'] = now
-            
-            # Ensure metadata is a dictionary
-            if 'metadata' not in device or not isinstance(device['metadata'], dict):
-                device['metadata'] = {}
-            
-            # Prepare for storage
-            metadata = json.dumps(device.get('metadata', {}))
-            tags = json.dumps(device.get('tags', []))
-            
-            # Connect to database
-            conn = sqlite3.connect(self.db_path)
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        # Ensure device has an ID
+        if 'id' not in device:
+            device['id'] = str(uuid.uuid4())
+        
+        # Set timestamps if missing
+        now = datetime.datetime.now().isoformat()
+        if 'first_seen' not in device:
+            device['first_seen'] = now
+        if 'last_seen' not in device:
+            device['last_seen'] = now
+        
+        # Ensure metadata is a dictionary
+        if 'metadata' not in device or not isinstance(device['metadata'], dict):
+            device['metadata'] = {}
+        
+        # Prepare for storage
+        metadata = json.dumps(device.get('metadata', {}))
+        tags = json.dumps(device.get('tags', []))
+        
+        # Connect to database with transaction
+        conn = sqlite3.connect(self.db_path)
+        try:
             cursor = conn.cursor()
             
             # Check if device already exists
@@ -217,12 +242,12 @@ class DeviceDatabaseManager:
                 ))
             
             conn.commit()
-            conn.close()
             return True
-            
         except Exception as e:
-            self.logger.error(f"Error adding device to database: {str(e)}")
-            return False
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     
     def remove_device(self, device_id: str) -> bool:
         """Remove a device from the database.
@@ -424,11 +449,30 @@ class DeviceDatabaseManager:
             bool: True if successful, False otherwise
         """
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            # Use the retry mechanism for database operations
+            return self._execute_with_retry(self._store_plugin_data_internal, plugin_id, key, value)
+        except Exception as e:
+            self.logger.error(f"Error storing plugin data: {str(e)}")
+            return False
+    
+    def _store_plugin_data_internal(self, plugin_id: str, key: str, value: Any) -> bool:
+        """Internal method to store plugin-specific data with transaction handling.
+        
+        Args:
+            plugin_id: Plugin identifier
+            key: Data key
+            value: Data value (will be JSON encoded)
             
-            # Convert value to JSON string
-            value_json = json.dumps(value)
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        # Convert value to JSON string
+        value_json = json.dumps(value)
+        
+        # Connect to database with transaction
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
             
             # Check if key already exists
             cursor.execute(
@@ -451,12 +495,12 @@ class DeviceDatabaseManager:
                 )
             
             conn.commit()
-            conn.close()
             return True
-            
         except Exception as e:
-            self.logger.error(f"Error storing plugin data: {str(e)}")
-            return False
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     
     def get_plugin_data(self, plugin_id: str, key: str, default: Any = None) -> Any:
         """Get plugin-specific data from the database.
@@ -527,23 +571,406 @@ class DeviceDatabaseManager:
         """
         return self.add_device(device)
     
+    def save_device_groups(self, device_groups: Dict[str, List[str]]) -> bool:
+        """Save device groups to the database.
+        
+        Args:
+            device_groups: Dictionary of group names to lists of device IDs
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Store as plugin data for the core app
+            return self.store_plugin_data('core', 'device_groups', device_groups)
+        except Exception as e:
+            self.logger.error(f"Error saving device groups: {str(e)}")
+            return False
+    
+    def get_device_groups(self) -> Dict[str, List[str]]:
+        """Get device groups from the database.
+        
+        Returns:
+            Dict[str, List[str]]: Dictionary of group names to lists of device IDs
+        """
+        try:
+            return self.get_plugin_data('core', 'device_groups', {})
+        except Exception as e:
+            self.logger.error(f"Error getting device groups: {str(e)}")
+            return {}
+    
+    def _execute_with_retry(self, func, *args, max_retries=3, **kwargs):
+        """Execute a database function with retry logic.
+        
+        Args:
+            func: Function to execute
+            *args: Arguments to pass to the function
+            max_retries: Maximum number of retries
+            **kwargs: Keyword arguments to pass to the function
+            
+        Returns:
+            Any: Result of the function call
+        """
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except sqlite3.DatabaseError as e:
+                if "database disk image is malformed" in str(e) and attempt < max_retries - 1:
+                    self.logger.warning(f"Database error on attempt {attempt+1}, trying to recover: {str(e)}")
+                    self._repair_database()
+                else:
+                    raise
+    
+    def _repair_database(self):
+        """Attempt to repair a corrupted database."""
+        try:
+            self.logger.info("Attempting to repair database...")
+            # Create a backup first
+            import shutil
+            backup_path = f"{self.db_path}.bak.{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            shutil.copy2(self.db_path, backup_path)
+            self.logger.info(f"Created database backup at {backup_path}")
+            
+            # Try to repair with integrity check
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA integrity_check")
+                result = cursor.fetchall()
+                conn.close()
+                
+                if result[0][0] != "ok":
+                    self.logger.warning(f"Integrity check failed: {result}")
+                    # If integrity check fails, try to dump and reload
+                    self._dump_and_reload_database()
+                else:
+                    self.logger.info("Database integrity check passed")
+                    
+            except sqlite3.DatabaseError:
+                # If we can't even run the integrity check, try more aggressive recovery
+                self.logger.warning("Cannot perform integrity check, trying dump and reload")
+                self._dump_and_reload_database()
+                
+        except Exception as e:
+            self.logger.error(f"Error repairing database: {str(e)}")
+            # As a last resort, completely reset the database
+            self._create_new_database()
+    
+    def _check_and_repair_database(self):
+        """
+        Perform SQLite integrity checks and attempt repair.
+        
+        Returns:
+            bool: True if repair successful, False otherwise
+        """
+        try:
+            # Close any existing connection
+            try:
+                if hasattr(self, 'conn') and self.conn:
+                    self.conn.close()
+            except Exception:
+                pass
+                
+            # Backup the database before attempting repair
+            backup_path = f"{self.db_path}.integrity_check.{int(time.time())}"
+            import shutil
+            shutil.copy2(self.db_path, backup_path)
+            self.logger.info(f"Created backup before integrity check at {backup_path}")
+            
+            # Connect and run integrity check
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Run integrity check
+            cursor.execute("PRAGMA integrity_check")
+            result = cursor.fetchall()
+            
+            if result[0][0] == "ok":
+                self.logger.info("Database integrity check passed")
+                
+                # Run vacuum to optimize
+                cursor.execute("VACUUM")
+                conn.commit()
+                
+                # Run integrity_check again to verify
+                cursor.execute("PRAGMA integrity_check")
+                final_check = cursor.fetchall()
+                
+                if final_check[0][0] == "ok":
+                    self.logger.info("Database optimized successfully")
+                    conn.close()
+                    return True
+                else:
+                    self.logger.warning("Database failed integrity check after optimization")
+                    conn.close()
+                    return False
+            else:
+                self.logger.warning(f"Database integrity check failed: {result}")
+                conn.close()
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error during database integrity check: {str(e)}")
+            return False
+    
+    def _create_new_database(self):
+        """Create a completely new database when repair attempts fail."""
+        try:
+            self.logger.warning("Creating a new database as a last resort")
+            
+            # Backup current database if it exists
+            import os
+            if os.path.exists(self.db_path):
+                backup_path = f"{self.db_path}.corrupted_{int(time.time())}"
+                try:
+                    os.rename(self.db_path, backup_path)
+                    self.logger.info(f"Backed up corrupted database to {backup_path}")
+                except Exception as e:
+                    self.logger.error(f"Failed to back up corrupted database: {str(e)}")
+                    # Try to remove it if we can't rename
+                    try:
+                        os.remove(self.db_path)
+                        self.logger.info("Removed corrupted database")
+                    except Exception as e2:
+                        self.logger.error(f"Failed to remove corrupted database: {str(e2)}")
+            
+            # Connect to a fresh database
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Create all tables
+            cursor.execute('''CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )''')
+            
+            cursor.execute('''CREATE TABLE IF NOT EXISTS devices (
+                id TEXT PRIMARY KEY,
+                ip TEXT,
+                mac TEXT,
+                hostname TEXT,
+                vendor TEXT,
+                os TEXT,
+                first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'active',
+                metadata TEXT,
+                tags TEXT,
+                notes TEXT
+            )''')
+            
+            cursor.execute('''CREATE TABLE IF NOT EXISTS device_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT,
+                ip TEXT,
+                event_type TEXT,
+                event_data TEXT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )''')
+            
+            cursor.execute('''CREATE TABLE IF NOT EXISTS plugin_data (
+                plugin_id TEXT,
+                key TEXT,
+                value TEXT,
+                PRIMARY KEY (plugin_id, key)
+            )''')
+            
+            conn.commit()
+            conn.close()
+            
+            self.logger.info("New database created successfully")
+            
+            # Re-initialize the connection
+            self.conn = sqlite3.connect(self.db_path)
+            self.conn.row_factory = sqlite3.Row
+            self.cursor = self.conn.cursor()
+            
+        except Exception as e:
+            self.logger.critical(f"Failed to create new database: {str(e)}")
+            raise RuntimeError("Database repair failed completely. Application may be unstable.")
+    
+    def _dump_and_reload_database(self):
+        """
+        Attempt to recover database by dumping to SQL and reloading.
+        This can sometimes recover from corruption that integrity_check cannot fix.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        import subprocess
+        import os
+        import tempfile
+        
+        try:
+            self.logger.info("Attempting database recovery via dump and reload")
+            
+            # Create backup first
+            backup_path = f"{self.db_path}.dump_recovery.{int(time.time())}"
+            import shutil
+            shutil.copy2(self.db_path, backup_path)
+            self.logger.info(f"Created backup before dump recovery at {backup_path}")
+            
+            # Close any current connection
+            try:
+                if hasattr(self, 'conn') and self.conn:
+                    self.conn.close()
+            except Exception:
+                pass
+            
+            # Create temporary directory for dump
+            temp_dir = tempfile.mkdtemp()
+            dump_file = os.path.join(temp_dir, "dump.sql")
+            new_db = os.path.join(temp_dir, "new.db")
+            
+            try:
+                # Dump the database to SQL
+                self.logger.info(f"Dumping database to {dump_file}")
+                
+                try:
+                    # Try using the sqlite3 command-line tool if available
+                    subprocess.run(["sqlite3", self.db_path, f".output {dump_file}", ".dump"], 
+                                  check=True, capture_output=True, text=True, timeout=60)
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    # Fall back to Python implementation if sqlite3 command not available
+                    conn = sqlite3.connect(self.db_path)
+                    with open(dump_file, 'w') as f:
+                        for line in conn.iterdump():
+                            f.write(f"{line}\n")
+                    conn.close()
+                
+                # Check if the dump contains anything
+                if os.path.getsize(dump_file) < 100:  # If dump is too small, it failed
+                    self.logger.error("Database dump failed or produced minimal output")
+                    return False
+                
+                # Create a new database from the dump
+                self.logger.info(f"Creating new database from dump")
+                conn = sqlite3.connect(new_db)
+                
+                with open(dump_file, 'r') as f:
+                    conn.executescript(f.read())
+                conn.commit()
+                conn.close()
+                
+                # Verify the new database
+                conn = sqlite3.connect(new_db)
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA integrity_check")
+                result = cursor.fetchall()
+                conn.close()
+                
+                if result[0][0] != "ok":
+                    self.logger.error(f"New database failed integrity check: {result}")
+                    return False
+                
+                # Replace the old database with the new one
+                try:
+                    if hasattr(self, 'conn') and self.conn:
+                        self.conn.close()
+                except Exception:
+                    pass
+                
+                shutil.copy2(new_db, self.db_path)
+                self.logger.info("Successfully restored database from dump")
+                
+                # Re-initialize the connection
+                self._initialize_database()
+                return True
+                
+            finally:
+                # Clean up temporary files
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception as e:
+                    self.logger.warning(f"Error cleaning up temp files: {str(e)}")
+        
+        except Exception as e:
+            self.logger.error(f"Error during database dump and reload: {str(e)}")
+            return False
+    
     def execute_query(self, query, params=None):
         """Execute a SQL query and return results as a list of dicts."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            # Use the retry mechanism for database operations
+            return self._execute_with_retry(self._execute_query_internal, query, params)
+        except Exception as e:
+            self.logger.error(f"Error executing query: {str(e)}")
+            return []
+            
+    def _execute_query_internal(self, query, params=None):
+        """Internal method to execute SQL query with transaction handling."""
+        conn = sqlite3.connect(self.db_path)
+        try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             if params is None:
                 params = []
             cursor.execute(query, params)
+            
             if query.strip().upper().startswith("SELECT"):
                 rows = cursor.fetchall()
                 result = [dict(row) for row in rows]
             else:
                 conn.commit()
                 result = cursor.rowcount
-            conn.close()
+                
             return result
         except Exception as e:
-            self.logger.error(f"Error executing query: {str(e)}")
-            return [] 
+            if not query.strip().upper().startswith("SELECT"):
+                conn.rollback()
+            raise
+        finally:
+            conn.close()
+    
+    def _handle_database_error(self, error):
+        """
+        Handle database errors by attempting to repair the database.
+        This will be called when a database error is detected.
+        """
+        self.logger.error(f"Database error detected: {str(error)}")
+        
+        error_str = str(error).lower()
+        
+        # Try to recover from common SQLite errors
+        if "database disk image is malformed" in error_str or "database is locked" in error_str or "no such table" in error_str:
+            self.logger.warning("Attempting to repair database...")
+            
+            try:
+                # Try to close current connection if it exists
+                try:
+                    if self.conn:
+                        self.conn.close()
+                except Exception as close_err:
+                    self.logger.warning(f"Error closing connection: {str(close_err)}")
+                
+                # Check database integrity first
+                if "database disk image is malformed" in error_str:
+                    try:
+                        self.logger.info("Checking database integrity...")
+                        repair_result = self._check_and_repair_database()
+                        if repair_result:
+                            self.logger.info("Database integrity check and repair completed successfully")
+                            return True
+                    except Exception as integrity_err:
+                        self.logger.error(f"Failed to check/repair database integrity: {str(integrity_err)}")
+                
+                # Try to dump and reload the database
+                try:
+                    self.logger.info("Attempting to dump and reload database...")
+                    if self._dump_and_reload_database():
+                        self.logger.info("Database successfully dumped and reloaded")
+                        return True
+                except Exception as dump_err:
+                    self.logger.error(f"Failed to dump and reload database: {str(dump_err)}")
+                
+                # If all else fails, create a new database
+                self._create_new_database()
+                return True
+                
+            except Exception as repair_err:
+                self.logger.critical(f"All database repair attempts failed: {str(repair_err)}")
+                return False
+        else:
+            self.logger.error(f"Unhandled database error: {str(error)}")
+            return False 

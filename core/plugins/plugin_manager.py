@@ -438,15 +438,29 @@ class PluginManager:
             
         plugin_info = self.plugins[plugin_id]
         if plugin_info["instance"]:
-            self.logger.warning(f"Plugin {plugin_id} already loaded")
+            self.logger.debug(f"Plugin {plugin_id} already loaded, skipping")
             # Clear any previous errors if the plugin is already loaded
             if plugin_id in self.plugin_errors:
                 del self.plugin_errors[plugin_id]
             return True
         
+        self.logger.info(f"Loading plugin: {plugin_id} from {plugin_info['path']}")
+        
+        # Track loaded plugins to detect duplicate loading attempts
+        if not hasattr(self, '_plugin_load_count'):
+            self._plugin_load_count = {}
+        
+        # Check if this plugin has been loaded too many times
+        if plugin_id in self._plugin_load_count:
+            self._plugin_load_count[plugin_id] += 1
+            if self._plugin_load_count[plugin_id] > 1:
+                self.logger.warning(f"Multiple load attempts for plugin {plugin_id}, possible circular dependency or duplicate registration")
+        else:
+            self._plugin_load_count[plugin_id] = 1
+        
         # Timeouts for plugin loading stages
-        requirement_timeout = 30  # seconds
-        plugin_init_timeout = 10  # seconds
+        requirement_timeout = 60  # seconds - increased from 30
+        plugin_init_timeout = 30  # seconds - increased from 10 for complex plugins
             
         try:
             # Create plugin API first - must exist before plugin init
@@ -593,7 +607,9 @@ class PluginManager:
                 def plugin_thread():
                     """Thread for plugin initialization with timeout"""
                     try:
+                        self.logger.debug(f"Starting initialization of plugin {plugin_id}")
                         plugin_instance = module.init_plugin(plugin_api)
+                        self.logger.debug(f"Plugin {plugin_id} init_plugin() function completed successfully")
                         plugin_thread_result[0] = plugin_instance
                     except Exception as e:
                         error_msg = f"Error initializing plugin {plugin_id}: {str(e)}"
@@ -604,17 +620,26 @@ class PluginManager:
                         plugin_thread_complete.set()
                 
                 # Start thread for plugin initialization
-                thread = threading.Thread(target=plugin_thread)
+                thread = threading.Thread(target=plugin_thread, name=f"plugin-init-{plugin_id}")
                 thread.daemon = True
                 thread.start()
                 
-                # Wait for plugin initialization with timeout
+                # Wait for plugin initialization with timeout and show progress
+                init_progress = 0
                 while not plugin_thread_complete.is_set():
-                    if time.time() - plugin_start_time > plugin_init_timeout:
-                        error_msg = f"Plugin {plugin_id} initialization timed out"
+                    elapsed_time = time.time() - plugin_start_time
+                    if elapsed_time > plugin_init_timeout:
+                        error_msg = f"Plugin {plugin_id} initialization timed out after {plugin_init_timeout} seconds"
                         self.logger.error(error_msg)
+                        self.logger.error(f"Thread status: {thread.is_alive()}")
                         self.plugin_errors[plugin_id] = error_msg
                         return False
+                    
+                    # Log progress every 2 seconds
+                    if int(elapsed_time) % 2 == 0 and int(elapsed_time) != init_progress:
+                        init_progress = int(elapsed_time)
+                        self.logger.debug(f"Waiting for {plugin_id} initialization: {init_progress}s elapsed")
+                    
                     time.sleep(0.1)
                     
                     # Process events to keep UI responsive
@@ -824,8 +849,8 @@ class PluginManager:
         
         return success
     
-    def register_hook(self, hook_name, plugin_id, callback):
-        """Register a hook callback for a plugin."""
+    def register_hook(self, hook_name, callback):
+        """Register a hook callback."""
         if hook_name not in self.hooks:
             self.hooks[hook_name] = []
         
@@ -1008,6 +1033,20 @@ class PluginManager:
         
         return menu_items
     
+    def get_multi_device_menu_items(self, selected_devices=None) -> List[Dict]:
+        """Get menu items for multiple device operations.
+        
+        Args:
+            selected_devices: Optional list of selected devices
+            
+        Returns:
+            List of menu item dictionaries for multiple device operations
+        """
+        # For now, just return an empty list
+        # This will be properly implemented in a future version
+        self.logger.debug(f"Getting multi-device menu items for {len(selected_devices) if selected_devices else 0} devices")
+        return []
+    
     def refresh_menus(self):
         """Notify all registered menu callbacks that menus need to be refreshed."""
         self.logger.debug("Refreshing plugin menus")
@@ -1060,10 +1099,11 @@ class PluginManager:
         """Create a plugin API instance for a plugin."""
         return PluginAPI(plugin_id, self)
 
-    def register_menu_item(self, label, callback, enabled_callback=None, icon_path=None, shortcut=None, parent_menu=None):
+    def register_menu_item(self, plugin_id, label, callback, enabled_callback=None, icon_path=None, shortcut=None, parent_menu=None):
         """Register a menu item for the plugin.
         
         Args:
+            plugin_id: ID of the plugin registering the menu item
             label: Text to show in the menu
             callback: Function to call when clicked
             enabled_callback: Function that returns bool to determine if item is enabled
@@ -1074,22 +1114,40 @@ class PluginManager:
         Returns:
             bool: True if registration was successful
         """
-        menu_item = {
-            'plugin_id': self.plugin_id,
-            'label': label,
-            'callback': callback,
-            'enabled_callback': enabled_callback,
-            'icon_path': icon_path,
-            'shortcut': shortcut,
-            'parent_menu': parent_menu
-        }
-        self._menu_items.append(menu_item)
-        
-        # If we have a main window reference, update menus
-        if self.main_window:
-            self.main_window.refresh_menus()
-        
-        return True
+        try:
+            menu_item = {
+                'plugin_id': plugin_id,
+                'label': label,
+                'callback': callback,
+                'enabled_callback': enabled_callback,
+                'icon_path': icon_path,
+                'shortcut': shortcut,
+                'parent_menu': parent_menu
+            }
+            
+            # Find the plugin API for the given plugin_id
+            if plugin_id in self.plugin_apis:
+                api = self.plugin_apis[plugin_id]
+                
+                # Initialize _menu_items if it doesn't exist
+                if not hasattr(api, '_menu_items'):
+                    api._menu_items = []
+                
+                # Add the menu item to the plugin's list
+                api._menu_items.append(menu_item)
+                
+                # Refresh menus if main window is available
+                if self.main_window:
+                    self.main_window.refresh_menus()
+                
+                return True
+            else:
+                self.logger.error(f"Cannot register menu item: plugin ID not found: {plugin_id}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error registering menu item: {str(e)}")
+            return False
 
     def get_plugin_config(self, plugin_id):
         """Get the configuration for a specific plugin.
@@ -1155,14 +1213,17 @@ class PluginManager:
         self.main_window = main_window
         self.logger.debug("Main window reference set in plugin manager")
         
-        # Set main window reference in all plugin APIs
+        # Set main window reference in all plugin APIs and trigger callbacks
         for plugin_id, plugin_api in self.plugin_apis.items():
-            plugin_api.main_window = main_window
-            self.logger.debug(f"Main window reference set in plugin API for {plugin_id}")
-            
+            try:
+                plugin_api.set_main_window(main_window)  # This will also trigger callbacks
+                self.logger.debug(f"Main window reference set in plugin API for {plugin_id}")
+            except Exception as e:
+                self.logger.error(f"Error setting main window for plugin API {plugin_id}: {str(e)}")
+        
         # Note: workspace_manager is now handled by the core-workspace plugin
         # and is not set directly on plugin APIs
-
+    
     def get_plugin_errors(self):
         """Get a dictionary of plugin errors.
         
@@ -1207,19 +1268,51 @@ class PluginAPI:
         
         # Signal handlers
         self._main_window_ready_handlers = []
+        
+        # Menu items
+        self._menu_items = []
+    
+    def trigger_main_window_callbacks(self):
+        """Trigger main window ready callbacks without reinitializing the UI.
+        
+        This is separate from set_main_window to provide more control over when
+        callbacks are triggered and avoid duplicate UI component creation.
+        """
+        if self.main_window is None:
+            self._logger.warning("Cannot trigger callbacks: main window not available")
+            return
+            
+        # Call callbacks if they exist
+        if hasattr(self, '_main_window_ready_handlers'):
+            for callback in self._main_window_ready_handlers:
+                try:
+                    callback()  # Don't pass main_window parameter
+                except Exception as e:
+                    self._logger.error(f"Error in main window callback: {str(e)}")
+    
+    def set_main_window(self, main_window):
+        """Set the main window reference."""
+        try:
+            # Check if main window is already set to prevent duplicate initialization
+            if self.main_window is not None:
+                self._logger.debug("Main window already set, skipping callbacks")
+                return
+                
+            # Store main window reference
+            self.main_window = main_window
+            
+            # Trigger callbacks
+            self.trigger_main_window_callbacks()
+        except Exception as e:
+            self._logger.error(f"Error setting main window: {str(e)}")
     
     def register_hook(self, hook_name, callback):
-        """Register a hook for the plugin.
-        
-        Args:
-            hook_name: Name of the hook
-            callback: Callback function
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        return self._plugin_manager.register_hook(hook_name, self.plugin_id, callback)
-        
+        """Register a hook callback."""
+        if hook_name not in self.hook_callbacks:
+            self.hook_callbacks[hook_name] = []
+        self.hook_callbacks[hook_name].append(callback)
+        return callback
+    
     def hook(self, hook_name):
         """Decorator to register a hook callback.
         
@@ -1230,100 +1323,21 @@ class PluginAPI:
             Decorator function
         """
         def decorator(callback):
-            self._plugin_manager.register_hook(hook_name, self.plugin_id, callback)
+            self.register_hook(hook_name, callback)
             return callback
         return decorator
     
     def call_hook(self, hook_name, *args, **kwargs):
-        """Call a registered hook.
-        
-        Args:
-            hook_name: Name of the hook to call
-            *args: Arguments to pass to the hook
-            **kwargs: Keyword arguments to pass to the hook
-        """
-        return self._plugin_manager.trigger_hook(hook_name, *args, **kwargs)
-    
-    def register_function(self, function_name, callback):
-        """Register a function for the plugin that can be called by other plugins.
-        
-        Args:
-            function_name: Name of the function to register
-            callback: Function to call
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not hasattr(self, "_exported_functions"):
-            self._exported_functions = {}
-        
-        self._exported_functions[function_name] = callback
-        return True
-    
-    def call_function(self, function_name, *args, **kwargs):
-        """Call a registered function.
-        
-        Args:
-            function_name: Name of the function to call
-            *args: Arguments to pass to the function
-            **kwargs: Keyword arguments to pass to the function
-            
-        Returns:
-            The return value of the function
-        """
-        if not hasattr(self, "_exported_functions") or function_name not in self._exported_functions:
-            raise AttributeError(f"Function {function_name} not registered")
-        
-        return self._exported_functions[function_name](*args, **kwargs)
-    
-    def on_main_window_ready(self, callback):
-        """Register a callback to be executed when the main window is ready.
-        
-        Args:
-            callback: Function to call when main window is ready
-        """
-        if self.main_window is not None:
-            # Main window is already ready, call immediately
-            try:
-                callback()
-            except Exception as e:
-                self._logger.error(f"Error in main window ready callback: {str(e)}")
-        else:
-            # Store callback for later execution
-            self._main_window_ready_handlers.append(callback)
-    
-    def set_main_window(self, main_window):
-        """Set the main window reference.
-        
-        This is called by the application when the main window is ready.
-        
-        Args:
-            main_window: Reference to the main application window
-        """
-        try:
-            # Store main window reference
-            self.main_window = main_window
-            
-            # Execute all pending callbacks
-            for callback in self._main_window_ready_handlers:
+        """Call all registered callbacks for a hook."""
+        if hook_name in self.hook_callbacks:
+            for callback in self.hook_callbacks[hook_name]:
                 try:
-                    callback()
+                    callback(*args, **kwargs)
                 except Exception as e:
-                    import traceback
-                    error_msg = f"Error in main window ready callback: {str(e)}\n{traceback.format_exc()}"
-                    self._logger.error(error_msg)
-                    # Store error in plugin_manager.plugin_errors
-                    self._plugin_manager.plugin_errors[self.plugin_id] = error_msg
-                    
-            # Clear callbacks after execution
-            self._main_window_ready_handlers = []
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Error setting main window: {str(e)}\n{traceback.format_exc()}"
-            self._logger.error(error_msg)
-            # Store error in plugin_manager.plugin_errors
-            self._plugin_manager.plugin_errors[self.plugin_id] = error_msg
+                    error_msg = f"Error in hook '{hook_name}': {str(e)}"
+                    self._logger.error(error_msg, exc_info=True)
+                    if self._plugin_manager:
+                        self._plugin_manager.plugin_errors[self.plugin_id] = error_msg
     
     def log(self, message, level="INFO"):
         """Log a message to the application log.
@@ -1334,6 +1348,19 @@ class PluginAPI:
         """
         level_num = getattr(logging, level.upper(), logging.INFO)
         self._logger.log(level_num, message)
+    
+    def get_selected_devices(self):
+        """Get the currently selected device(s).
+        
+        Returns:
+            A device dictionary if one device is selected
+            A list of device dictionaries if multiple devices are selected
+            None or empty list if no devices are selected
+        """
+        if not self.main_window or not hasattr(self.main_window, 'device_table'):
+            return None
+            
+        return self.main_window.device_table.get_selected_devices()
     
     def send_message(self, target_plugin_id, message):
         """Send a message to another plugin."""
@@ -1390,6 +1417,10 @@ class PluginAPI:
         import weakref
         
         try:
+            # Initialize menu items list if it doesn't exist
+            if not hasattr(self, '_menu_items'):
+                self._menu_items = []
+                
             if self.main_window is None:
                 self._logger.warning("Cannot register menu item: main window not available")
                 # Schedule for when main window is ready
@@ -1398,15 +1429,24 @@ class PluginAPI:
                 ))
                 return False
             
-            # Register menu item with main window
-            return self._plugin_manager.register_menu_item(
-                label=label,
-                callback=callback,
-                enabled_callback=enabled_callback,
-                icon_path=icon_path,
-                shortcut=shortcut,
-                parent_menu=parent_menu
-            )
+            # Create menu item directly in our own list
+            menu_item = {
+                'plugin_id': self.plugin_id,
+                'label': label,
+                'callback': callback,
+                'enabled_callback': enabled_callback,
+                'icon_path': icon_path,
+                'shortcut': shortcut,
+                'parent_menu': parent_menu
+            }
+            self._menu_items.append(menu_item)
+            
+            # Refresh menus if main window is available
+            if self.main_window and hasattr(self.main_window, 'refresh_menus'):
+                self.main_window.refresh_menus()
+                
+            return True
+            
         except Exception as e:
             self._logger.error(f"Error registering menu item: {str(e)}")
             return False
@@ -1658,4 +1698,20 @@ class PluginAPI:
             self._main_window_ready_handlers = []
             self.hook_callbacks = {}
         except Exception as e:
-            self._logger.error(f"Error during cleanup: {str(e)}") 
+            self._logger.error(f"Error during cleanup: {str(e)}")
+    
+    def on_main_window_ready(self, callback):
+        """Register a callback to be executed when the main window is ready.
+        
+        Args:
+            callback: Function to call when main window is ready
+        """
+        if self.main_window is not None:
+            # Main window is already ready, call immediately
+            try:
+                callback()
+            except Exception as e:
+                self._logger.error(f"Error in main window ready callback: {str(e)}")
+        else:
+            # Store callback for later execution
+            self._main_window_ready_handlers.append(callback) 

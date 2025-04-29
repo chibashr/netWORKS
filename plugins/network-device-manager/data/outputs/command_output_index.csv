@@ -1,0 +1,3 @@
+device_ip,command,output_path,output_type,timestamp,comment
+10.1.8.2,show version,D:\SynologyDrive\Development\netWORKS\plugins\network-device-manager\data\outputs\10_1_8_2\show_version_20250428_192927.txt,text,2025-04-28 19:29:27,
+10.1.8.2,show version,D:\SynologyDrive\Development\netWORKS\plugins\network-device-manager\data\outputs\10_1_8_2\show_version_20250428_194627.txt,text,2025-04-28 19:46:27,

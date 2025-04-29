@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QPushButton, QComboBox, QLineEdit,
     QGroupBox, QRadioButton, QButtonGroup, QSpacerItem,
-    QSizePolicy, QProgressBar, QGridLayout
+    QSizePolicy, QProgressBar, QGridLayout, QDialog, QDialogButtonBox,
+    QSpinBox, QCheckBox
 )
 from PySide6.QtCore import Qt, Signal, Slot, QThread
 
@@ -108,12 +109,8 @@ class ScanControlPanel(QWidget):
                   "• 10.0.0.0/24<br>"
                   "• 172.16.1.1,172.16.1.5-10")
         
-        help_btn = QPushButton("?")
-        help_btn.setMaximumWidth(16)  # Make the button smaller
-        help_btn.setMaximumHeight(16)
-        help_btn.setStyleSheet("font-size: 8pt; padding: 0px;")  # Reduce padding and font size
-        help_btn.setToolTip(tooltip)
-        range_input_layout.addWidget(help_btn)
+        # Set tooltip on the range input itself instead of using a separate button
+        self.range_input.setToolTip(tooltip)
         
         range_layout.addLayout(range_input_layout)
         
@@ -125,9 +122,28 @@ class ScanControlPanel(QWidget):
         scan_type_layout.setContentsMargins(5, 10, 5, 10)
         scan_type_layout.setSpacing(5)
         
+        # Create a horizontal layout for scan type selection
+        scan_type_selector_layout = QHBoxLayout()
+        scan_type_selector_layout.setSpacing(10)  # Add spacing between elements
+        
+        # Add scan type combo box
         self.scan_type_combo = QComboBox()
         self.scan_type_combo.setMinimumWidth(200)
-        scan_type_layout.addWidget(self.scan_type_combo)
+        scan_type_selector_layout.addWidget(self.scan_type_combo)
+        
+        # Add configure button for manual scan
+        self.configure_manual_btn = QPushButton("Configure")
+        self.configure_manual_btn.setToolTip("Configure manual scan settings")
+        self.configure_manual_btn.setVisible(False)  # Hidden by default
+        self.configure_manual_btn.clicked.connect(self.configure_manual_scan)
+        self.configure_manual_btn.setMaximumWidth(100)  # Limit width to prevent layout issues
+        scan_type_selector_layout.addWidget(self.configure_manual_btn)
+        
+        # Add stretch to push elements to the left
+        scan_type_selector_layout.addStretch(1)
+        
+        # Add the selector layout to the main layout
+        scan_type_layout.addLayout(scan_type_selector_layout)
         
         layout.addWidget(scan_type_group)
         
@@ -187,6 +203,9 @@ class ScanControlPanel(QWidget):
             # Range type radio buttons
             self.interface_range_radio.toggled.connect(self.on_range_type_changed)
             self.custom_range_radio.toggled.connect(self.on_range_type_changed)
+            
+            # Scan type combo
+            self.scan_type_combo.currentIndexChanged.connect(self.on_scan_type_changed)
             
             self.logger.debug("ScanControlPanel signals connected successfully")
         except Exception as e:
@@ -269,59 +288,53 @@ class ScanControlPanel(QWidget):
             self.logger.error(f"Error forcing update range from interface: {str(e)}", exc_info=True)
     
     def refresh_interfaces(self):
-        """Refresh the list of network interfaces."""
+        """Refresh the list of available network interfaces."""
         try:
-            # Remember the previously selected interface
-            prev_index = self.interface_combo.currentIndex()
-            prev_data = self.interface_combo.itemData(prev_index) if prev_index >= 0 else None
-            
             self.interface_combo.clear()
             
+            # Get interfaces from plugin
             interfaces = self.plugin.get_network_interfaces()
             
-            for interface in interfaces:
-                name = interface.get("name", "")
-                ip = interface.get("ip", "")
-                alias = interface.get("alias", name)
+            # Filter to only show connected interfaces (with valid IP)
+            connected_interfaces = []
+            for iface in interfaces:
+                ip = iface.get('ip', '')
                 
-                # Format display name to always show status
+                # Skip interfaces without IP or with loopback IP
+                if not ip or ip.startswith('127.'):
+                    continue
+                
+                connected_interfaces.append(iface)
+            
+            # If no connected interfaces were found, add all interfaces as fallback
+            if not connected_interfaces:
+                connected_interfaces = interfaces
+            
+            # Add interfaces to combo box
+            for iface in connected_interfaces:
+                name = iface.get('name', '')
+                ip = iface.get('ip', '')
+                alias = iface.get('alias', name)
+                
+                # Format display text with IP address
                 if ip:
-                    display_name = f"{alias} ({ip})"
+                    display_text = f"{alias} ({ip})"
                 else:
-                    display_name = f"{alias} (disconnected)"
+                    display_text = alias
                 
-                # Store interface info in the item data
-                self.interface_combo.addItem(display_name, (name, ip, alias))
+                # Store name and IP as item data
+                self.interface_combo.addItem(display_text, (name, ip, alias))
             
-            # Try to select the previously selected interface if it exists
-            found_previous = False
-            if prev_data and isinstance(prev_data, tuple) and len(prev_data) >= 1:
-                for i in range(self.interface_combo.count()):
-                    curr_data = self.interface_combo.itemData(i)
-                    if curr_data and isinstance(curr_data, tuple) and len(curr_data) >= 1 and curr_data[0] == prev_data[0]:
-                        self.interface_combo.setCurrentIndex(i)
-                        found_previous = True
-                        break
+            # Add automatic option as the first item
+            self.interface_combo.insertItem(0, "Automatic (Best Interface)", ("auto", "", "Automatic"))
+            self.interface_combo.setCurrentIndex(0)
             
-            # If no interface is selected, select the first one
-            if not found_previous and self.interface_combo.currentIndex() < 0 and self.interface_combo.count() > 0:
-                self.interface_combo.setCurrentIndex(0)
-            
-            # Update range input with subnet of selected interface if interface range is selected
+            # Update IP range based on selection if using interface range
             if hasattr(self, 'interface_range_radio') and self.interface_range_radio.isChecked():
-                self.force_update_range_from_interface()
-            
-            # Connect change signal (after populating to avoid triggering on each item)
-            try:
-                self.interface_combo.currentIndexChanged.disconnect(self.update_range_from_interface)
-            except Exception:
-                # It's fine if it fails because the signal wasn't connected yet
-                pass
+                self.update_range_from_interface()
                 
-            self.interface_combo.currentIndexChanged.connect(self.update_range_from_interface)
-            
         except Exception as e:
-            self.logger.error(f"Error refreshing interfaces: {str(e)}", exc_info=True)
+            self.logger.error(f"Error refreshing interfaces: {str(e)}")
     
     def update_range_from_interface(self):
         """Update the IP range based on the selected interface."""
@@ -412,7 +425,16 @@ class ScanControlPanel(QWidget):
         template = self.plugin.config.get("scan_templates", {}).get(template_id)
         if not template:
             return
-    
+            
+        # Enable or disable controls based on selected template
+        if template_id == "manual_scan":
+            self.logger.debug("Manual scan selected")
+            # Show the configure button for manual scan
+            self.configure_manual_btn.setVisible(True)
+        else:
+            # Hide the configure button for other scan types
+            self.configure_manual_btn.setVisible(False)
+
     def on_start_scan(self):
         """Handle start scan button click."""
         # Get selected interface
@@ -494,6 +516,11 @@ class ScanControlPanel(QWidget):
         self.interface_combo.setEnabled(True)
         self.range_input.setEnabled(True)
         self.scan_type_combo.setEnabled(True)
+        
+        # Check if we need to show the Configure button for manual scan
+        template_id = self.scan_type_combo.itemData(self.scan_type_combo.currentIndex())
+        if template_id == "manual_scan":
+            self.configure_manual_btn.setVisible(True)
         
         # Also re-enable range type selection
         if hasattr(self, 'interface_range_radio'):
@@ -585,6 +612,41 @@ class ScanControlPanel(QWidget):
             
             scan_type = self.scan_type_combo.itemData(template_index)
             
+            # Check if it's a manual scan
+            template = self.plugin.config.get("scan_templates", {}).get(scan_type)
+            if not template:
+                self.logger.error(f"Template not found: {scan_type}")
+                self.status_label.setText(f"Error: Template not found: {scan_type}")
+                return
+                
+            kwargs = {}
+            
+            if template.get("manual", False):
+                # For manual scan, use the pre-configured settings
+                # If user hasn't configured yet, show the dialog
+                if not self.configure_manual_btn.isVisible() or template.get("first_use", True):
+                    # First time use or button not visible yet - show dialog
+                    scan_params = self.show_manual_scan_dialog(template, interface, ip_range)
+                    if not scan_params:
+                        # User cancelled
+                        return
+                    
+                    # Use the manually configured settings
+                    interface = scan_params.get("interface", interface)
+                    ip_range = scan_params.get("range", ip_range)
+                    scan_type = scan_params.get("scan_type", scan_type)
+                    kwargs = scan_params.get("options", {})
+                    
+                    # Update template to remove first_use flag
+                    template = self.plugin.config.get("scan_templates", {}).get(scan_type, {})
+                    template["first_use"] = False
+                    self.plugin.update_scan_template(scan_type, template)
+                else:
+                    # Use existing saved settings
+                    for key, value in template.items():
+                        if key not in ["name", "description", "manual", "first_use"]:
+                            kwargs[key] = value
+            
             # Start the scan
             self.logger.info(f"Starting scan on interface {interface} with range {ip_range}, type {scan_type}")
             
@@ -597,32 +659,171 @@ class ScanControlPanel(QWidget):
             self.interface_combo.setEnabled(False)
             self.range_input.setEnabled(False)
             self.scan_type_combo.setEnabled(False)
-            self.stop_scan_btn.setEnabled(True)
+            self.configure_manual_btn.setVisible(False)  # Hide config button during scan
             
-            # Also disable range type selection
+            # Disable range type radio buttons if present
             if hasattr(self, 'interface_range_radio'):
                 self.interface_range_radio.setEnabled(False)
                 self.custom_range_radio.setEnabled(False)
             
-            # Start the scan (this will create a background thread)
-            scan_id = self.plugin.start_scan(interface, ip_range, scan_type)
-            self.logger.debug(f"Scan started with ID: {scan_id}")
-            self.current_scan_id = scan_id
+            # Enable stop button
+            self.stop_scan_btn.setEnabled(True)
             
+            # Start the scan
+            try:
+                scan_id = self.plugin.start_scan(interface, ip_range, scan_type, **kwargs)
+                self.current_scan_id = scan_id
+            except Exception as e:
+                self.logger.error(f"Error starting scan: {str(e)}")
+                self.scan_error(f"Error starting scan: {str(e)}")
         except Exception as e:
-            self.logger.error(f"Error starting scan: {str(e)}", exc_info=True)
-            self.status_label.setText(f"Error: {str(e)}")
-            # Re-enable UI elements
-            self.start_scan_btn.setEnabled(True)
-            self.interface_combo.setEnabled(True)
-            self.range_input.setEnabled(True)
-            self.scan_type_combo.setEnabled(True)
-            self.stop_scan_btn.setEnabled(False)
+            self.logger.error(f"Error in scan method: {str(e)}")
+            self.scan_error(f"Error: {str(e)}")
+
+    def show_manual_scan_dialog(self, template, default_interface, default_range):
+        """Show dialog to configure manual scan settings.
+        
+        Args:
+            template: The template with default settings
+            default_interface: The default selected interface
+            default_range: The default IP range
             
-            # Also re-enable range type selection
-            if hasattr(self, 'interface_range_radio'):
-                self.interface_range_radio.setEnabled(True)
-                self.custom_range_radio.setEnabled(True)
+        Returns:
+            Dict with scan parameters or None if cancelled
+        """
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Manual Scan Configuration")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Interface selection
+        interface_group = QGroupBox("Network Interface")
+        interface_layout = QVBoxLayout(interface_group)
+        
+        interface_combo = QComboBox()
+        
+        # Add the current interfaces
+        for i in range(self.interface_combo.count()):
+            interface_combo.addItem(self.interface_combo.itemText(i), self.interface_combo.itemData(i))
+        
+        # Select the current interface
+        for i in range(interface_combo.count()):
+            item_data = interface_combo.itemData(i)
+            if item_data and isinstance(item_data, tuple) and len(item_data) > 0:
+                if item_data[0] == default_interface:
+                    interface_combo.setCurrentIndex(i)
+                    break
+        
+        interface_layout.addWidget(interface_combo)
+        layout.addWidget(interface_group)
+        
+        # IP Range
+        range_group = QGroupBox("IP Range")
+        range_layout = QVBoxLayout(range_group)
+        
+        range_input = QLineEdit(default_range)
+        range_layout.addWidget(range_input)
+        
+        layout.addWidget(range_group)
+        
+        # Scan settings
+        settings_group = QGroupBox("Scan Settings")
+        settings_layout = QFormLayout(settings_group)
+        
+        # Timeout (seconds)
+        timeout_spin = QSpinBox()
+        timeout_spin.setMinimum(1)
+        timeout_spin.setMaximum(30)
+        timeout_spin.setValue(template.get("timeout", 2))
+        settings_layout.addRow("Timeout (seconds):", timeout_spin)
+        
+        # Retries
+        retries_spin = QSpinBox()
+        retries_spin.setMinimum(1)
+        retries_spin.setMaximum(10)
+        retries_spin.setValue(template.get("retries", 2))
+        settings_layout.addRow("Retries:", retries_spin)
+        
+        # Parallel hosts
+        parallel_spin = QSpinBox()
+        parallel_spin.setMinimum(1)
+        parallel_spin.setMaximum(100)
+        parallel_spin.setValue(template.get("parallel", 25))
+        settings_layout.addRow("Parallel hosts:", parallel_spin)
+        
+        # Port scanning
+        port_check = QCheckBox("Scan common ports")
+        port_check.setChecked("ports" in template)
+        settings_layout.addRow("", port_check)
+        
+        # Port list
+        ports_input = QLineEdit()
+        default_ports = template.get("ports", [21, 22, 23, 25, 53, 80, 443, 445, 3389])
+        if default_ports:
+            ports_input.setText(",".join(map(str, default_ports)))
+        ports_input.setEnabled(port_check.isChecked())
+        settings_layout.addRow("Ports to scan:", ports_input)
+        
+        # Connect port check to ports input
+        port_check.toggled.connect(ports_input.setEnabled)
+        
+        layout.addWidget(settings_group)
+        
+        # Add note about scan time
+        note_label = QLabel(
+            "Note: High parallelism can speed up scans but may cause network congestion or false negatives.\n"
+            "For reliable results, keep parallel hosts between 25-50."
+        )
+        note_label.setWordWrap(True)
+        layout.addWidget(note_label)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+        
+        # Show dialog
+        result = dialog.exec()
+        
+        if result == QDialog.Accepted:
+            # Get selected interface
+            interface_idx = interface_combo.currentIndex()
+            interface_data = interface_combo.itemData(interface_idx)
+            interface = interface_data[0] if interface_data else default_interface
+            
+            # Get entered IP range
+            ip_range = range_input.text().strip()
+            if not ip_range:
+                ip_range = default_range
+            
+            # Get scan options
+            options = {
+                "timeout": timeout_spin.value(),
+                "retries": retries_spin.value(),
+                "parallel": parallel_spin.value()
+            }
+            
+            # Add ports if enabled
+            if port_check.isChecked() and ports_input.text().strip():
+                try:
+                    port_list = [int(p.strip()) for p in ports_input.text().split(",") if p.strip()]
+                    if port_list:
+                        options["ports"] = port_list
+                except ValueError:
+                    self.plugin.api.log("Invalid port format. Using default ports.", level="WARNING")
+                    options["ports"] = default_ports
+            
+            return {
+                "interface": interface,
+                "range": ip_range,
+                "scan_type": "manual_scan",
+                "options": options
+            }
+        
+        return None
 
     def stop_scan(self):
         """Stop the current network scan."""
@@ -791,4 +992,55 @@ class ScanControlPanel(QWidget):
             # We don't need to display it in this panel, but we'll update the status
             self.logger.debug(f"Device found during scan: {device_ip}")
         except Exception as e:
-            self.logger.error(f"Error handling new device: {str(e)}") 
+            self.logger.error(f"Error handling new device: {str(e)}")
+
+    def configure_manual_scan(self):
+        """Open the manual scan configuration dialog."""
+        # Get current interface
+        interface_index = self.interface_combo.currentIndex()
+        if interface_index < 0:
+            self.plugin.api.log("No interface selected", level="ERROR")
+            return
+            
+        interface_data = self.interface_combo.itemData(interface_index)
+        if not interface_data or not isinstance(interface_data, tuple) or len(interface_data) < 1:
+            self.logger.error("Invalid interface data")
+            return
+            
+        interface = interface_data[0]
+        
+        # Get current IP range
+        ip_range = self.range_input.text().strip()
+        
+        # Get manual scan template
+        template = self.plugin.config.get("scan_templates", {}).get("manual_scan", {})
+        
+        # Show the dialog
+        scan_params = self.show_manual_scan_dialog(template, interface, ip_range)
+        
+        # Store the configuration for later use when the scan starts
+        if scan_params:
+            # Save the configuration in the template for manual_scan
+            options = scan_params.get("options", {})
+            template.update(options)
+            self.plugin.update_scan_template("manual_scan", template)
+            
+            # Show confirmation to user
+            self.plugin.api.log("Manual scan settings saved")
+            self.status_label.setText("Manual scan configured")
+            
+            # If the interface or range changed, update UI
+            if scan_params["interface"] != interface:
+                # Find and select the interface in the combo box
+                for i in range(self.interface_combo.count()):
+                    item_data = self.interface_combo.itemData(i)
+                    if item_data and isinstance(item_data, tuple) and item_data[0] == scan_params["interface"]:
+                        self.interface_combo.setCurrentIndex(i)
+                        break
+            
+            # Update the range input if it changed
+            if scan_params["range"] != ip_range:
+                # Switch to custom range mode if using interface range
+                if self.interface_range_radio.isChecked():
+                    self.custom_range_radio.setChecked(True)
+                self.range_input.setText(scan_params["range"]) 

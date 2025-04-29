@@ -1,13 +1,14 @@
 {
-    "name": "example-plugin",
-    "displayName": "Example Plugin",
+    "name": "device-stats-analyzer",
+    "displayName": "Device Stats Analyzer",
     "version": "1.0.0",
-    "description": "An example plugin for netWORKS showcasing basic functionality",
+    "description": "Example plugin that demonstrates using the object-based database",
     "author": "netWORKS Team",
-    "main": "main.py",
+    "main": "object_db_example.py",
     "dependencies": [],
+    "features": ["object-database"],
     "ui": {
-        "panels": ["left", "bottom"]
+        "panels": ["right"]
     },
     "hooks": {
         "device_select": {

@@ -241,9 +241,10 @@ class ScanHistoryPanel(QWidget):
                     background-color: #f0f4f8;
                     border: 1px solid #d0dbe8;
                     border-radius: 2px;
-                    padding: 3px 5px;
+                    padding: 3px 8px;
                     color: #2c5aa0;
                     font-size: 11px;
+                    min-width: 70px;
                 }
                 QPushButton:hover {
                     background-color: #e8f0ff;
@@ -252,98 +253,112 @@ class ScanHistoryPanel(QWidget):
                 QPushButton:pressed {
                     background-color: #d0e0ff;
                 }
+                QPushButton:disabled {
+                    background-color: #f8f8f8;
+                    border-color: #e0e0e0;
+                    color: #a0a0a0;
+                }
             """
             
             for row, scan in enumerate(scan_history):
-                # Extract scan data
                 scan_id = scan.get("id", "")
-                scan_type = scan.get("scan_type", "unknown")
-                ip_range = scan.get("range", "")
+                scan_type = scan.get("scan_type", "")
+                range_text = scan.get("range", "")
                 start_time = scan.get("start_time", "")
                 end_time = scan.get("end_time", "")
                 devices_found = scan.get("devices_found", 0)
-                status = scan.get("status", "unknown")
+                status = scan.get("status", "")
                 
-                # Get template name instead of ID if available
-                template = self.plugin.config.get("scan_templates", {}).get(scan_type, {})
-                if template:
-                    scan_type = template.get("name", scan_type)
-                
-                # Create table items
-                id_item = QTableWidgetItem(scan_id)
-                type_item = QTableWidgetItem(scan_type)
-                range_item = QTableWidgetItem(ip_range)
-                start_item = QTableWidgetItem(start_time)
-                end_item = QTableWidgetItem(end_time if end_time else "Running...")
-                devices_item = QTableWidgetItem(str(devices_found))
-                status_item = QTableWidgetItem(status.capitalize())
-                
-                # Set item properties
-                id_item.setData(Qt.UserRole, scan_id)
-                
-                # Set status color
+                # Format status for display
+                status_display = status.capitalize()
+                status_color = "#000000"  # Default color
                 if status == "completed":
-                    status_item.setBackground(QColor(200, 255, 200))
+                    status_color = "#008800"  # Green
                 elif status == "running":
-                    status_item.setBackground(QColor(200, 200, 255))
+                    status_display = "Running..."
+                    status_color = "#0000CC"  # Blue
                 elif status == "stopped":
-                    status_item.setBackground(QColor(255, 255, 200))
+                    status_color = "#CC6600"  # Orange
                 elif status == "error":
-                    status_item.setBackground(QColor(255, 200, 200))
-                
-                # Add items to table
+                    status_color = "#CC0000"  # Red
+                    
+                # ID column (0)
+                id_item = QTableWidgetItem(scan_id)
+                id_item.setData(Qt.UserRole, scan_id)  # Store ID as user data
+                # Make ID less prominent to emphasize other columns
+                id_item.setForeground(QColor("#666666"))
                 self.table.setItem(row, 0, id_item)
-                self.table.setItem(row, 1, type_item)
-                self.table.setItem(row, 2, range_item)
-                self.table.setItem(row, 3, start_item)
-                self.table.setItem(row, 4, end_item)
-                self.table.setItem(row, 5, devices_item)
+                
+                # Type column (1)
+                # Get display name from template if available
+                template = self.plugin.config.get("scan_templates", {}).get(scan_type, {})
+                type_display = template.get("name", scan_type) if template else scan_type
+                self.table.setItem(row, 1, QTableWidgetItem(type_display))
+                
+                # Range column (2)
+                self.table.setItem(row, 2, QTableWidgetItem(range_text))
+                
+                # Start Time column (3)
+                self.table.setItem(row, 3, QTableWidgetItem(start_time))
+                
+                # End Time column (4)
+                self.table.setItem(row, 4, QTableWidgetItem(end_time if end_time else ""))
+                
+                # Devices Found column (5)
+                self.table.setItem(row, 5, QTableWidgetItem(str(devices_found)))
+                
+                # Status column (6)
+                status_item = QTableWidgetItem(status_display)
+                status_item.setForeground(QColor(status_color))
                 self.table.setItem(row, 6, status_item)
                 
-                # Create actions widget with improved layout
+                # Actions column (7)
                 actions_widget = QWidget()
                 actions_layout = QHBoxLayout(actions_widget)
                 actions_layout.setContentsMargins(4, 2, 4, 2)
-                actions_layout.setSpacing(4)
+                actions_layout.setSpacing(6)
                 
-                # Create fixed-width buttons
-                # View details button
+                # View button
                 view_btn = QPushButton("View")
-                view_btn.setFixedWidth(60)
+                view_btn.setStyleSheet(action_button_style)
                 view_btn.setProperty("scan_id", scan_id)
                 view_btn.clicked.connect(self.view_scan_details)
-                view_btn.setStyleSheet(action_button_style)
                 actions_layout.addWidget(view_btn)
+                
+                # Repeat button
+                repeat_btn = QPushButton("Repeat")
+                repeat_btn.setStyleSheet(action_button_style)
+                repeat_btn.setProperty("scan_id", scan_id)
+                repeat_btn.clicked.connect(self.repeat_scan)
+                actions_layout.addWidget(repeat_btn)
                 
                 # Stop button (only for running scans)
                 if status == "running":
                     stop_btn = QPushButton("Stop")
-                    stop_btn.setFixedWidth(60)
+                    stop_btn.setStyleSheet(action_button_style)
                     stop_btn.setProperty("scan_id", scan_id)
                     stop_btn.clicked.connect(self.stop_scan)
-                    stop_btn.setStyleSheet(action_button_style)
                     actions_layout.addWidget(stop_btn)
                 
-                # Repeat scan button
-                repeat_btn = QPushButton("Repeat")
-                repeat_btn.setFixedWidth(60)
-                repeat_btn.setProperty("scan_id", scan_id)
-                repeat_btn.clicked.connect(self.repeat_scan)
-                repeat_btn.setStyleSheet(action_button_style)
-                actions_layout.addWidget(repeat_btn)
-                
-                # Add a stretch to keep buttons aligned left
                 actions_layout.addStretch()
                 
+                # Ensure the QWidget fills the cell
+                actions_widget.setLayout(actions_layout)
                 self.table.setCellWidget(row, 7, actions_widget)
             
-            # Update summary
-            total_completed = sum(1 for scan in scan_history if scan.get("status") == "completed")
-            total_devices = sum(scan.get("devices_found", 0) for scan in scan_history)
-            self.summary_label.setText(
-                f"Total: {len(scan_history)} scans, {total_completed} completed, found {total_devices} devices total")
+            # Update summary label
+            self.summary_label.setText(f"Showing {self.table.rowCount()} of {len(self.plugin.scan_history)} scans")
+            
+            # Set proper column widths to fix squished buttons
+            header = self.table.horizontalHeader()
+            header.setSectionResizeMode(7, QHeaderView.Fixed)  # Fixed size for Actions column
+            self.table.setColumnWidth(7, 180)  # Set wider width for the actions column
+            
+            # Make range column stretch
+            header.setSectionResizeMode(2, QHeaderView.Stretch)
             
         except Exception as e:
+            self.plugin.api.log(f"Error updating scan history: {str(e)}", level="ERROR")
             self.logger.error(f"Error updating scan history: {str(e)}", exc_info=True)
     
     def clear_history(self):
@@ -430,6 +445,46 @@ class ScanHistoryPanel(QWidget):
         if not scan_data:
             self.plugin.api.log(f"Scan {scan_id} not found", level="ERROR")
             return
+        
+        # Get devices associated with this scan
+        devices = self.plugin.get_scan_devices(scan_id)
+        
+        # Load devices into the main device table
+        main_window = self.plugin.api.main_window
+        if main_window and hasattr(main_window, 'device_table'):
+            device_table = main_window.device_table
+            
+            # Ask if user wants to clear existing devices first
+            result = QMessageBox.question(
+                self,
+                "Load Scan Devices",
+                f"Found {len(devices)} devices in this scan. Load them into the device table?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if result == QMessageBox.Yes:
+                try:
+                    # Option to clear existing devices
+                    clear_result = QMessageBox.question(
+                        self,
+                        "Clear Existing Devices",
+                        "Clear existing devices from the table first?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No
+                    )
+                    
+                    if clear_result == QMessageBox.Yes:
+                        # Clear the device table
+                        device_table.clear_devices()
+                    
+                    # Add devices to table
+                    for device in devices:
+                        device_table.add_device(device)
+                    
+                    self.plugin.api.log(f"Loaded {len(devices)} devices from scan {scan_id}")
+                except Exception as e:
+                    self.plugin.api.log(f"Error loading devices: {str(e)}", level="ERROR")
             
         # Show details in a dialog
         from PySide6.QtWidgets import QDialog, QTextEdit, QVBoxLayout, QDialogButtonBox
@@ -447,8 +502,11 @@ class ScanHistoryPanel(QWidget):
         # Format scan data
         details_text = "Scan Details:\n\n"
         for key, value in scan_data.items():
-            if key == "results":
+            if key == "devices" and isinstance(value, dict):
                 details_text += f"{key}: {len(value)} devices\n"
+            elif key == "stop_event" or key == "results" or (key == "devices" and not isinstance(value, dict)):
+                # Skip these fields
+                pass
             else:
                 details_text += f"{key}: {value}\n"
                 

@@ -5,10 +5,13 @@ import logging
 from typing import List, Dict, Any, Optional
 from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QMenu, QAbstractItemView, QMessageBox, QWidget
+    QMenu, QAbstractItemView, QMessageBox, QWidget,
+    QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QComboBox,
+    QPushButton, QDialog, QFrame, QSplitter, QToolButton,
+    QApplication, QGroupBox
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QColor, QIcon
+from PySide6.QtCore import Qt, Signal, QSortFilterProxyModel, QRegularExpression
+from PySide6.QtGui import QAction, QColor, QIcon, QCursor
 import json
 import datetime
 import uuid
@@ -24,7 +27,11 @@ class DeviceTable(QTableWidget):
         self.devices = []  # List to store device data
         self.device_groups = {}  # Dictionary to store device groups {group_name: [device_id1, device_id2, ...]}
         self.custom_columns = []  # List to store custom column names
+        self.filters = {}  # Dictionary to store active filters {column_name: filter_value}
+        self.search_text = ""  # Current search text
+        self.current_grouping = None  # Current grouping mode (None, 'subnet', 'status', 'group')
         self.init_ui()
+        self.load_device_groups()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -74,6 +81,23 @@ class DeviceTable(QTableWidget):
         header = self.horizontalHeader()
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self.show_header_context_menu)
+    
+    def load_device_groups(self):
+        """Load device groups from the database if available."""
+        try:
+            if hasattr(self.main_window, 'database_manager') and self.main_window.database_manager:
+                stored_groups = self.main_window.database_manager.get_device_groups()
+                if stored_groups:
+                    self.device_groups = stored_groups
+                    if hasattr(self.main_window, 'bottom_panel'):
+                        self.main_window.bottom_panel.add_log_entry(
+                            f"Loaded {len(self.device_groups)} device groups from database", 
+                            level="INFO"
+                        )
+        except Exception as e:
+            logging.error(f"Error loading device groups: {str(e)}")
+            # Ensure device_groups is initialized
+            self.device_groups = self.device_groups or {}
     
     def setup_columns(self):
         """Setup the table columns according to configuration."""
@@ -374,6 +398,71 @@ class DeviceTable(QTableWidget):
         manage_groups_action = QAction("Manage Device Groups...", self)
         manage_groups_action.triggered.connect(self.manage_device_groups)
         menu.addAction(manage_groups_action)
+        
+        # Add Sort by IP Octet submenu
+        sort_menu = QMenu("Sort by IP", menu)
+        
+        sort_ip_action = QAction("Natural IP Order", self)
+        sort_ip_action.triggered.connect(lambda: self.sort_by_column("ip", "ascending"))
+        sort_menu.addAction(sort_ip_action)
+        
+        # Add sorting by each octet
+        for octet in range(1, 5):
+            octet_action = QAction(f"By Octet {octet}", self)
+            octet_action.triggered.connect(lambda checked, o=octet: self.sort_by_ip_octet(o))
+            sort_menu.addAction(octet_action)
+        
+        menu.addMenu(sort_menu)
+        
+        # Add Search and Filter submenu
+        search_filter_menu = QMenu("Search & Filter", menu)
+        
+        search_action = QAction("Search Devices...", self)
+        search_action.triggered.connect(self.show_search_dialog)
+        search_filter_menu.addAction(search_action)
+        
+        filter_action = QAction("Filter Devices...", self)
+        filter_action.triggered.connect(self.show_filter_dialog)
+        search_filter_menu.addAction(filter_action)
+        
+        if self.filters or self.search_text:
+            clear_filters_action = QAction("Clear All Filters/Search", self)
+            clear_filters_action.triggered.connect(self.clear_filters_and_search)
+            search_filter_menu.addAction(clear_filters_action)
+        
+        menu.addMenu(search_filter_menu)
+        
+        # Add Group By submenu
+        group_by_menu = QMenu("Group By", menu)
+        
+        # Add different grouping options
+        group_none_action = QAction("None (Flat List)", self)
+        group_none_action.setCheckable(True)
+        group_none_action.setChecked(self.current_grouping is None)
+        group_none_action.triggered.connect(lambda: self.apply_grouping(None))
+        group_by_menu.addAction(group_none_action)
+        
+        group_subnet_action = QAction("Network Subnet", self)
+        group_subnet_action.setCheckable(True)
+        group_subnet_action.setChecked(self.current_grouping == 'subnet')
+        group_subnet_action.triggered.connect(lambda: self.apply_grouping('subnet'))
+        group_by_menu.addAction(group_subnet_action)
+        
+        group_status_action = QAction("Device Status", self)
+        group_status_action.setCheckable(True)
+        group_status_action.setChecked(self.current_grouping == 'status')
+        group_status_action.triggered.connect(lambda: self.apply_grouping('status'))
+        group_by_menu.addAction(group_status_action)
+        
+        group_by_menu.addSeparator()
+        
+        group_custom_action = QAction("Device Groups", self)
+        group_custom_action.setCheckable(True)
+        group_custom_action.setChecked(self.current_grouping == 'group')
+        group_custom_action.triggered.connect(lambda: self.apply_grouping('group'))
+        group_by_menu.addAction(group_custom_action)
+        
+        menu.addMenu(group_by_menu)
         
         if selected_devices:
             # Add separator before device-specific actions
@@ -1290,42 +1379,137 @@ class DeviceTable(QTableWidget):
         return device_groups
     
     def manage_device_groups(self):
-        """Show dialog for managing device groups."""
+        """Show enhanced dialog for managing device groups with drag and drop."""
         from PySide6.QtWidgets import (
             QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
             QPushButton, QLabel, QInputDialog, QMessageBox, QSplitter,
-            QTreeWidget, QTreeWidgetItem
+            QTreeWidget, QTreeWidgetItem, QAbstractItemView, QFrame, QMenu
         )
+        from PySide6.QtCore import Qt, QMimeData
+        from PySide6.QtGui import QDrag, QPixmap, QPainter, QColor, QBrush
         
+        class DraggableTreeWidget(QTreeWidget):
+            """Custom TreeWidget with drag-and-drop support"""
+            
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.setDragEnabled(True)
+                self.setAcceptDrops(True)
+                self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+                self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+                
+            def startDrag(self, supportedActions):
+                # Start drag operation
+                items = self.selectedItems()
+                if not items:
+                    return
+                    
+                # Create drag object
+                drag = QDrag(self)
+                mime_data = QMimeData()
+                
+                # Store device IDs in mime data
+                device_ids = []
+                for item in items:
+                    device_id = item.data(0, Qt.ItemDataRole.UserRole)
+                    if device_id:
+                        device_ids.append(device_id)
+                
+                mime_data.setText(','.join(device_ids))
+                drag.setMimeData(mime_data)
+                
+                # Create a pixmap to represent the dragged items
+                pixmap = QPixmap(self.viewport().size())
+                pixmap.fill(QColor(0, 0, 0, 0))
+                painter = QPainter(pixmap)
+                painter.setOpacity(0.7)
+                painter.setBrush(QBrush(QColor(200, 220, 240)))
+                painter.drawRoundedRect(0, 0, pixmap.width(), min(pixmap.height(), 30 * len(items)), 8, 8)
+                painter.drawText(10, 20, f"{len(items)} device(s)")
+                painter.end()
+                
+                drag.setPixmap(pixmap)
+                drag.exec_(supportedActions)
+        
+        class GroupListWidget(QListWidget):
+            """Custom ListWidget with drop support for device groups"""
+            
+            def __init__(self, parent=None, device_table=None):
+                super().__init__(parent)
+                self.device_table = device_table
+                self.setAcceptDrops(True)
+                self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+                
+            def dragEnterEvent(self, event):
+                if event.mimeData().hasText():
+                    event.accept()
+                else:
+                    event.ignore()
+                    
+            def dragMoveEvent(self, event):
+                if event.mimeData().hasText():
+                    event.accept()
+                else:
+                    event.ignore()
+                    
+            def dropEvent(self, event):
+                if event.mimeData().hasText():
+                    device_ids = event.mimeData().text().split(',')
+                    
+                    # Find which group item was dropped on
+                    drop_item = self.itemAt(event.position().toPoint())
+                    if drop_item:
+                        group_name = drop_item.text()
+                        
+                        # Add devices to this group
+                        added_count = 0
+                        for device_id in device_ids:
+                            if self.device_table.add_device_to_group(device_id, group_name):
+                                added_count += 1
+                        
+                        if added_count > 0:
+                            drop_item.setSelected(True)
+                            event.accept()
+                            return
+                            
+                event.ignore()
+        
+        # Create dialog
         dialog = QDialog(self)
-        dialog.setWindowTitle("Manage Device Groups")
-        dialog.resize(800, 500)
+        dialog.setWindowTitle("Enhanced Device Group Management")
+        dialog.resize(900, 600)
         
         # Create layout
         layout = QVBoxLayout(dialog)
         
-        # Explanation label
-        label = QLabel("Create and manage device groups:")
-        layout.addWidget(label)
+        # Title and description
+        title_label = QLabel("<h2>Device Group Manager</h2>")
+        desc_label = QLabel("Create groups and organize your devices with drag and drop functionality.")
+        desc_label.setWordWrap(True)
+        
+        layout.addWidget(title_label)
+        layout.addWidget(desc_label)
         
         # Create splitter for groups and devices
         splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # === Left side: Groups management ===
-        left_widget = QWidget()
+        left_widget = QFrame()
+        left_widget.setFrameShape(QFrame.Shape.StyledPanel)
         left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
         
-        group_label = QLabel("Device Groups:")
+        group_label = QLabel("<b>Device Groups</b>")
         left_layout.addWidget(group_label)
         
         # List widget for groups
-        group_list = QListWidget()
+        group_list = GroupListWidget(device_table=self)
+        group_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         group_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         
         # Populate group list
         for group_name in self.device_groups.keys():
             item = QListWidgetItem(group_name)
+            item.setToolTip(f"{len(self.device_groups[group_name])} devices")
             group_list.addItem(item)
         
         left_layout.addWidget(group_list)
@@ -1343,37 +1527,134 @@ class DeviceTable(QTableWidget):
         
         left_layout.addLayout(group_button_layout)
         
-        # === Right side: Group member management ===
-        right_widget = QWidget()
+        # === Right side: Group member management with drag/drop ===
+        right_widget = QFrame()
+        right_widget.setFrameShape(QFrame.Shape.StyledPanel)
         right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
         
-        devices_label = QLabel("Devices:")
+        devices_label = QLabel("<b>Devices</b> (drag to add to groups)")
+        devices_label.setWordWrap(True)
         right_layout.addWidget(devices_label)
         
-        # Tree widget for devices with checkboxes
-        device_tree = QTreeWidget()
+        # Custom tree widget for devices with drag and drop
+        device_tree = DraggableTreeWidget()
         device_tree.setHeaderLabels(["Device", "IP", "Hostname"])
         device_tree.setColumnWidth(0, 250)
+        
+        # Helper to update check state without triggering itemChanged
+        def update_item_check_state(item, state):
+            item.setData(0, Qt.ItemDataRole.CheckStateRole, state)
         
         def populate_device_tree(selected_group=None):
             device_tree.clear()
             
-            for device in self.devices:
-                item = QTreeWidgetItem(device_tree)
-                item.setText(0, device.get('alias', device.get('hostname', 'Unknown')))
-                item.setText(1, device.get('ip', 'N/A'))
-                item.setText(2, device.get('hostname', 'Unknown'))
-                
-                # Store device ID in item
-                item.setData(0, Qt.ItemDataRole.UserRole, device.get('id', ''))
-                
-                # Check the item if device is in selected group
-                if selected_group and device.get('id', '') in self.device_groups.get(selected_group, []):
-                    item.setCheckState(0, Qt.CheckState.Checked)
-                else:
-                    item.setCheckState(0, Qt.CheckState.Unchecked)
+            # Add group label if a group is selected
+            if selected_group:
+                group_count = len(self.device_groups.get(selected_group, []))
+                devices_label.setText(f"<b>Devices in Group: {selected_group}</b> ({group_count} devices)")
+            else:
+                devices_label.setText("<b>All Devices</b> (drag to add to groups)")
+            
+            # Create IP-based organization for all devices
+            ip_octets = {}  # Structure: {first_octet: {second_octet: {third_octet: [devices]}}}
+            
+            devices_to_show = []
+            if selected_group:
+                # Only show devices in the selected group
+                group_device_ids = set(self.device_groups.get(selected_group, []))
+                devices_to_show = [d for d in self.devices if d.get('id', '') in group_device_ids]
+            else:
+                # Show all devices
+                devices_to_show = self.devices
+            
+            # Organize devices by IP octet
+            for device in devices_to_show:
+                ip = device.get('ip', '')
+                if not ip:
+                    continue
                     
+                try:
+                    octets = ip.split('.')
+                    if len(octets) == 4:
+                        o1, o2, o3, o4 = octets
+                        
+                        if o1 not in ip_octets:
+                            ip_octets[o1] = {}
+                        if o2 not in ip_octets[o1]:
+                            ip_octets[o1][o2] = {}
+                        if o3 not in ip_octets[o1][o2]:
+                            ip_octets[o1][o2][o3] = []
+                            
+                        ip_octets[o1][o2][o3].append(device)
+                    else:
+                        # Handle invalid IPs
+                        if 'invalid' not in ip_octets:
+                            ip_octets['invalid'] = {'0': {'0': []}}
+                        ip_octets['invalid']['0']['0'].append(device)
+                except Exception:
+                    # Handle any parsing errors
+                    if 'invalid' not in ip_octets:
+                        ip_octets['invalid'] = {'0': {'0': []}}
+                    ip_octets['invalid']['0']['0'].append(device)
+            
+            # Create tree structure based on IP octets
+            for o1 in sorted(ip_octets.keys(), key=lambda x: int(x) if x.isdigit() else 999):
+                o1_item = QTreeWidgetItem(device_tree)
+                o1_item.setText(0, f"Network {o1}.*.*.*")
+                o1_item.setFlags(o1_item.flags() | Qt.ItemFlag.ItemIsAutoTristate)
+                
+                # Count devices in this subnet
+                subnet_count = sum(len(ip_octets[o1][o2][o3]) for o2 in ip_octets[o1].values() 
+                                  for o3 in o2.values())
+                o1_item.setText(1, f"{subnet_count} devices")
+                
+                for o2 in sorted(ip_octets[o1].keys(), key=lambda x: int(x) if x.isdigit() else 999):
+                    o2_item = QTreeWidgetItem(o1_item)
+                    o2_item.setText(0, f"Subnet {o1}.{o2}.*.*")
+                    o2_item.setFlags(o2_item.flags() | Qt.ItemFlag.ItemIsAutoTristate)
+                    
+                    # Count devices in this subnet
+                    subnet_count = sum(len(ip_octets[o1][o2][o3]) for o3 in ip_octets[o1][o2].values())
+                    o2_item.setText(1, f"{subnet_count} devices")
+                    
+                    for o3 in sorted(ip_octets[o1][o2].keys(), key=lambda x: int(x) if x.isdigit() else 999):
+                        o3_item = QTreeWidgetItem(o2_item)
+                        o3_item.setText(0, f"Subnet {o1}.{o2}.{o3}.*")
+                        o3_item.setFlags(o3_item.flags() | Qt.ItemFlag.ItemIsAutoTristate)
+                        
+                        # Count devices
+                        devices = ip_octets[o1][o2][o3]
+                        o3_item.setText(1, f"{len(devices)} devices")
+                        
+                        # Add individual devices
+                        for device in sorted(devices, key=lambda d: d.get('ip', '')):
+                            item = QTreeWidgetItem(o3_item)
+                            
+                            # Display device with alias or hostname
+                            display_name = (
+                                device.get('alias') or 
+                                device.get('hostname') or 
+                                device.get('ip', 'Unknown')
+                            )
+                            item.setText(0, display_name)
+                            item.setText(1, device.get('ip', 'N/A'))
+                            item.setText(2, device.get('hostname', 'Unknown'))
+                            
+                            # Store device ID in item
+                            item.setData(0, Qt.ItemDataRole.UserRole, device.get('id', ''))
+                            
+                            # Set checkable if a group is selected
+                            if selected_group:
+                                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                                # Check if device is in selected group
+                                if device.get('id', '') in self.device_groups.get(selected_group, []):
+                                    update_item_check_state(item, Qt.CheckState.Checked)
+                                else:
+                                    update_item_check_state(item, Qt.CheckState.Unchecked)
+            
+            # Expand first level
+            device_tree.expandToDepth(0)
+        
         # Initialize with no group selected
         populate_device_tree()
         
@@ -1384,12 +1665,30 @@ class DeviceTable(QTableWidget):
         splitter.addWidget(right_widget)
         
         # Set initial splitter sizes
-        splitter.setSizes([300, 500])
+        splitter.setSizes([300, 600])
         
         layout.addWidget(splitter)
         
+        # Add status label
+        status_label = QLabel()
+        status_label.setWordWrap(True)
+        layout.addWidget(status_label)
+        
         # Button layout for dialog
         dialog_button_layout = QHBoxLayout()
+        
+        # Help button
+        help_button = QPushButton("Tips")
+        help_button.clicked.connect(lambda: QMessageBox.information(
+            dialog,
+            "Device Group Management Tips",
+            "• Create groups using the 'Add Group' button\n"
+            "• Select a group to see its devices\n"
+            "• Drag and drop devices between groups\n"
+            "• Use checkboxes to add/remove devices from the selected group\n"
+            "• Right-click on a group for more options"
+        ))
+        dialog_button_layout.addWidget(help_button)
         
         # Add spacer to push buttons to the right
         dialog_button_layout.addStretch()
@@ -1430,19 +1729,23 @@ class DeviceTable(QTableWidget):
                 
                 # Update device tree
                 populate_device_tree(group_name)
+                
+                status_label.setText(f"Created new group: {group_name}")
         
         add_group_button.clicked.connect(on_add_group)
         
         # Rename group button
-        def on_rename_group():
-            selected_items = group_list.selectedItems()
-            if not selected_items:
-                QMessageBox.warning(
-                    dialog, "Warning", "Please select a group to rename."
-                )
-                return
+        def on_rename_group(item=None):
+            if not item:
+                selected_items = group_list.selectedItems()
+                if not selected_items:
+                    QMessageBox.warning(
+                        dialog, "Warning", "Please select a group to rename."
+                    )
+                    return
+                item = selected_items[0]
             
-            current_name = selected_items[0].text()
+            current_name = item.text()
             new_name, ok = QInputDialog.getText(
                 dialog, "Rename Group", "Enter new name:", text=current_name
             )
@@ -1455,23 +1758,27 @@ class DeviceTable(QTableWidget):
                     return
                 
                 # Update group list
-                selected_items[0].setText(new_name)
+                item.setText(new_name)
                 
                 # Update device groups dictionary
                 self.device_groups[new_name] = self.device_groups.pop(current_name)
+                
+                status_label.setText(f"Renamed group '{current_name}' to '{new_name}'")
         
-        rename_group_button.clicked.connect(on_rename_group)
+        rename_group_button.clicked.connect(lambda: on_rename_group())
         
         # Delete group button
-        def on_delete_group():
-            selected_items = group_list.selectedItems()
-            if not selected_items:
-                QMessageBox.warning(
-                    dialog, "Warning", "Please select a group to delete."
-                )
-                return
+        def on_delete_group(item=None):
+            if not item:
+                selected_items = group_list.selectedItems()
+                if not selected_items:
+                    QMessageBox.warning(
+                        dialog, "Warning", "Please select a group to delete."
+                    )
+                    return
+                item = selected_items[0]
             
-            group_name = selected_items[0].text()
+            group_name = item.text()
             
             reply = QMessageBox.question(
                 dialog,
@@ -1483,7 +1790,7 @@ class DeviceTable(QTableWidget):
             
             if reply == QMessageBox.StandardButton.Yes:
                 # Remove from list
-                row = group_list.row(selected_items[0])
+                row = group_list.row(item)
                 group_list.takeItem(row)
                 
                 # Remove from device groups dictionary
@@ -1492,8 +1799,10 @@ class DeviceTable(QTableWidget):
                 
                 # Update device tree (with no group selected)
                 populate_device_tree()
+                
+                status_label.setText(f"Deleted group: {group_name}")
         
-        delete_group_button.clicked.connect(on_delete_group)
+        delete_group_button.clicked.connect(lambda: on_delete_group())
         
         # Group selection change
         def on_group_selection_changed():
@@ -1508,18 +1817,11 @@ class DeviceTable(QTableWidget):
         
         # Device checkbox state change
         def on_device_check_changed(item, column):
-            if column != 0:
+            if column != 0 or not item.flags() & Qt.ItemFlag.ItemIsUserCheckable:
                 return
                 
             selected_items = group_list.selectedItems()
             if not selected_items:
-                # If no group is selected, reset the checkbox
-                is_checked = item.checkState(0) == Qt.CheckState.Checked
-                if is_checked:
-                    item.setCheckState(0, Qt.CheckState.Unchecked)
-                    QMessageBox.warning(
-                        dialog, "Warning", "Please select a group first."
-                    )
                 return
                 
             group_name = selected_items[0].text()
@@ -1530,10 +1832,12 @@ class DeviceTable(QTableWidget):
                 # Add device to group
                 if device_id not in self.device_groups[group_name]:
                     self.device_groups[group_name].append(device_id)
+                    status_label.setText(f"Added device {item.text(0)} to group {group_name}")
             else:
                 # Remove device from group
                 if device_id in self.device_groups[group_name]:
                     self.device_groups[group_name].remove(device_id)
+                    status_label.setText(f"Removed device {item.text(0)} from group {group_name}")
         
         device_tree.itemChanged.connect(on_device_check_changed)
         
@@ -1549,7 +1853,7 @@ class DeviceTable(QTableWidget):
                     self.main_window.bottom_panel.add_log_entry("Device groups saved to database", level="INFO")
                 except Exception as e:
                     self.main_window.bottom_panel.add_log_entry(f"Error saving device groups: {str(e)}", level="ERROR")
-    
+
     def add_selected_devices_to_group(self, group_name):
         """Add selected devices to an existing group."""
         selected_devices = self.get_selected_devices()
@@ -1685,4 +1989,618 @@ class DeviceTable(QTableWidget):
         for i in range(self.columnCount()):
             if self.horizontalHeaderItem(i) and self.horizontalHeaderItem(i).text().lower() == column_name.lower():
                 return i
-        return -1 
+        return -1
+
+    def sort_by_ip_octet(self, octet_index):
+        """Sort the table by a specific IP address octet.
+        
+        Args:
+            octet_index: The octet index to sort by (1-4)
+        """
+        if not 1 <= octet_index <= 4:
+            return
+            
+        # Get the column index for IP
+        ip_col = self.get_column_index('ip')
+        if ip_col < 0:
+            return
+            
+        # Sort the rows based on the specified octet
+        try:
+            # Get all rows with their IP and row index
+            rows_with_ip = []
+            for row in range(self.rowCount()):
+                ip_item = self.item(row, ip_col)
+                if ip_item:
+                    ip_text = ip_item.text()
+                    try:
+                        # Extract the specified octet value
+                        octets = ip_text.split('.')
+                        if len(octets) >= octet_index:
+                            octet_value = int(octets[octet_index - 1])
+                        else:
+                            octet_value = 0
+                    except (ValueError, IndexError):
+                        octet_value = 0
+                        
+                    rows_with_ip.append((row, ip_text, octet_value))
+            
+            # Sort by the octet value
+            sorted_rows = sorted(rows_with_ip, key=lambda x: x[2])
+            
+            # Collect all items for each row
+            row_data = []
+            for row, _, _ in sorted_rows:
+                row_items = []
+                for col in range(self.columnCount()):
+                    item = self.item(row, col)
+                    if item:
+                        row_items.append(item.text())
+                    else:
+                        row_items.append("")
+                row_data.append(row_items)
+            
+            # Clear and rebuild the table
+            self.setSortingEnabled(False)
+            for row, row_items in enumerate(row_data):
+                for col, text in enumerate(row_items):
+                    if text:
+                        self.item(row, col).setText(text)
+            self.setSortingEnabled(True)
+            
+            # Update status
+            self.main_window.statusBar.showMessage(f"Sorted devices by IP octet {octet_index}", 5000)
+            
+        except Exception as e:
+            self.main_window.bottom_panel.add_log_entry(f"Error sorting by IP octet: {str(e)}", level="ERROR")
+            
+    # New methods for searching, filtering, and grouping
+    
+    def show_search_dialog(self):
+        """Show dialog for searching devices in the table."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Search Devices")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Search field with label
+        search_layout = QHBoxLayout()
+        search_label = QLabel("Search:")
+        search_layout.addWidget(search_label)
+        
+        search_input = QLineEdit()
+        search_input.setPlaceholderText("Enter search text...")
+        search_input.setText(self.search_text)  # Pre-fill with current search text
+        search_layout.addWidget(search_input)
+        
+        # Search column selection
+        column_layout = QHBoxLayout()
+        column_label = QLabel("Search in:")
+        column_layout.addWidget(column_label)
+        
+        column_combo = QComboBox()
+        column_combo.addItem("All Columns", "all")
+        
+        # Add all columns to combo box
+        for i in range(self.columnCount()):
+            column_name = self.horizontalHeaderItem(i).text()
+            column_combo.addItem(column_name, column_name)
+        
+        column_layout.addWidget(column_combo)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        clear_button = QPushButton("Clear")
+        clear_button.clicked.connect(lambda: search_input.clear())
+        button_layout.addWidget(clear_button)
+        
+        search_button = QPushButton("Search")
+        search_button.setDefault(True)
+        button_layout.addWidget(search_button)
+        
+        # Add layouts to main layout
+        layout.addLayout(search_layout)
+        layout.addLayout(column_layout)
+        layout.addLayout(button_layout)
+        
+        # Connect search button
+        def do_search():
+            search_text = search_input.text().strip()
+            search_column = column_combo.currentData()
+            self.search_text = search_text
+            
+            # Apply search
+            if search_text:
+                self.apply_search(search_text, search_column)
+                self.main_window.statusBar.showMessage(f"Searching for '{search_text}'", 5000)
+            else:
+                self.clear_search()
+                self.main_window.statusBar.showMessage("Search cleared", 5000)
+            
+            dialog.accept()
+        
+        search_button.clicked.connect(do_search)
+        search_input.returnPressed.connect(do_search)
+        
+        # Show dialog
+        dialog.exec()
+    
+    def apply_search(self, search_text, search_column):
+        """Apply search filter to the table.
+        
+        Args:
+            search_text (str): Text to search for
+            search_column (str): Column to search in or 'all' for all columns
+        """
+        self.search_text = search_text
+        
+        # Save current selection
+        selected_rows = []
+        for item in self.selectedItems():
+            selected_rows.append(item.row())
+        selected_rows = list(set(selected_rows))
+        
+        # Hide all rows initially
+        for row in range(self.rowCount()):
+            self.setRowHidden(row, True)
+        
+        # If search text is empty, show all rows and return
+        if not search_text:
+            for row in range(self.rowCount()):
+                self.setRowHidden(row, False)
+            return
+        
+        # Search for matches
+        matches_found = 0
+        
+        # Determine which columns to search
+        columns_to_search = []
+        if search_column == 'all':
+            columns_to_search = range(self.columnCount())
+        else:
+            # Find the column index for the specified column name
+            for i in range(self.columnCount()):
+                if self.horizontalHeaderItem(i).text() == search_column:
+                    columns_to_search = [i]
+                    break
+        
+        # Search each row
+        for row in range(self.rowCount()):
+            row_matches = False
+            
+            for col in columns_to_search:
+                item = self.item(row, col)
+                if item and search_text.lower() in item.text().lower():
+                    row_matches = True
+                    break
+            
+            # Apply filter
+            if row_matches:
+                self.setRowHidden(row, False)
+                matches_found += 1
+            else:
+                self.setRowHidden(row, True)
+        
+        # Update status
+        self.main_window.statusBar.showMessage(f"Found {matches_found} matching devices", 5000)
+        
+        # Restore selection where possible
+        for row in selected_rows:
+            if row < self.rowCount() and not self.isRowHidden(row):
+                self.selectRow(row)
+    
+    def clear_search(self):
+        """Clear current search and show all rows."""
+        self.search_text = ""
+        
+        # Show all rows
+        for row in range(self.rowCount()):
+            self.setRowHidden(row, False)
+    
+    def show_filter_dialog(self):
+        """Show dialog for filtering devices in the table."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Filter Devices")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Instructions
+        instructions = QLabel("Select columns and values to filter the device table:")
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+        
+        # Filters group
+        filters_group = QGroupBox("Active Filters")
+        filters_layout = QVBoxLayout(filters_group)
+        
+        # Table for current filters
+        from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
+        
+        filters_table = QTableWidget(0, 3)  # Column, Value, Delete button
+        filters_table.setHorizontalHeaderLabels(["Column", "Value", "Remove"])
+        filters_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        filters_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        filters_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        
+        # Add current filters to table
+        for column, value in self.filters.items():
+            row = filters_table.rowCount()
+            filters_table.insertRow(row)
+            filters_table.setItem(row, 0, QTableWidgetItem(column))
+            filters_table.setItem(row, 1, QTableWidgetItem(value))
+            
+            # Add delete button
+            remove_button = QPushButton("✕")
+            remove_button.setFixedWidth(30)
+            remove_button.clicked.connect(lambda checked, r=row: filters_table.removeRow(r))
+            filters_table.setCellWidget(row, 2, remove_button)
+        
+        filters_layout.addWidget(filters_table)
+        
+        # Add new filter section
+        add_filter_group = QGroupBox("Add Filter")
+        add_filter_layout = QFormLayout(add_filter_group)
+        
+        # Column selection
+        column_combo = QComboBox()
+        for i in range(self.columnCount()):
+            column_name = self.horizontalHeaderItem(i).text()
+            column_combo.addItem(column_name)
+        
+        add_filter_layout.addRow("Column:", column_combo)
+        
+        # Value input
+        value_input = QLineEdit()
+        value_input.setPlaceholderText("Filter value")
+        add_filter_layout.addRow("Value:", value_input)
+        
+        # Add filter button
+        add_filter_button = QPushButton("Add Filter")
+        
+        def add_filter():
+            column = column_combo.currentText()
+            value = value_input.text().strip()
+            
+            if value:
+                # Add to filters table
+                row = filters_table.rowCount()
+                filters_table.insertRow(row)
+                filters_table.setItem(row, 0, QTableWidgetItem(column))
+                filters_table.setItem(row, 1, QTableWidgetItem(value))
+                
+                # Add delete button
+                remove_button = QPushButton("✕")
+                remove_button.setFixedWidth(30)
+                remove_button.clicked.connect(lambda checked, r=row: filters_table.removeRow(r))
+                filters_table.setCellWidget(row, 2, remove_button)
+                
+                # Clear input
+                value_input.clear()
+        
+        add_filter_button.clicked.connect(add_filter)
+        value_input.returnPressed.connect(add_filter)
+        
+        add_filter_layout.addRow("", add_filter_button)
+        
+        # Add groups to layout
+        layout.addWidget(filters_group)
+        layout.addWidget(add_filter_group)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        clear_button = QPushButton("Clear All")
+        clear_button.clicked.connect(lambda: filters_table.setRowCount(0))
+        button_layout.addWidget(clear_button)
+        
+        apply_button = QPushButton("Apply Filters")
+        apply_button.setDefault(True)
+        
+        def apply_filters():
+            # Build filters dictionary from table
+            new_filters = {}
+            for row in range(filters_table.rowCount()):
+                column = filters_table.item(row, 0).text()
+                value = filters_table.item(row, 1).text()
+                new_filters[column] = value
+            
+            # Apply filters
+            self.filters = new_filters
+            if new_filters:
+                self.apply_filters()
+                self.main_window.statusBar.showMessage(f"Applied {len(new_filters)} filters", 5000)
+            else:
+                self.clear_filters()
+                self.main_window.statusBar.showMessage("Filters cleared", 5000)
+            
+            dialog.accept()
+        
+        apply_button.clicked.connect(apply_filters)
+        button_layout.addWidget(apply_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Show dialog
+        dialog.exec()
+    
+    def apply_filters(self):
+        """Apply current filters to the table."""
+        # Save current selection
+        selected_rows = []
+        for item in self.selectedItems():
+            selected_rows.append(item.row())
+        selected_rows = list(set(selected_rows))
+        
+        # Hide all rows initially
+        for row in range(self.rowCount()):
+            self.setRowHidden(row, True)
+        
+        # If no filters, show all rows and return
+        if not self.filters:
+            for row in range(self.rowCount()):
+                self.setRowHidden(row, False)
+            return
+        
+        # Find column indices for filter columns
+        column_indices = {}
+        for column_name in self.filters.keys():
+            for i in range(self.columnCount()):
+                if self.horizontalHeaderItem(i).text() == column_name:
+                    column_indices[column_name] = i
+                    break
+        
+        # Apply filters to each row
+        matches_found = 0
+        
+        for row in range(self.rowCount()):
+            row_matches = True
+            
+            for column_name, filter_value in self.filters.items():
+                if column_name in column_indices:
+                    col_index = column_indices[column_name]
+                    item = self.item(row, col_index)
+                    
+                    if not item or filter_value.lower() not in item.text().lower():
+                        row_matches = False
+                        break
+            
+            # Apply filter
+            if row_matches:
+                self.setRowHidden(row, False)
+                matches_found += 1
+            else:
+                self.setRowHidden(row, True)
+        
+        # Update status
+        self.main_window.statusBar.showMessage(f"Found {matches_found} matching devices", 5000)
+        
+        # Restore selection where possible
+        for row in selected_rows:
+            if row < self.rowCount() and not self.isRowHidden(row):
+                self.selectRow(row)
+    
+    def clear_filters(self):
+        """Clear current filters and show all rows."""
+        self.filters = {}
+        
+        # Show all rows
+        for row in range(self.rowCount()):
+            self.setRowHidden(row, False)
+    
+    def clear_filters_and_search(self):
+        """Clear both filters and search, showing all rows."""
+        self.filters = {}
+        self.search_text = ""
+        
+        # Show all rows
+        for row in range(self.rowCount()):
+            self.setRowHidden(row, False)
+        
+        self.main_window.statusBar.showMessage("All filters and search criteria cleared", 5000)
+    
+    def apply_grouping(self, grouping_mode):
+        """Apply grouping to the table view.
+        
+        Args:
+            grouping_mode (str): Mode to group by ('subnet', 'status', 'group', or None)
+        """
+        self.current_grouping = grouping_mode
+        
+        # Save current selection
+        selected_devices = self.get_selected_devices()
+        
+        if grouping_mode is None:
+            # Restore to flat list view
+            self.update_data(self.devices)
+            self.main_window.statusBar.showMessage("Displaying flat device list", 3000)
+            return
+        
+        elif grouping_mode == 'subnet':
+            self.group_by_subnet()
+            
+        elif grouping_mode == 'status':
+            self.group_by_status()
+            
+        elif grouping_mode == 'group':
+            self.group_by_device_groups()
+        
+        # Try to restore selection
+        if selected_devices:
+            selected_ips = [device.get('ip', '') for device in selected_devices]
+            for row in range(self.rowCount()):
+                ip_item = self.item(row, 0)  # IP is typically in the first column
+                if ip_item and ip_item.text() in selected_ips:
+                    self.selectRow(row)
+    
+    def group_by_subnet(self):
+        """Group devices by network subnet."""
+        # Save current data
+        current_devices = self.devices.copy()
+        
+        # Clear table
+        self.setRowCount(0)
+        self.devices = []
+        
+        # Organize devices by subnet
+        subnets = {}
+        
+        for device in current_devices:
+            # Skip group headers if regrouping
+            if device.get('is_group_header', False):
+                continue
+                
+            ip = device.get('ip', '')
+            if not ip:
+                continue
+                
+            # Extract first 3 octets for /24 subnet
+            subnet = '.'.join(ip.split('.')[:3])
+            if subnet not in subnets:
+                subnets[subnet] = []
+            
+            subnets[subnet].append(device)
+        
+        # Add subnet headers and devices
+        for subnet, subnet_devices in sorted(subnets.items()):
+            # Add subnet header row
+            self.add_group_header_row(f"Subnet: {subnet}.0/24 ({len(subnet_devices)} devices)")
+            
+            # Add devices in this subnet
+            for device in sorted(subnet_devices, key=lambda d: d.get('ip', '')):
+                self.add_device(device)
+        
+        self.main_window.statusBar.showMessage(f"Grouped by subnet: {len(subnets)} subnets", 3000)
+    
+    def group_by_status(self):
+        """Group devices by status (active, inactive, unknown)."""
+        # Save current data
+        current_devices = self.devices.copy()
+        
+        # Clear table
+        self.setRowCount(0)
+        self.devices = []
+        
+        # Organize devices by status
+        status_groups = {
+            'active': [],
+            'inactive': [],
+            'unknown': []
+        }
+        
+        for device in current_devices:
+            # Skip group headers if regrouping
+            if device.get('is_group_header', False):
+                continue
+                
+            status = device.get('status', 'unknown').lower()
+            if status not in status_groups:
+                status = 'unknown'
+            
+            status_groups[status].append(device)
+        
+        # Order of status groups for display
+        status_order = ['active', 'inactive', 'unknown']
+        
+        # Add status headers and devices
+        for status in status_order:
+            devices = status_groups[status]
+            if devices:
+                # Add status header row
+                self.add_group_header_row(f"Status: {status.capitalize()} ({len(devices)} devices)")
+                
+                # Add devices in this status group
+                for device in sorted(devices, key=lambda d: d.get('ip', '')):
+                    self.add_device(device)
+        
+        self.main_window.statusBar.showMessage("Grouped by device status", 3000)
+    
+    def group_by_device_groups(self):
+        """Group devices by custom device groups."""
+        # Save current data
+        current_devices = self.devices.copy()
+        
+        # Clear table
+        self.setRowCount(0)
+        self.devices = []
+        
+        # Create a lookup for faster device finding
+        device_lookup = {}
+        for device in current_devices:
+            # Skip group headers if regrouping
+            if device.get('is_group_header', False):
+                continue
+                
+            device_id = device.get('id', '')
+            if device_id:
+                device_lookup[device_id] = device
+        
+        # Track which devices have been added to a group
+        devices_in_groups = set()
+        
+        # Add devices by group
+        for group_name, device_ids in sorted(self.device_groups.items()):
+            # Get all devices in this group
+            group_devices = []
+            for device_id in device_ids:
+                if device_id in device_lookup:
+                    group_devices.append(device_lookup[device_id])
+                    devices_in_groups.add(device_id)
+            
+            if group_devices:
+                # Add group header row
+                self.add_group_header_row(f"Group: {group_name} ({len(group_devices)} devices)")
+                
+                # Add devices in this group
+                for device in sorted(group_devices, key=lambda d: d.get('ip', '')):
+                    self.add_device(device)
+        
+        # Add ungrouped devices at the end
+        ungrouped_devices = [
+            device for device in current_devices 
+            if not device.get('is_group_header', False) and device.get('id', '') not in devices_in_groups
+        ]
+        
+        if ungrouped_devices:
+            # Add ungrouped header row
+            self.add_group_header_row(f"Ungrouped Devices ({len(ungrouped_devices)} devices)")
+            
+            # Add ungrouped devices
+            for device in sorted(ungrouped_devices, key=lambda d: d.get('ip', '')):
+                self.add_device(device)
+        
+        self.main_window.statusBar.showMessage(f"Grouped by custom device groups: {len(self.device_groups)} groups", 3000)
+    
+    def add_group_header_row(self, header_text):
+        """Add a group header row to the table.
+        
+        Args:
+            header_text (str): Header text to display
+        """
+        row_position = self.rowCount()
+        self.insertRow(row_position)
+        
+        # Create header item in first column
+        header_item = QTableWidgetItem(header_text)
+        header_item.setBackground(QColor(225, 235, 245))  # Light blue background
+        header_item.setForeground(QColor(40, 80, 140))    # Dark blue text
+        font = header_item.font()
+        font.setBold(True)
+        header_item.setFont(font)
+        
+        # Set the header item to span all columns
+        self.setItem(row_position, 0, header_item)
+        self.setSpan(row_position, 0, 1, self.columnCount())
+        
+        # Make header row unselectable
+        flags = header_item.flags()
+        flags &= ~Qt.ItemFlag.ItemIsSelectable
+        header_item.setFlags(flags)
+        
+        # Store empty device data for this row
+        self.devices.append({'is_group_header': True, 'header_text': header_text})

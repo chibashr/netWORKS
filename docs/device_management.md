@@ -262,13 +262,13 @@ Plugins can add their own custom fields to the metadata dictionary. When display
 
 ## Database Storage
 
-netWORKS stores all device information in a SQLite database for persistence and efficient querying:
+netWORKS stores all device information in a file-based object storage system for persistence and efficient access:
 
-### Device Database Structure
+### Device Storage Structure
 
-The device database includes the following tables:
+The object storage system organizes data in typed collections:
 
-1. **devices**: Stores the core device information
+1. **Devices Collection**: Stores core device information as Device objects
    - **id**: Unique identifier for the device (UUID)
    - **ip**: IP address (primary identifier for user interaction)
    - **mac**: MAC address 
@@ -278,50 +278,115 @@ The device database includes the following tables:
    - **first_seen**: Timestamp when the device was first discovered
    - **last_seen**: Timestamp when the device was last seen
    - **status**: Current status (active, inactive, etc.)
-   - **metadata**: JSON-encoded metadata dictionary
-   - **tags**: JSON-encoded array of device tags
+   - **metadata**: Dictionary for extensible metadata
+   - **tags**: Array of device tags
    - **notes**: User notes about the device
 
-2. **device_history**: Tracks historical events for devices
-   - **id**: Unique event ID
+2. **Device History Collection**: Tracks historical events for devices as DeviceHistory objects
    - **device_id**: Reference to the device ID
    - **ip**: IP address of the device
    - **event_type**: Type of event (discovery, update, deletion, etc.)
-   - **event_data**: JSON-encoded event data
+   - **event_data**: Event data stored as a dictionary
    - **timestamp**: When the event occurred
 
-### Benefits of Database Storage
+### Benefits of Object Storage
 
-The database-based device management provides several benefits:
+The object-based storage system provides several benefits:
 
+- **Object-Oriented Access**: Work directly with typed objects rather than raw data
+- **Schema Flexibility**: Easily add new fields and properties without schema updates
 - **Persistence**: All device information is automatically stored and preserved
+- **No External Dependencies**: No database engine needed, just simple file storage
 - **History Tracking**: Keep track of when devices were first discovered and last seen
 - **Event History**: Full history of events related to each device
 - **Efficient Searching**: Fast lookups and filtering based on any device property
 - **Data Integrity**: Ensures all device data is properly stored and related
 
+### File Format
+
+The storage system uses JSON files to store collections of objects, organized by type:
+
+- `devices.json`: Contains all device objects
+- `device_history.json`: Contains all device history events 
+- `plugin_data.json`: Contains plugin-specific data
+- `app_settings.json`: Contains application settings
+
+Each file organizes objects by a primary key (like IP address for devices) for efficient access.
+
 ### Programmatic Access
 
-Plugins can access the device database through the provided APIs:
+Plugins can access device data through the object-oriented API provided by PluginAPI:
 
 ```python
-# Add or update a device in the database
-device_manager.save_device({
+# Get the currently selected device(s)
+selected_device = self.api.get_selected_devices()
+
+# Get all devices
+all_devices = self.api.get_all_devices()
+
+# Add a device to the workspace
+self.api.add_device({
     'ip': '192.168.1.100',
     'hostname': 'device-100',
     'mac': '00:11:22:33:44:55',
     'metadata': {'os': 'Windows 10'}
 })
 
-# Get a device by IP
-device = device_manager.get_device('192.168.1.100')
+# Update an existing device
+self.api.update_device({
+    'ip': '192.168.1.100',  # IP is required for identifying the device
+    'hostname': 'updated-hostname',
+    'metadata': {'os': 'Windows 11'}
+})
 
-# Get all devices
-devices = device_manager.get_all_devices()
+# Remove a device
+self.api.remove_device(device_id)
 
 # Search for devices
-search_results = device_manager.search_devices('windows')
+search_results = self.api.search_devices('windows')
 
-# Get device history
-history = device_manager.get_device_history('192.168.1.100')
+# Working with device groups
+groups = self.api.get_device_groups()
+self.api.create_device_group('Servers')
+self.api.add_device_to_group(device_id, 'Servers')
+self.api.get_devices_in_group('Servers')
+```
+
+This object-oriented API provides a clean interface to device data, ensuring data integrity and proper event handling. For more advanced usage, plugins can also access the underlying object store directly through the database manager.
+
+### Object-Oriented API for Advanced Usage
+
+Plugins can use the object-oriented API for more direct interaction with the storage system:
+
+```python
+# Get the database manager
+db_manager = self.api.get_database_manager()
+
+# Get a device as an object
+device = db_manager.get_device_object(ip_address)
+
+# Use object properties and methods
+print(device.hostname)
+device.hostname = "new-hostname"
+device.set_metadata("location", "server-room")
+device.add_tag("important")
+
+# Save changes
+db_manager.add_device_object(device)
+
+# Working with multiple devices
+devices = db_manager.get_device_objects()
+active_devices = [d for d in devices if d.status == 'active']
+```
+
+### Backup and Restore
+
+The storage system includes built-in backup and restore capabilities:
+
+```python
+# Create a backup
+db_manager.backup_database("backups/my_backup")
+
+# Restore from a backup
+db_manager.restore_database("backups/my_backup")
 ``` 

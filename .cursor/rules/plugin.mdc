@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: 
+globs: 
 alwaysApply: false
 ---
 # netWORKS Plugin Development Guide
@@ -10,7 +10,7 @@ This guide will help you create plugins for the netWORKS application, with refer
 ## Quick Start
 
 1. Create a new directory under `plugins/` with your plugin name
-2. Create the required files (see [Plugin Structure](#plugin-structure))
+2. Create the required files (see [Plugin Structure](mdc:#plugin-structure))
 3. Implement the plugin class and required functions
 4. Test your plugin within netWORKS
 
@@ -29,7 +29,7 @@ plugins/
     └── assets/         # Optional: Plugin resources like images
 ```
 
-For more details, see [docs/plugins/PLUGIN_GUIDE.md](../docs/plugins/PLUGIN_GUIDE.md)
+For more details, see [docs/plugins/PLUGIN_GUIDE.md](mdc:../docs/plugins/PLUGIN_GUIDE.md)
 
 ## Plugin Manifest
 
@@ -84,7 +84,7 @@ Example panel registration:
 self.api.register_panel(panel_widget, "left", "Panel Name")
 ```
 
-For more UI information, see [docs/plugins/UI_FRAMEWORK.md](../docs/plugins/UI_FRAMEWORK.md)
+For more UI information, see [docs/plugins/UI_FRAMEWORK.md](mdc:../docs/plugins/UI_FRAMEWORK.md)
 
 ## Database Integration
 
@@ -98,7 +98,7 @@ db_manager = self.api.get_database_manager()
 results = db_manager.execute_query("SELECT * FROM devices WHERE ip LIKE ?", ["192.168.1.%"])
 ```
 
-For database details, see [docs/device_management.md](../docs/device_management.md)
+For database details, see [docs/device_management.md](mdc:../docs/device_management.md)
 
 ## Event Hooks
 
@@ -119,20 +119,23 @@ Common hooks:
 
 ## API Reference
 
-For complete API documentation, see [docs/API.md](../docs/API.md) and [docs/plugins/API.md](../docs/plugins/API.md)
+For complete API documentation, see [docs/API.md](mdc:../docs/API.md) and [docs/plugins/API.md](mdc:../docs/plugins/API.md)
 
 ## Template for New Plugins
 
-The [docs/plugin_creation_template.md](../docs/plugin_creation_template.md) provides a comprehensive template you can use to plan your plugin before implementation.
+The [docs/plugin_creation_template.md](mdc:../docs/plugin_creation_template.md) provides a comprehensive template you can use to plan your plugin before implementation.
 
 ## Plugin Examples
 
-Check the example plugin in [docs/plugins/example_plugin/](../docs/plugins/example_plugin/) for a working reference implementation.
+Check the example plugin in [docs/plugins/example_plugin/](mdc:../docs/plugins/example_plugin) for a working reference implementation.
 
 ## Versioning
 
-Follow the application's versioning guidelines in [docs/versioning.md](../docs/versioning.md) to ensure compatibility with future netWORKS releases.
+Follow the application's versioning guidelines in [docs/versioning.md](mdc:../docs/versioning.md) to ensure compatibility with future netWORKS releases.
 
 ## Debugging
 
-For debugging your plugins, see the debugging guide in [docs/DEBUG.md](../docs/DEBUG.md).
+For debugging your plugins, see the debugging guide in [docs/DEBUG.md](mdc:../docs/DEBUG.md).
+
+# IMPORTANT
+Always remember when making changes to a plugin, to update their manifest.json file.

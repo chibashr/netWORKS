@@ -1,14 +1,14 @@
 {
   "version": {
     "major": 1,
-    "minor": 3,
-    "patch": 2
+    "minor": 4,
+    "patch": 0
   },
-  "version_string": "1.3.2-alpha",
+  "version_string": "1.4.0-alpha",
   "version_info": {
     "major": 1,
-    "minor": 3,
-    "patch": 2,
+    "minor": 4,
+    "patch": 0,
     "build": 0,
     "release_type": "alpha"
   },
