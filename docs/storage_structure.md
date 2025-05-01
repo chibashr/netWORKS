@@ -4,10 +4,10 @@ This document explains the storage structure in netWORKS, including how core app
 
 ## Directory Structure
 
-All netWORKS data is stored in the `@data` directory, with the following structure:
+All netWORKS data is stored in the `data` directory, with the following structure:
 
 ```
-@data/
+data/
   ├── objects/             # Object-based database storage
   │   ├── devices.json     # Device objects 
   │   ├── device_history.json # Device history events
@@ -26,7 +26,7 @@ All netWORKS data is stored in the `@data` directory, with the following structu
 
 ## Storage Principles
 
-1. **All data in `@data`**: All persistent data must be stored within the `@data` directory to ensure consistent backups and portability.
+1. **All data in `data`**: All persistent data must be stored within the `data` directory to ensure consistent backups and portability.
 2. **Autosave**: Workspaces are automatically saved with random names to prevent data loss.
 3. **Plugin isolation**: Each plugin should store its data in its own subdirectory.
 
@@ -38,7 +38,7 @@ All netWORKS data is stored in the `@data` directory, with the following structu
 def init_plugin(plugin_api):
     # Get the plugin's data directory
     data_dir = plugin_api.get_data_directory()
-    # data_dir will be "@data/<plugin_id>"
+    # data_dir will be "data/<plugin_id>"
     return MyPlugin(plugin_api, data_dir)
 ```
 
@@ -87,7 +87,7 @@ def get_settings(self):
 
 ## Automatic Workspace Backup
 
-The application automatically saves the current workspace at regular intervals to the `@data/autosave` directory. These files use the naming format `autosave_YYYYMMDD_HHMMSS_randomid.json`.
+The application automatically saves the current workspace at regular intervals to the `data/autosave` directory. These files use the naming format `autosave_YYYYMMDD_HHMMSS_randomid.json`.
 
 The autosave interval is configurable in the application settings:
 
@@ -101,21 +101,20 @@ The autosave interval is configurable in the application settings:
 
 ## Exporting and Importing Workspaces
 
-Users can manually export the workspace using File > Export Workspace. The default location is `@data/exports`.
+Users can manually export the workspace using File > Export Workspace. The default location is `data/exports`.
 
 When importing a workspace, the dialog will automatically look in the following locations (in order):
-1. `@data/exports`
-2. `@data/autosave`
-3. `@data`
+1. `data/exports`
+2. `data/autosave`
+3. `data`
 
 ## Plugin Guidelines
 
 1. **Always use the provided API**: Use `api.get_data_directory()` to get your plugin's data directory.
 2. **Create subdirectories as needed**: Organize your plugin's data in subdirectories.
 3. **Clean up after yourself**: When your plugin is disabled or uninstalled, clean up unnecessary files.
-4. **Handle migration gracefully**: If your plugin previously stored data elsewhere, migrate it to the new location.
-5. **Use unique filenames**: Include timestamps or UUIDs in filenames to prevent conflicts.
-6. **Respect file size limits**: Avoid storing very large files that could impact performance or storage.
+4. **Use unique filenames**: Include timestamps or UUIDs in filenames to prevent conflicts.
+5. **Respect file size limits**: Avoid storing very large files that could impact performance or storage.
 
 ## Creating a Plugin with Proper Storage
 
@@ -169,6 +168,6 @@ class MyPlugin:
 
 ## Core Application Internals
 
-The core application uses the Object Database Manager and Object Store to manage persistent data. These components automatically use the `@data` directory structure.
+The core application uses the Object Database Manager and Object Store to manage persistent data. These components automatically use the `data` directory structure.
 
 For plugin developers, the database is accessible through the Plugin API, which provides methods to interact with devices, settings, and plugin-specific data. 

@@ -2,7 +2,8 @@
   "app": {
     "theme": "light",
     "auto_save_interval": 300,
-    "default_workspace": "last-used"
+    "default_workspace": "last-used",
+    "disable_update_checks": true
   },
   "scanning": {
     "timeout": 1000,
@@ -17,15 +18,15 @@
     "panels": {
       "left": {
         "visible": true,
-        "width": 373
+        "width": 377
       },
       "right": {
         "visible": true,
-        "width": 422
+        "width": 243
       },
       "bottom": {
         "visible": true,
-        "height": 207
+        "height": 53
       }
     },
     "table": {

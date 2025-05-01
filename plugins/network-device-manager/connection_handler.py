@@ -27,6 +27,14 @@ class ConnectionHandler:
         self.credential_manager = credential_manager
         self.active_connections = {}  # ip -> connection_object
         self.connection_lock = threading.Lock()
+        
+        # Set up logs directory in the root data structure
+        app_root = Path(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../..")))
+        self.data_dir = app_root / "data"
+        self.data_dir.mkdir(exist_ok=True)
+        
+        self.logs_dir = self.data_dir / "logs"
+        self.logs_dir.mkdir(exist_ok=True)
     
     def connect(self, device_info, connection_type="ssh", credentials=None):
         """
@@ -84,6 +92,11 @@ class ConnectionHandler:
         # Prepare connection parameters
         device_type = device_info.get('device_type', 'cisco_ios')  # Default to Cisco IOS
         
+        # Create device-specific log directory in root data/logs
+        device_log_dir = self.logs_dir / ip.replace('.', '_')
+        device_log_dir.mkdir(exist_ok=True)
+        log_file = device_log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{connection_type}.log"
+        
         connection_params = {
             'device_type': device_type,
             'ip': ip,
@@ -92,7 +105,7 @@ class ConnectionHandler:
             'secret': credentials.get('enable_password', ''),
             'port': 22 if connection_type == 'ssh' else 23,
             'verbose': True,
-            'session_log': f"logs/{ip}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+            'session_log': str(log_file),
             'session_log_file_mode': 'write'
         }
         

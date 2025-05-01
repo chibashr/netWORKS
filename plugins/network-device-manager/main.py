@@ -67,18 +67,27 @@ class NetworkDeviceManagerPlugin:
                 level="warning"
             )
         
-        # Initialize plugin data directory
-        # Get the plugin's directory path
-        plugin_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-        self.data_dir = plugin_dir / "data"
-        self.commands_dir = self.data_dir / "commands"
-        self.output_dir = self.data_dir / "outputs"
-        self.config_dir = self.data_dir / "config"
+        # Initialize data directories
+        # Get the root application path
+        app_root = Path(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../..")))
         
-        # Create directories if they don't exist
+        # Use root data directory for device-related data
+        self.data_dir = app_root / "data"
         self.data_dir.mkdir(exist_ok=True)
+        
+        # Create command directories in root data
+        self.commands_dir = self.data_dir / "commands"
         self.commands_dir.mkdir(exist_ok=True)
+        
+        # Use root data for outputs
+        self.output_dir = self.data_dir / "outputs"
         self.output_dir.mkdir(exist_ok=True)
+        
+        # Keep plugin-specific config in plugin directory
+        plugin_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+        self.plugin_data_dir = plugin_dir / "data"
+        self.plugin_data_dir.mkdir(exist_ok=True)
+        self.config_dir = self.plugin_data_dir / "config"
         self.config_dir.mkdir(exist_ok=True)
         
         # Load default commands if they don't exist

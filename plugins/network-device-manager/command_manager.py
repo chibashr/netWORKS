@@ -72,6 +72,9 @@ class CommandManager:
         # Update in-memory data
         self.commands_by_type[device_type] = command_set
         
+        # Ensure the commands directory exists
+        self.commands_dir.mkdir(exist_ok=True)
+        
         # Save to file
         cmd_file = self.commands_dir / f"{device_type}.json"
         

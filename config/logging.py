@@ -22,16 +22,17 @@ def setup_logging():
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.DEBUG)  # Set console to DEBUG level
     console_format = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-        datefmt='%H:%M:%S'
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
     console_handler.setFormatter(console_format)
     
-    # Create file handler
+    # Create file handler with format matching what log-viewer expects
+    # Format must be: timestamp - source - level - message
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
     file_format = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     file_handler.setFormatter(file_format)

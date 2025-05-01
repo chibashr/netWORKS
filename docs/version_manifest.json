@@ -2,18 +2,18 @@
   "version": {
     "major": 1,
     "minor": 4,
-    "patch": 0
+    "patch": 1
   },
-  "version_string": "1.4.0-alpha",
+  "version_string": "1.4.1-alpha",
   "version_info": {
     "major": 1,
     "minor": 4,
-    "patch": 0,
+    "patch": 1,
     "build": 0,
     "release_type": "alpha"
   },
-  "build_date": "2024-10-15",
-  "release_notes": "Enhanced UI with modern Office-style ribbon toolbar and improved UI scaling",
+  "build_date": "2024-10-16",
+  "release_notes": "Enhanced workspace management with multi-workspace support and improved import/export capabilities",
   "release_type": "alpha",
   "compatibility": {
     "min_plugin_api": "1.0.0",
@@ -22,6 +22,21 @@
     "min_python_version": "3.10.0"
   },
   "version_history": [
+    {
+      "version": "1.4.1-alpha",
+      "date": "2024-10-16",
+      "changes": [
+        "Completely revamped workspace management system for better organization",
+        "Implemented multi-workspace support with seamless switching between workspaces",
+        "Created dedicated WorkspaceManager class for centralized workspace handling",
+        "Added WorkspaceToolbar with intuitive UI for workspace operations",
+        "Implemented workspace import/export functionality with plugin data preservation",
+        "Enhanced device loading to work regardless of plugin availability",
+        "Added workspace database manager for efficient data storage",
+        "Improved workspace autosave with better reliability and performance",
+        "Added support for device groups in workspace import/export"
+      ]
+    },
     {
       "version": "1.3.2-alpha",
       "date": "2024-10-15",
@@ -488,6 +503,18 @@
         "Fixed bug with menu mouse grab on Windows systems"
       ],
       "type": "feature"
+    },
+    {
+      "version": "3.2.0",
+      "date": "2023-06-15",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Changed storage location from @data to data directory for consistency",
+          "impact": "medium",
+          "details": "All data storage now uses the 'data' directory instead of '@data'. Documentation updated to reflect this change. Plugin developers should update their code to use the correct path."
+        }
+      ]
     }
   ],
   "current_version": "1.0.44-alpha",
@@ -936,6 +963,18 @@
         "Updated plugin API to support multi-device operations",
         "Improved context menu to support operations on multiple selected devices",
         "Fixed bug with menu mouse grab on Windows systems"
+      ]
+    },
+    "3.2.0": {
+      "type": "feature",
+      "date": "2023-06-15",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Changed storage location from @data to data directory for consistency",
+          "impact": "medium",
+          "details": "All data storage now uses the 'data' directory instead of '@data'. Documentation updated to reflect this change. Plugin developers should update their code to use the correct path."
+        }
       ]
     }
   }

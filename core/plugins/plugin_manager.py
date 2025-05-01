@@ -785,6 +785,40 @@ class PluginManager:
             self.logger.error(f"Error unloading plugin {plugin_id}: {str(e)}")
             return False
     
+    def reload_plugin_components(self):
+        """Reload plugin components in the application UI without requiring restart.
+        
+        This method updates all UI elements, menus, panels, and other components
+        that depend on loaded plugins, allowing plugins to be enabled/disabled
+        at runtime without requiring an application restart.
+        """
+        self.logger.info("Reloading plugin components...")
+        
+        if not self.main_window:
+            self.logger.warning("No main window reference available, cannot reload UI components")
+            return False
+            
+        try:
+            # Refresh any UI components that might depend on plugins
+            if hasattr(self.main_window, 'refresh_plugin_panels'):
+                self.main_window.refresh_plugin_panels()
+                
+            if hasattr(self.main_window, 'build_plugin_menus'):
+                self.main_window.build_plugin_menus()
+                
+            if hasattr(self.main_window, 'rebuild_toolbar'):
+                self.main_window.rebuild_toolbar()
+                
+            # Process events to apply UI changes
+            from PySide6.QtCore import QCoreApplication
+            QCoreApplication.processEvents()
+            
+            self.logger.info("Plugin components reloaded successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error reloading plugin components: {str(e)}", exc_info=True)
+            return False
+            
     def enable_plugin(self, plugin_id):
         """Enable a plugin."""
         if plugin_id not in self.plugins:
@@ -803,15 +837,24 @@ class PluginManager:
         # Load the plugin
         success = self.load_plugin(plugin_id)
         
-        # Show restart dialog if there's a main window
-        if self.main_window:
+        # Reload plugin components instead of showing restart dialog
+        if success and self.main_window:
+            reload_success = self.reload_plugin_components()
+            
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self.main_window,
-                "Plugin Enabled",
-                f"Plugin '{plugin_info['manifest'].get('displayName', plugin_id)}' has been enabled.\n\n"
-                "For full functionality, it is recommended to restart the application."
-            )
+            if reload_success:
+                QMessageBox.information(
+                    self.main_window,
+                    "Plugin Enabled",
+                    f"Plugin '{plugin_info['manifest'].get('displayName', plugin_id)}' has been enabled and loaded."
+                )
+            else:
+                QMessageBox.information(
+                    self.main_window,
+                    "Plugin Enabled",
+                    f"Plugin '{plugin_info['manifest'].get('displayName', plugin_id)}' has been enabled.\n\n"
+                    "Some functionality may require restarting the application."
+                )
         
         return success
     
@@ -837,15 +880,24 @@ class PluginManager:
         self.config["plugins"][plugin_id]["enabled"] = False
         self.save_config()
         
-        # Show restart dialog if there's a main window
-        if self.main_window:
+        # Reload plugin components instead of showing restart dialog
+        if success and self.main_window:
+            reload_success = self.reload_plugin_components()
+            
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self.main_window,
-                "Plugin Disabled",
-                f"Plugin '{plugin_info['manifest'].get('displayName', plugin_id)}' has been disabled.\n\n"
-                "For full functionality, it is recommended to restart the application."
-            )
+            if reload_success:
+                QMessageBox.information(
+                    self.main_window,
+                    "Plugin Disabled",
+                    f"Plugin '{plugin_info['manifest'].get('displayName', plugin_id)}' has been disabled and unloaded."
+                )
+            else:
+                QMessageBox.information(
+                    self.main_window,
+                    "Plugin Disabled",
+                    f"Plugin '{plugin_info['manifest'].get('displayName', plugin_id)}' has been disabled.\n\n"
+                    "Some functionality may require restarting the application."
+                )
         
         return success
     

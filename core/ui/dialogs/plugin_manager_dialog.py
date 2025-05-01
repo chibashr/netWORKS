@@ -284,6 +284,10 @@ class PluginManagerDialog(QDialog):
         
         # Try to load the plugin again
         if self.plugin_manager.load_plugin(plugin_id):
+            # Reload UI components to reflect changes
+            if hasattr(self.plugin_manager, 'reload_plugin_components'):
+                self.plugin_manager.reload_plugin_components()
+                
             QMessageBox.information(
                 self,
                 "Plugin Loaded",

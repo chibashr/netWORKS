@@ -345,16 +345,21 @@ class DeviceTable(QTableWidget):
                 return row
         return None
 
-    def update_data(self, devices):
-        """Update the table with new device data."""
-        # Store the device data
-        self.devices = devices
+    def update_data(self, devices=None):
+        """Update the table with new device data.
         
-        # Clear existing data
+        Args:
+            devices: Optional list of devices to update with. If None, uses current devices.
+        """
+        # If devices are provided, store them
+        if devices is not None:
+            self.devices = devices
+        
+        # Clear existing data from the table (but not self.devices if no devices were provided)
         self.setRowCount(0)
         
         # Add devices to the table
-        for device in devices:
+        for device in self.devices:
             self.add_device(device)
         
         # Apply sorting
@@ -2604,3 +2609,29 @@ class DeviceTable(QTableWidget):
         
         # Store empty device data for this row
         self.devices.append({'is_group_header': True, 'header_text': header_text})
+
+    def clear_devices(self):
+        """Clear all devices from the table."""
+        self.setRowCount(0)
+        self.devices = []
+        
+    def add_devices(self, devices):
+        """Add multiple devices to the table.
+        
+        Args:
+            devices: List of device dictionaries to add
+        """
+        for device in devices:
+            self.add_device(device)
+            
+    def set_device_groups(self, device_groups):
+        """Set device groups from imported data.
+        
+        Args:
+            device_groups: Dictionary of device groups
+        """
+        self.device_groups = device_groups
+            
+    def update_device_row(self, row, device):
+        """Update a row with device data."""
+        # ... existing code ...

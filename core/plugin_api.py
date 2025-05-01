@@ -378,9 +378,28 @@ class PluginAPI:
         Returns:
             str: Path to the plugin's data directory (data/<plugin_id>)
         """
+        # Check if we have workspace information
+        current_workspace_id = None
+        if self.main_window and hasattr(self.main_window, 'workspace_manager'):
+            current_workspace = self.main_window.workspace_manager.get_current_workspace()
+            if current_workspace:
+                current_workspace_id = current_workspace.get('id')
+        
         # Create data directory if it doesn't exist
         data_dir = Path("data")
         data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create workspace-specific directory if we have a workspace
+        if current_workspace_id:
+            # Use workspace-specific directory
+            data_dir = data_dir / "workspaces" / current_workspace_id
+            data_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Log the workspace-specific directory usage
+            self.logger.debug(f"Using workspace-specific data directory for {self.plugin_id}: {data_dir}")
+        else:
+            # Log that we're using the global directory
+            self.logger.warning(f"No current workspace found, using global data directory for {self.plugin_id}")
         
         # Create plugin-specific directory
         plugin_data_dir = data_dir / self.plugin_id

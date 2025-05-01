@@ -3,6 +3,9 @@ description:
 globs: 
 alwaysApply: false
 ---
+# IMPORTANT
+Always remember when making changes to a plugin, to update their manifest.json file.
+
 # netWORKS Plugin Development Guide
 
 This guide will help you create plugins for the netWORKS application, with references to the official documentation for detailed information.
@@ -136,6 +139,3 @@ Follow the application's versioning guidelines in [docs/versioning.md](mdc:../do
 ## Debugging
 
 For debugging your plugins, see the debugging guide in [docs/DEBUG.md](mdc:../docs/DEBUG.md).
-
-# IMPORTANT
-Always remember when making changes to a plugin, to update their manifest.json file.

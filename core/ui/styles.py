@@ -128,24 +128,37 @@ DANGER_BUTTON_STYLE = """
 # Tool button style for toolbar buttons and small action buttons
 TOOL_BUTTON_STYLE = """
     QToolButton {
-        background-color: #f5f5f5;
-        border: 1px solid #d0d0d0;
+        background-color: transparent;
+        border: 1px solid #e0e0e0;
         border-radius: 3px;
-        padding: 4px;
-        color: #333;
+        padding: 2px;
+        color: #2c5aa0;
+        font-size: 8pt;
+        font-weight: bold;
+        min-width: 45px;
+        min-height: 40px;
+        text-align: center;
     }
     QToolButton:hover {
-        background-color: #e6e6e6;
-        border-color: #adadad;
+        background-color: #e8f0ff;
+        border: 1px solid #c0d0f0;
     }
     QToolButton:pressed {
-        background-color: #d4d4d4;
-        border-color: #8c8c8c;
-        padding: 5px 3px 3px 5px;
+        background-color: #d0e0ff;
+        border: 1px solid #a0b0e0;
+        padding-top: 3px;
+        padding-left: 3px;
+        padding-bottom: 1px;
+        padding-right: 1px;
+    }
+    QToolButton:checked {
+        background-color: #d0e0ff;
+        border: 1px solid #a0b0e0;
+        font-weight: bold;
     }
     QToolButton:disabled {
-        background-color: #f8f8f8;
-        border-color: #e0e0e0;
+        background-color: transparent;
+        border: 1px solid #e8e8e8;
         color: #a0a0a0;
     }
 """

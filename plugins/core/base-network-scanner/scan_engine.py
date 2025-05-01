@@ -186,173 +186,390 @@ class NetworkScanner:
                     self.active_scans[scan_id]['error'] = f"Invalid IP range: {str(e)}"
                 return
             
-            # Execute the appropriate scan based on type
+            # Get scan options
+            options = scan_config.get('options', {})
+            
+            # Get scan type
             scan_type = scan_config.get('scan_type', 'ping_sweep')
             
-            if scan_type == 'ping_sweep':
-                self._run_ping_sweep(scan_config, ip_addresses)
-            elif scan_type == 'port_scan':
-                self._run_ping_sweep(scan_config, ip_addresses)  # Start with ping sweep
-                if not stop_event.is_set():
-                    # Only continue if not stopped
-                    self._run_port_scan(scan_config, ip_addresses)
-            elif scan_type == 'deep_scan':
-                self._run_deep_scan(scan_config, ip_addresses)
-            elif scan_type == 'stealth_scan':
-                self._run_stealth_scan(scan_config, ip_addresses)
-            else:
-                self.logger.error(f"Unknown scan type: {scan_type}")
-                with self.lock:
-                    self.active_scans[scan_id]['status'] = 'error'
-                    self.active_scans[scan_id]['error'] = f"Unknown scan type: {scan_type}"
-                return
+            # Check if we should use nmap for advanced scanning
+            use_nmap = (
+                options.get('os_detection', False) or 
+                options.get('service_detection', False) or
+                options.get('script_scan', False) or
+                (options.get('port_scan_type', 'connect') in ['syn', 'fin', 'udp', 'all']) or
+                (options.get('discovery_method', 'ping') in ['syn', 'ack', 'udp', 'all'])
+            )
             
-            # Check if scan was stopped
-            if stop_event.is_set():
-                self.logger.info(f"Scan {scan_id} was stopped by user")
-                with self.lock:
-                    self.active_scans[scan_id]['status'] = 'stopped'
-                    self.active_scans[scan_id]['end_time'] = datetime.now()
+            if use_nmap:
+                self._run_nmap_scan(scan_config, ip_addresses)
             else:
-                # Complete the scan
-                self.logger.info(f"Scan {scan_id} completed successfully")
-                with self.lock:
-                    self.active_scans[scan_id]['status'] = 'completed'
-                    self.active_scans[scan_id]['end_time'] = datetime.now()
+                # Use the standard scan methods
+                if scan_type == 'ping_sweep':
+                    self._run_ping_sweep(scan_config, ip_addresses)
+                elif scan_type == 'port_scan':
+                    self._run_ping_sweep(scan_config, ip_addresses)  # Start with ping sweep
+                    if not stop_event.is_set():
+                        # Only continue if not stopped
+                        self._run_port_scan(scan_config, ip_addresses)
+                elif scan_type == 'deep_scan':
+                    self._run_deep_scan(scan_config, ip_addresses)
+                elif scan_type == 'stealth_scan':
+                    self._run_stealth_scan(scan_config, ip_addresses)
             
-            # Notify UI that scan has completed/errored/stopped
-            try:
-                # Get final status
+            # If the scan wasn't stopped, mark it as completed
+            if not stop_event.is_set():
                 with self.lock:
-                    final_status = self.active_scans.get(scan_id, {}).get('status', 'unknown')
-                    final_devices = self.active_scans.get(scan_id, {}).get('devices_found', 0)
-                
-                # Use signal to notify about scan completion
-                if hasattr(self.plugin_api, 'scan_finished'):
-                    self.plugin_api.scan_finished.emit({
-                        'id': scan_id,
-                        'status': final_status,
-                        'devices_found': final_devices
-                    })
-                else:
-                    self.logger.error("Cannot notify about scan completion - no signal available")
-            except Exception as e:
-                self.logger.error(f"Error notifying UI of scan completion: {str(e)}", exc_info=True)
+                    if scan_id in self.active_scans:
+                        self.active_scans[scan_id]['status'] = 'completed'
+                        self.active_scans[scan_id]['end_time'] = datetime.now()
+                        
+                        # Calculate duration
+                        start_time = self.active_scans[scan_id].get('start_time')
+                        end_time = self.active_scans[scan_id].get('end_time')
+                        if start_time and end_time:
+                            duration = (end_time - start_time).total_seconds()
+                            self.active_scans[scan_id]['duration'] = duration
+                        
+                        # Ensure device count is correct
+                        devices_found = len(self.results_cache.get(scan_id, []))
+                        self.active_scans[scan_id]['devices_found'] = devices_found
+                        
+                        # Log scan completion
+                        self.logger.info(f"Scan {scan_id} completed successfully with {devices_found} devices found")
+                        
+                        # Emit scan finished signal
+                        self.plugin_api.scan_finished.emit(self.active_scans[scan_id])
                 
         except Exception as e:
-            self.logger.error(f"Error in scan thread {scan_id}: {str(e)}", exc_info=True)
+            self.logger.error(f"Error in scan thread: {str(e)}", exc_info=True)
+            # Update scan status to error
             with self.lock:
                 if scan_id in self.active_scans:
                     self.active_scans[scan_id]['status'] = 'error'
                     self.active_scans[scan_id]['error'] = str(e)
                     self.active_scans[scan_id]['end_time'] = datetime.now()
                     
-                    # Try to notify UI about error
+                    # Log scan error
+                    self.logger.error(f"Scan {scan_id} failed with error: {str(e)}")
+                    
+                    # Emit scan finished signal with error
+                    self.plugin_api.scan_finished.emit(self.active_scans[scan_id])
+        
+        self.logger.debug(f"Scan thread {scan_id} completed in thread: {current_thread.name}")
+    
+    def _run_nmap_scan(self, scan_config, ip_addresses):
+        """Run an advanced scan using nmap.
+        
+        Args:
+            scan_config: The scan configuration dictionary
+            ip_addresses: List of IP addresses to scan
+        """
+        stop_event = scan_config.get('stop_event')
+        scan_id = scan_config.get('id')
+        options = scan_config.get('options', {})
+        
+        try:
+            # Check if nmap is available
+            try:
+                # Try to execute nmap to check if it's available
+                subprocess.run(["nmap", "--version"], 
+                               stdout=subprocess.PIPE, 
+                               stderr=subprocess.PIPE,
+                               timeout=2)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                self.logger.error("Nmap is not available on this system")
+                with self.lock:
+                    if scan_id in self.active_scans:
+                        self.active_scans[scan_id]['status'] = 'error'
+                        self.active_scans[scan_id]['error'] = "Nmap is not available on this system"
+                return
+            
+            total_devices = scan_config.get('total_devices', len(ip_addresses))
+            progress_increment = 100 / total_devices if total_devices > 0 else 0
+            
+            # Build the target list string - join IPs with spaces for nmap
+            target_list = " ".join(ip_addresses)
+            
+            # Build nmap command with all options
+            nmap_args = ["nmap"]
+            
+            # Add timing template
+            timing = options.get('timing', 3)  # Default to normal
+            nmap_args.append(f"-T{timing}")
+            
+            # Set basic discovery options based on discovery_method
+            discovery_method = options.get('discovery_method', 'ping')
+            if discovery_method == 'ping':
+                nmap_args.append("-PE")  # ICMP Echo
+            elif discovery_method == 'arp':
+                nmap_args.append("-PR")  # ARP scan
+            elif discovery_method == 'syn':
+                nmap_args.append("-PS")  # TCP SYN
+            elif discovery_method == 'ack':
+                nmap_args.append("-PA")  # TCP ACK
+            elif discovery_method == 'udp':
+                nmap_args.append("-PU")  # UDP scan
+            elif discovery_method == 'all':
+                nmap_args.extend(["-PE", "-PS", "-PA", "-PU", "-PR"])  # All methods
+            
+            # Port scanning options
+            if options.get('use_common_ports', True):
+                port_group = options.get('port_group', 'common')
+                if port_group == 'top10':
+                    nmap_args.append("--top-ports 10")
+                elif port_group == 'top100':
+                    nmap_args.append("--top-ports 100")
+                elif port_group == 'top1000':
+                    nmap_args.append("--top-ports 1000")
+                elif port_group == 'all':
+                    nmap_args.append("-p-")  # All ports
+                # 'common' is the default
+            
+            # Add custom ports if specified
+            if options.get('use_custom_ports', False) and 'ports' in options:
+                port_list = options['ports']
+                port_str = ",".join(map(str, port_list))
+                nmap_args.append(f"-p {port_str}")
+            
+            # Port scan type
+            port_scan_type = options.get('port_scan_type', 'connect')
+            if port_scan_type == 'syn':
+                nmap_args.append("-sS")
+            elif port_scan_type == 'fin':
+                nmap_args.append("-sF")
+            elif port_scan_type == 'udp':
+                nmap_args.append("-sU")
+            elif port_scan_type == 'all':
+                nmap_args.append("-sS -sU -sV")
+            # 'connect' is the default scan type so no args needed
+            
+            # Advanced options
+            if options.get('os_detection', False):
+                nmap_args.append("-O")
+            
+            if options.get('service_detection', False):
+                nmap_args.append("-sV")
+            
+            if options.get('script_scan', False):
+                script_category = options.get('script_category', 'safe')
+                if script_category == 'default':
+                    nmap_args.append("-sC")
+                elif script_category == 'discovery':
+                    nmap_args.append("--script=discovery")
+                elif script_category == 'safe':
+                    nmap_args.append("--script=safe")
+                elif script_category == 'all':
+                    nmap_args.append("--script=all")
+            
+            # Add XML output for parsing
+            import tempfile
+            xml_output = tempfile.mktemp(suffix=".xml")
+            nmap_args.append(f"-oX {xml_output}")
+            
+            # Verbose output
+            nmap_args.append("-v")
+            
+            # Add target list
+            nmap_args.append(target_list)
+            
+            # Join all args into a command string
+            nmap_cmd = " ".join(nmap_args)
+            self.logger.debug(f"Running nmap command: {nmap_cmd}")
+            
+            # Run nmap and capture output
+            process = subprocess.Popen(
+                nmap_cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1  # Line buffered
+            )
+            
+            # Variables to track progress
+            current_ip_index = 0
+            current_progress = 0
+            
+            # Regular expressions to parse nmap output
+            ip_pattern = re.compile(r'Discovered open port \d+/[a-z]+ on (\d+\.\d+\.\d+\.\d+)')
+            completion_pattern = re.compile(r'Completed (\d+)%')
+            
+            # Process output line by line to track progress
+            while process.poll() is None:
+                if stop_event.is_set():
+                    # Stop scan if requested
+                    process.terminate()
+                    process.wait()
+                    self.logger.info(f"Nmap scan {scan_id} terminated by user")
+                    with self.lock:
+                        if scan_id in self.active_scans:
+                            self.active_scans[scan_id]['status'] = 'stopped'
+                    return
+                
+                # Read a line from stdout
+                line = process.stdout.readline()
+                if not line:
+                    continue
+                
+                # Check for IP addresses in output
+                ip_match = ip_pattern.search(line)
+                if ip_match:
+                    ip = ip_match.group(1)
+                    self.logger.debug(f"Found device at IP: {ip}")
+                    
+                    # Create a basic device record - will be enhanced with XML parsing
+                    device = {
+                        'ip': ip,
+                        'status': 'up',
+                        'scan_id': scan_id,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    # Emit device found
+                    self._emit_device_found(device)
+                
+                # Check for completion percentage
+                completion_match = completion_pattern.search(line)
+                if completion_match:
+                    new_progress = int(completion_match.group(1))
+                    if new_progress > current_progress:
+                        current_progress = new_progress
+                        # Update scan progress
+                        with self.lock:
+                            if scan_id in self.active_scans:
+                                self.active_scans[scan_id]['progress'] = current_progress
+                        
+                        # Log progress
+                        self.logger.debug(f"Scan {scan_id} progress: {current_progress}%")
+            
+            # Process completed - check return code
+            return_code = process.returncode
+            if return_code != 0 and not stop_event.is_set():
+                # Read error output
+                error_output = process.stderr.read()
+                self.logger.error(f"Nmap scan failed with return code {return_code}: {error_output}")
+                with self.lock:
+                    if scan_id in self.active_scans:
+                        self.active_scans[scan_id]['status'] = 'error'
+                        self.active_scans[scan_id]['error'] = f"Nmap scan failed: {error_output}"
+                return
+            
+            # Parse the XML output file if it exists and wasn't stopped
+            if not stop_event.is_set() and os.path.exists(xml_output):
+                try:
+                    self._parse_nmap_xml(xml_output, scan_id)
+                except Exception as e:
+                    self.logger.error(f"Error parsing nmap XML output: {str(e)}")
+                finally:
+                    # Clean up temp file
                     try:
-                        if hasattr(self.plugin_api, 'scan_finished'):
-                            self.plugin_api.scan_finished.emit({
-                                'id': scan_id,
-                                'status': 'error',
-                                'error': str(e)
-                            })
-                    except:
+                        os.remove(xml_output)
+                    except Exception:
                         pass
         
-        finally:
-            # Clean up thread references
+        except Exception as e:
+            self.logger.error(f"Error running nmap scan: {str(e)}", exc_info=True)
             with self.lock:
-                if scan_id in self.scan_threads:
-                    del self.scan_threads[scan_id]
-            
-            self.logger.debug(f"Scan thread {scan_id} exiting")
+                if scan_id in self.active_scans:
+                    self.active_scans[scan_id]['status'] = 'error'
+                    self.active_scans[scan_id]['error'] = f"Nmap scan error: {str(e)}"
     
-    def stop_scan(self, scan_id):
-        """Stop a running scan.
+    def _parse_nmap_xml(self, xml_file, scan_id):
+        """Parse the nmap XML output file to extract detailed host information.
         
         Args:
-            scan_id: ID of the scan to stop
-            
-        Returns:
-            bool: True if scan was stopped, False otherwise
+            xml_file: Path to the nmap XML output file
+            scan_id: The scan ID this data belongs to
         """
-        self.logger.debug(f"Request to stop scan {scan_id}")
-        
-        with self.lock:
-            if scan_id not in self.active_scans:
-                self.logger.warning(f"Cannot stop scan {scan_id}: not found in active scans")
-                return False
+        try:
+            import xml.etree.ElementTree as ET
+            
+            # Parse the XML
+            tree = ET.parse(xml_file)
+            root = tree.getroot()
+            
+            # Process each host
+            for host in root.findall('./host'):
+                # Get IP address
+                ip = None
+                for addr in host.findall('./address'):
+                    if addr.get('addrtype') == 'ipv4':
+                        ip = addr.get('addr')
+                        break
                 
-            if scan_id not in self.scan_stop_events:
-                self.logger.warning(f"Cannot stop scan {scan_id}: stop event not found")
-                return False
+                if not ip:
+                    continue
                 
-            # Set the stop event to signal the scan thread to terminate
-            self.scan_stop_events[scan_id].set()
-            
-            # Update scan status
-            self.active_scans[scan_id]['status'] = 'stopping'
-            
-        self.logger.info(f"Scan {scan_id} is being stopped")
-        return True
-    
-    def _parse_ip_range(self, ip_range: str) -> List[str]:
-        """Parse an IP range string into a list of IP addresses.
+                # Get status
+                status = 'unknown'
+                status_elem = host.find('./status')
+                if status_elem is not None:
+                    status = status_elem.get('state', 'unknown')
+                
+                # Get hostnames
+                hostnames = []
+                for hostname in host.findall('./hostnames/hostname'):
+                    hostnames.append(hostname.get('name', ''))
+                
+                # Get OS detection data
+                os_info = {}
+                os_elem = host.find('./os')
+                if os_elem is not None:
+                    os_matches = os_elem.findall('./osmatch')
+                    if os_matches:
+                        best_match = os_matches[0]  # First match has highest accuracy
+                        os_info = {
+                            'name': best_match.get('name', 'Unknown'),
+                            'accuracy': best_match.get('accuracy', '0'),
+                            'family': ''
+                        }
+                        
+                        # Try to get OS family from class
+                        os_classes = best_match.findall('./osclass')
+                        if os_classes:
+                            os_info['family'] = os_classes[0].get('osfamily', '')
+                
+                # Get open ports and services
+                ports = []
+                for port in host.findall('./ports/port'):
+                    port_state = port.find('./state')
+                    if port_state is not None and port_state.get('state') == 'open':
+                        port_id = port.get('portid', '')
+                        protocol = port.get('protocol', '')
+                        
+                        service_info = {}
+                        service_elem = port.find('./service')
+                        if service_elem is not None:
+                            service_info = {
+                                'name': service_elem.get('name', 'unknown'),
+                                'product': service_elem.get('product', ''),
+                                'version': service_elem.get('version', ''),
+                                'extrainfo': service_elem.get('extrainfo', '')
+                            }
+                        
+                        ports.append({
+                            'port': port_id,
+                            'protocol': protocol,
+                            'service': service_info
+                        })
+                
+                # Create comprehensive device record
+                device = {
+                    'ip': ip,
+                    'status': status,
+                    'scan_id': scan_id,
+                    'timestamp': datetime.now().isoformat(),
+                    'hostnames': hostnames,
+                    'os': os_info,
+                    'ports': ports
+                }
+                
+                # Emit device found or update existing device
+                self._emit_device_found(device)
         
-        Supports:
-        - Single IP: 192.168.1.1
-        - CIDR notation: 192.168.1.0/24
-        - Range notation: 192.168.1.1-254
-        - Multiple ranges: 192.168.1.1-10,192.168.2.1-10
-        
-        Args:
-            ip_range: String representing an IP range
-            
-        Returns:
-            List of IP address strings
-        """
-        if not ip_range:
-            return []
-        
-        ip_addresses = []
-        
-        # Split multiple ranges
-        for range_part in ip_range.split(','):
-            range_part = range_part.strip()
-            
-            if '-' in range_part and '/' not in range_part:
-                # Handle range notation (e.g., 192.168.1.1-254)
-                try:
-                    start, end = range_part.rsplit('-', 1)
-                    
-                    # If only the last octet is provided in the end part
-                    if '.' not in end:
-                        base_ip = start.rsplit('.', 1)[0]
-                        end = f"{base_ip}.{end}"
-                    
-                    # Convert to integer values for comparison
-                    start_ip = int(ipaddress.IPv4Address(start))
-                    end_ip = int(ipaddress.IPv4Address(end))
-                    
-                    # Generate IP addresses in the range
-                    for ip_int in range(start_ip, end_ip + 1):
-                        ip = str(ipaddress.IPv4Address(ip_int))
-                        ip_addresses.append(ip)
-                except Exception as e:
-                    self.logger.error(f"Error parsing IP range {range_part}: {str(e)}")
-            else:
-                try:
-                    # Handle CIDR notation or single IP
-                    network = ipaddress.ip_network(range_part, strict=False)
-                    for ip in network.hosts():
-                        ip_addresses.append(str(ip))
-                    
-                    # If it's a single IP (no hosts), add it
-                    if not ip_addresses and range_part.find('/') == -1:
-                        ip_addresses.append(range_part)
-                except Exception as e:
-                    self.logger.error(f"Error parsing IP range {range_part}: {str(e)}")
-        
-        return ip_addresses
+        except Exception as e:
+            self.logger.error(f"Error parsing nmap XML file: {str(e)}", exc_info=True)
     
     def _run_ping_sweep(self, scan_config: Dict, ip_addresses: List[str]):
         """Run a ping sweep on the specified IP addresses.
@@ -730,4 +947,92 @@ class NetworkScanner:
             
         except Exception as e:
             self.logger.error(f"Error starting scan: {str(e)}", exc_info=True)
-            raise 
+            raise
+    
+    def _parse_ip_range(self, ip_range: str) -> List[str]:
+        """Parse an IP range string into a list of IP addresses.
+        
+        Supports:
+        - Single IP: 192.168.1.1
+        - CIDR notation: 192.168.1.0/24
+        - Range notation: 192.168.1.1-254
+        - Multiple ranges: 192.168.1.1-10,192.168.2.1-10
+        
+        Args:
+            ip_range: String representing an IP range
+            
+        Returns:
+            List of IP address strings
+        """
+        if not ip_range:
+            return []
+        
+        ip_addresses = []
+        
+        # Split multiple ranges
+        for range_part in ip_range.split(','):
+            range_part = range_part.strip()
+            
+            if '-' in range_part and '/' not in range_part:
+                # Handle range notation (e.g., 192.168.1.1-254)
+                try:
+                    start, end = range_part.rsplit('-', 1)
+                    
+                    # If only the last octet is provided in the end part
+                    if '.' not in end:
+                        base_ip = start.rsplit('.', 1)[0]
+                        end = f"{base_ip}.{end}"
+                    
+                    # Convert to integer values for comparison
+                    start_ip = int(ipaddress.IPv4Address(start))
+                    end_ip = int(ipaddress.IPv4Address(end))
+                    
+                    # Generate IP addresses in the range
+                    for ip_int in range(start_ip, end_ip + 1):
+                        ip = str(ipaddress.IPv4Address(ip_int))
+                        ip_addresses.append(ip)
+                except Exception as e:
+                    self.logger.error(f"Error parsing IP range {range_part}: {str(e)}")
+            else:
+                try:
+                    # Handle CIDR notation or single IP
+                    network = ipaddress.ip_network(range_part, strict=False)
+                    for ip in network.hosts():
+                        ip_addresses.append(str(ip))
+                    
+                    # If it's a single IP (no hosts), add it
+                    if not ip_addresses and range_part.find('/') == -1:
+                        ip_addresses.append(range_part)
+                except Exception as e:
+                    self.logger.error(f"Error parsing IP range {range_part}: {str(e)}")
+        
+        return ip_addresses
+    
+    def stop_scan(self, scan_id):
+        """Stop a running scan.
+        
+        Args:
+            scan_id: ID of the scan to stop
+            
+        Returns:
+            bool: True if scan was stopped, False otherwise
+        """
+        self.logger.debug(f"Request to stop scan {scan_id}")
+        
+        with self.lock:
+            if scan_id not in self.active_scans:
+                self.logger.warning(f"Cannot stop scan {scan_id}: not found in active scans")
+                return False
+                
+            if scan_id not in self.scan_stop_events:
+                self.logger.warning(f"Cannot stop scan {scan_id}: stop event not found")
+                return False
+                
+            # Set the stop event to signal the scan thread to terminate
+            self.scan_stop_events[scan_id].set()
+            
+            # Update scan status
+            self.active_scans[scan_id]['status'] = 'stopping'
+            
+        self.logger.info(f"Scan {scan_id} is being stopped")
+        return True 

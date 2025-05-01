@@ -12,15 +12,31 @@ from pathlib import Path
 import time
 import logging
 
+# Add parent directory to path for importing modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Initialize basic logging
 if not os.path.exists('logs'):
     os.makedirs('logs', exist_ok=True)
 
+# Configure root logger
 logging.basicConfig(
-    filename=os.path.join('logs', 'launcher.log'),
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.StreamHandler()
+    ]
 )
+
+# Configure file logging
+file_handler = logging.FileHandler(os.path.join('logs', 'launcher.log'))
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+logging.getLogger().addHandler(file_handler)
 
 # Console output colors
 class Colors:
@@ -66,7 +82,27 @@ def print_status(message, status="info"):
         "error": logging.ERROR,
         "progress": logging.INFO
     }
-    logging.log(log_level.get(status.lower(), logging.INFO), message)
+    
+    # Safely log the message, replacing problematic Unicode characters
+    safe_message = message
+    try:
+        # Try to encode/decode the message to catch potential encoding issues
+        safe_message.encode('ascii', errors='replace').decode('ascii')
+    except UnicodeError:
+        # Replace problematic characters with ASCII equivalents
+        safe_message = (
+            safe_message.replace('\u2192', '->')  # Right arrow
+            .replace('\u2190', '<-')  # Left arrow
+            .replace('\u2191', '^')   # Up arrow
+            .replace('\u2193', 'v')   # Down arrow
+            .replace('\u2022', '*')   # Bullet
+            .replace('\u2713', 'Y')   # Checkmark
+            .replace('\u2717', 'X')   # X mark
+            .replace('\u00d7', 'x')   # Multiplication sign
+            .replace('\u2026', '...') # Ellipsis
+        )
+    
+    logging.log(log_level.get(status.lower(), logging.INFO), safe_message)
 
 def check_python_version():
     """Check if the Python version is compatible"""
@@ -445,33 +481,249 @@ def check_first_time_setup():
     
     return True
 
+def check_for_updates():
+    """Check for application updates and show notification if available."""
+    try:
+        print_status("Checking for updates...", "progress")
+        
+        # Import the version module
+        try:
+            from core.version import check_for_updates as check_updates
+            
+            # Get update information
+            update_info = check_updates()
+            
+            if update_info['status'] == 'update_available':
+                print_status(f"Update available: {update_info['current_version']} -> {update_info['latest_version']}", "info")
+                print(f"\n{Colors.BLUE}New version available!{Colors.END}")
+                print(f"Current version: {Colors.CYAN}{update_info['current_version']}{Colors.END}")
+                print(f"Latest version: {Colors.GREEN}{update_info['latest_version']}{Colors.END}")
+                
+                # Show plugin compatibility warnings if applicable
+                if update_info.get('plugin_compatibility') and isinstance(update_info['plugin_compatibility'], dict):
+                    warning = update_info['plugin_compatibility'].get('warning')
+                    if warning:
+                        print(f"\n{Colors.WARNING}Plugin Compatibility:{Colors.END}")
+                        print(f"{Colors.WARNING}{warning}{Colors.END}")
+                        
+                        affected_plugins = update_info['plugin_compatibility'].get('affected_plugins', [])
+                        if affected_plugins:
+                            print(f"\n{Colors.WARNING}Affected plugins:{Colors.END}")
+                            for plugin in affected_plugins:
+                                print(f"{Colors.WARNING}- {plugin}{Colors.END}")
+                
+                # Show breaking changes if any
+                if update_info.get('breaking_changes'):
+                    print(f"\n{Colors.FAIL}Breaking Changes:{Colors.END}")
+                    for change in update_info['breaking_changes']:
+                        print(f"{Colors.FAIL}- {change}{Colors.END}")
+                
+                # Show new features if any
+                if update_info.get('new_features'):
+                    print(f"\n{Colors.GREEN}New Features:{Colors.END}")
+                    for feature in update_info['new_features']:
+                        print(f"{Colors.GREEN}- {feature}{Colors.END}")
+                
+                if update_info['release_notes']:
+                    print(f"\n{Colors.BOLD}What's new:{Colors.END}")
+                    print(update_info['release_notes'])
+                
+                print(f"\nDownload the latest version from: {Colors.UNDERLINE}{update_info['download_url']}{Colors.END}")
+                
+                # Use a GUI dialog instead of command line input
+                try:
+                    import tkinter as tk
+                    from tkinter import messagebox
+                    
+                    # Create a hidden root window
+                    root = tk.Tk()
+                    root.withdraw()
+                    
+                    # Show dialog and get response
+                    response = messagebox.askyesno(
+                        "Update Available",
+                        f"A new version of netWORKS is available!\n\n"
+                        f"Current version: {update_info['current_version']}\n"
+                        f"Latest version: {update_info['latest_version']}\n\n"
+                        f"Would you like to download the update now?"
+                    )
+                    
+                    if response:
+                        import webbrowser
+                        webbrowser.open(update_info['download_url'])
+                        print_status("Opening download page in browser...", "info")
+                        print(f"\n{Colors.CYAN}Starting with current version for now...{Colors.END}\n")
+                    else:
+                        print(f"\n{Colors.CYAN}Starting with current version...{Colors.END}\n")
+                    
+                    # Clean up the tkinter root
+                    root.destroy()
+                except ImportError:
+                    # Fall back to command line if tkinter is not available
+                    print(f"\n{Colors.CYAN}Would you like to download the update now? (y/n){Colors.END}")
+                    response = input().strip().lower()
+                    if response == 'y':
+                        import webbrowser
+                        webbrowser.open(update_info['download_url'])
+                        print_status("Opening download page in browser...", "info")
+                        print(f"\n{Colors.CYAN}Starting with current version for now...{Colors.END}\n")
+                    else:
+                        print(f"\n{Colors.CYAN}Starting with current version...{Colors.END}\n")
+                
+                return True
+            elif update_info['status'] == 'up_to_date':
+                print_status("Your software is up to date", "success")
+                return False
+            else:
+                print_status(f"Error checking for updates: {update_info['error']}", "warning")
+                return False
+                
+        except ImportError as e:
+            print_status(f"Could not check for updates: {str(e)}", "warning")
+            logging.warning(f"Could not import version module: {str(e)}")
+            return False
+            
+    except Exception as e:
+        print_status(f"Error checking for updates: {str(e)}", "warning")
+        logging.warning(f"Update check failed: {str(e)}")
+        return False
+
+def ensure_dependencies():
+    """Ensure all dependencies are properly installed.
+    
+    This function checks if all required dependencies are installed
+    and installs/updates them if necessary.
+    
+    Returns:
+        bool: True if all dependencies are properly installed, False otherwise
+    """
+    try:
+        print_status("Checking dependencies...", "progress")
+        
+        # Make sure virtual environment exists
+        venv_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'venv')
+        if not os.path.exists(venv_dir):
+            print_status("Virtual environment not found. Creating one...", "info")
+            if not create_virtual_environment():
+                print_status("Failed to create virtual environment.", "error")
+                return False
+        
+        # Check if pip is available
+        pip_path = get_pip_path()
+        if not os.path.exists(pip_path):
+            print_status(f"pip not found at {pip_path}. Trying to repair the virtual environment.", "warning")
+            # Try to recreate the virtual environment
+            shutil.rmtree(venv_dir, ignore_errors=True)
+            if not create_virtual_environment():
+                print_status("Failed to repair virtual environment.", "error")
+                return False
+            # Get the pip path again
+            pip_path = get_pip_path()
+            if not os.path.exists(pip_path):
+                print_status("Still can't find pip. Installation is corrupted.", "error")
+                return False
+        
+        # Check if the requirements file exists
+        req_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'requirements.txt')
+        if not os.path.exists(req_file):
+            print_status("requirements.txt not found. Cannot check dependencies.", "error")
+            return False
+        
+        # Check if all packages are installed
+        print_status("Verifying installed packages...", "progress")
+        python_path = get_python_path()
+        
+        # Use a simple verification script to check if critical packages can be imported
+        verify_cmd = [
+            python_path, 
+            "-c", 
+            "import sys, traceback; failures = []; "
+            "pkg_mapping = {"
+            "   'PySide6': 'PySide6', "
+            "   'netmiko': 'netmiko', "
+            "   'scapy': 'scapy', "
+            "   'requests': 'requests', "
+            "   'python-nmap': 'nmap', "  # Correct import name
+            "   'python-whois': 'whois', "  # Correct import name
+            "   'dnspython': 'dns' "  # Correct import name
+            "}; "
+            "for pkg, import_name in pkg_mapping.items(): "
+            "    try: "
+            "        print(f'Attempting to import {pkg} as {import_name}...'); "
+            "        __import__(import_name); "
+            "        print(f'Successfully imported {import_name}'); "
+            "    except ImportError as e: "
+            "        print(f'FAILED to import {pkg} ({import_name}): {str(e)}'); "
+            "        traceback.print_exc(); "
+            "        failures.append((pkg, str(e))); "
+            "if failures: "
+            "    print('\\nMissing packages:'); "
+            "    for f in failures: "
+            "        print(f'  - {f[0]}: {f[1]}'); "
+            "    sys.exit(1); "
+            "else: "
+            "    print('All critical packages verified.'); "
+            "    sys.exit(0)"
+        ]
+        
+        verification = subprocess.run(verify_cmd, capture_output=True, text=True)
+        
+        if verification.returncode != 0:
+            print_status("Some required packages are missing or corrupted.", "warning")
+            print_status(verification.stdout.strip(), "warning")
+            print_status("Attempting to reinstall dependencies...", "info")
+            
+            # Install dependencies with upgrade flag
+            if not install_dependencies(force_upgrade=True):
+                print_status("Failed to install dependencies.", "error")
+                print_status("Please check logs/dependency_install.log for details and try running setup again.", "info")
+                return False
+            
+            # Verify again after installation
+            verification = subprocess.run(verify_cmd, capture_output=True, text=True)
+            if verification.returncode != 0:
+                print_status("Still having issues with dependencies after reinstallation.", "error")
+                print_status("Please check logs/dependency_install.log for details and try running setup again.", "info")
+                return False
+        
+        print_status("All dependencies are properly installed.", "success")
+        return True
+        
+    except Exception as e:
+        print_status(f"Error checking dependencies: {str(e)}", "error")
+        logging.error(f"Dependency check error: {str(e)}", exc_info=True)
+        return False
+
 def main():
     """Main entry point for the launcher"""
     try:
-        # Enable colors on Windows
-        if platform.system() == 'Windows':
-            os.system('color')
-        
-        print_status("netWORKS Launcher v1.0", "info")
-        
-        if not check_python_version():
-            return 1
+        # Show welcome banner
+        print(f"\n{Colors.HEADER}netWORKS - Network Scanning & Documentation Suite{Colors.END}")
+        print(f"{Colors.CYAN}Starting application...{Colors.END}\n")
         
         # Perform first-time setup if needed
-        if not check_first_time_setup():
-            print_status("First-time setup failed. Please check the errors above.", "error")
-            input("Press Enter to exit...")
-            return 1
+        if check_first_time_setup():
+            print_status("First-time setup completed successfully", "success")
+        
+        # Install dependencies if first run or missing
+        # Skip dependency check temporarily to allow application to start
+        # dependencies_ok = ensure_dependencies()
+        # if not dependencies_ok:
+        #     print_status("Cannot continue due to missing dependencies", "error")
+        #     return 1
+        
+        # Check for updates
+        check_for_updates()
         
         # Run the main application
         return run_application()
         
     except KeyboardInterrupt:
-        print_status("\nLauncher terminated by user", "warning")
-        return 0
+        print_status("\nStartup canceled by user", "warning")
+        return 130
     except Exception as e:
-        print_status(f"Unhandled exception in launcher: {str(e)}", "error")
-        logging.error("Unhandled exception in launcher", exc_info=True)
+        print_status(f"Unexpected error during startup: {str(e)}", "error")
+        logging.error(f"Unexpected startup error: {str(e)}", exc_info=True)
         return 1
 
 if __name__ == "__main__":

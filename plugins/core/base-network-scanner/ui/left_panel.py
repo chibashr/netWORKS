@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QLineEdit,
     QGroupBox, QRadioButton, QButtonGroup, QSpacerItem,
     QSizePolicy, QProgressBar, QGridLayout, QDialog, QDialogButtonBox,
-    QSpinBox, QCheckBox
+    QSpinBox, QCheckBox, QTabWidget
 )
 from PySide6.QtCore import Qt, Signal, Slot, QThread
 
@@ -48,37 +48,46 @@ class ScanControlPanel(QWidget):
     def init_ui(self):
         """Initialize the UI elements."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
         
         # Title
         title_label = QLabel("Network Scanner")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        title_label.setStyleSheet("font-size: 15px; font-weight: bold;")
         layout.addWidget(title_label)
         
         # Interface selection
         interface_group = QGroupBox("Network Interface")
         interface_layout = QVBoxLayout(interface_group)
-        interface_layout.setContentsMargins(5, 10, 5, 10)
-        interface_layout.setSpacing(5)
+        interface_layout.setContentsMargins(5, 8, 5, 8)
+        interface_layout.setSpacing(4)
         
         self.interface_combo = QComboBox()
         self.interface_combo.setMinimumWidth(200)
         interface_layout.addWidget(self.interface_combo)
         
-        self.refresh_interfaces_btn = QPushButton("Refresh Interfaces")
-        interface_layout.addWidget(self.refresh_interfaces_btn)
+        # Place refresh button to the right side
+        refresh_layout = QHBoxLayout()
+        refresh_layout.setSpacing(4)
+        refresh_layout.addStretch(1)
+        
+        self.refresh_interfaces_btn = QPushButton("Refresh")
+        self.refresh_interfaces_btn.setMaximumWidth(100)
+        refresh_layout.addWidget(self.refresh_interfaces_btn)
+        
+        interface_layout.addLayout(refresh_layout)
         
         layout.addWidget(interface_group)
         
         # IP Range - with range type selector
         range_group = QGroupBox("IP Range")
         range_layout = QVBoxLayout(range_group)
-        range_layout.setContentsMargins(5, 10, 5, 10)
-        range_layout.setSpacing(5)
+        range_layout.setContentsMargins(5, 8, 5, 8)
+        range_layout.setSpacing(4)
         
         # Add radio buttons for range type selection
         range_type_layout = QHBoxLayout()
+        range_type_layout.setSpacing(4)
         
         self.range_type_group = QButtonGroup(self)
         
@@ -99,6 +108,7 @@ class ScanControlPanel(QWidget):
         
         # Range input with help button
         range_input_layout = QHBoxLayout()
+        range_input_layout.setSpacing(4)
         
         self.range_input = QLineEdit()
         self.range_input.setPlaceholderText("192.168.1.1-254 or 10.0.0.0/24")
@@ -116,42 +126,48 @@ class ScanControlPanel(QWidget):
         
         layout.addWidget(range_group)
         
-        # Scan type
+        # Scan type - more compact layout
         scan_type_group = QGroupBox("Scan Type")
         scan_type_layout = QVBoxLayout(scan_type_group)
-        scan_type_layout.setContentsMargins(5, 10, 5, 10)
-        scan_type_layout.setSpacing(5)
+        scan_type_layout.setContentsMargins(5, 8, 5, 8)
+        scan_type_layout.setSpacing(4)
         
         # Create a horizontal layout for scan type selection
         scan_type_selector_layout = QHBoxLayout()
-        scan_type_selector_layout.setSpacing(10)  # Add spacing between elements
+        scan_type_selector_layout.setSpacing(6)
         
         # Add scan type combo box
         self.scan_type_combo = QComboBox()
-        self.scan_type_combo.setMinimumWidth(200)
-        scan_type_selector_layout.addWidget(self.scan_type_combo)
+        scan_type_selector_layout.addWidget(self.scan_type_combo, 1)  # Add stretch factor
         
         # Add configure button for manual scan
         self.configure_manual_btn = QPushButton("Configure")
         self.configure_manual_btn.setToolTip("Configure manual scan settings")
         self.configure_manual_btn.setVisible(False)  # Hidden by default
         self.configure_manual_btn.clicked.connect(self.configure_manual_scan)
-        self.configure_manual_btn.setMaximumWidth(100)  # Limit width to prevent layout issues
+        self.configure_manual_btn.setMaximumWidth(80)
         scan_type_selector_layout.addWidget(self.configure_manual_btn)
         
-        # Add stretch to push elements to the left
-        scan_type_selector_layout.addStretch(1)
-        
-        # Add the selector layout to the main layout
         scan_type_layout.addLayout(scan_type_selector_layout)
+        
+        # Add single manage button instead of separate buttons
+        template_button_layout = QHBoxLayout()
+        template_button_layout.setSpacing(4)
+        
+        self.manage_templates_btn = QPushButton("Manage Scan Types")
+        self.manage_templates_btn.setToolTip("Manage scan templates and create new types")
+        self.manage_templates_btn.clicked.connect(lambda: self.plugin.show_template_manager())
+        template_button_layout.addWidget(self.manage_templates_btn)
+        
+        scan_type_layout.addLayout(template_button_layout)
         
         layout.addWidget(scan_type_group)
         
-        # Progress indicator
+        # Progress indicator - more compact
         progress_group = QGroupBox("Scan Progress")
         progress_layout = QVBoxLayout(progress_group)
-        progress_layout.setContentsMargins(5, 10, 5, 10)
-        progress_layout.setSpacing(5)
+        progress_layout.setContentsMargins(5, 8, 5, 8)
+        progress_layout.setSpacing(4)
         
         self.progress_bar = QProgressBar()
         self.progress_bar.setTextVisible(True)
@@ -164,26 +180,30 @@ class ScanControlPanel(QWidget):
         
         layout.addWidget(progress_group)
         
-        # Action buttons
+        # Action buttons - more compact
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(6)
         
         self.start_scan_btn = QPushButton("Start Scan")
-        self.start_scan_btn.setMinimumHeight(40)
+        self.start_scan_btn.setMinimumHeight(36)
         self.start_scan_btn.setStyleSheet("font-weight: bold;")
         button_layout.addWidget(self.start_scan_btn)
         
-        self.stop_scan_btn = QPushButton("Stop Scan")
-        self.stop_scan_btn.setMinimumHeight(40)
+        self.stop_scan_btn = QPushButton("Stop")
+        self.stop_scan_btn.setMinimumHeight(36)
         self.stop_scan_btn.setEnabled(False)
+        self.stop_scan_btn.setMaximumWidth(80)
         button_layout.addWidget(self.stop_scan_btn)
         
         layout.addLayout(button_layout)
         
         # Add spacer at the bottom
-        layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        layout.addItem(QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Expanding))
         
         # Initialize with default values
-        self.range_input.setText(self.plugin.config.get("default_range", "192.168.1.1-254"))
+        saved_custom_range = self.plugin.config.get("custom_range")
+        default_range = self.plugin.config.get("default_range", "192.168.1.1-254")
+        self.range_input.setText(saved_custom_range if saved_custom_range else default_range)
     
     def connect_signals(self):
         """Connect the UI signals to handlers"""
@@ -207,9 +227,18 @@ class ScanControlPanel(QWidget):
             # Scan type combo
             self.scan_type_combo.currentIndexChanged.connect(self.on_scan_type_changed)
             
+            # Interface combo - automatically update range when interface changes
+            self.interface_combo.currentIndexChanged.connect(self.on_interface_changed)
+            
             self.logger.debug("ScanControlPanel signals connected successfully")
         except Exception as e:
             self.logger.error(f"Error connecting signals: {str(e)}", exc_info=True)
+    
+    def on_interface_changed(self, index):
+        """Handle interface selection change."""
+        # Update range if using interface range mode
+        if hasattr(self, 'interface_range_radio') and self.interface_range_radio.isChecked():
+            self.update_range_from_interface()
     
     def on_range_type_changed(self, checked):
         """Handle change of range type selection."""
@@ -225,6 +254,12 @@ class ScanControlPanel(QWidget):
                 # Custom range selected - enable manual editing
                 self.range_input.setReadOnly(False)
                 self.range_input.setStyleSheet("")
+                
+                # Save the custom range in the plugin config for persistence
+                custom_range = self.range_input.text().strip()
+                if custom_range:
+                    self.plugin.config["custom_range"] = custom_range
+                    self.plugin._save_config()
     
     def force_update_range_from_interface(self):
         """Force update the IP range based on the selected interface, ignoring the current range type."""
@@ -694,7 +729,7 @@ class ScanControlPanel(QWidget):
         # Create dialog
         dialog = QDialog(self)
         dialog.setWindowTitle("Manual Scan Configuration")
-        dialog.setMinimumWidth(400)
+        dialog.setMinimumWidth(500)
         
         layout = QVBoxLayout(dialog)
         
@@ -728,53 +763,215 @@ class ScanControlPanel(QWidget):
         
         layout.addWidget(range_group)
         
-        # Scan settings
-        settings_group = QGroupBox("Scan Settings")
-        settings_layout = QFormLayout(settings_group)
+        # Create tabs for different scan options categories
+        tabs = QTabWidget()
+        
+        # Basic Settings Tab
+        basic_tab = QWidget()
+        basic_layout = QFormLayout(basic_tab)
         
         # Timeout (seconds)
         timeout_spin = QSpinBox()
         timeout_spin.setMinimum(1)
         timeout_spin.setMaximum(30)
         timeout_spin.setValue(template.get("timeout", 2))
-        settings_layout.addRow("Timeout (seconds):", timeout_spin)
+        basic_layout.addRow("Timeout (seconds):", timeout_spin)
         
         # Retries
         retries_spin = QSpinBox()
         retries_spin.setMinimum(1)
         retries_spin.setMaximum(10)
         retries_spin.setValue(template.get("retries", 2))
-        settings_layout.addRow("Retries:", retries_spin)
+        basic_layout.addRow("Retries:", retries_spin)
         
         # Parallel hosts
         parallel_spin = QSpinBox()
         parallel_spin.setMinimum(1)
         parallel_spin.setMaximum(100)
         parallel_spin.setValue(template.get("parallel", 25))
-        settings_layout.addRow("Parallel hosts:", parallel_spin)
+        basic_layout.addRow("Parallel hosts:", parallel_spin)
+        
+        # Host discovery method
+        discovery_combo = QComboBox()
+        discovery_options = [
+            ("ping", "ICMP Echo (ping)"),
+            ("arp", "ARP Scan (local network only)"),
+            ("syn", "TCP SYN Scan"),
+            ("ack", "TCP ACK Scan"),
+            ("udp", "UDP Scan"),
+            ("all", "Multiple methods (slower but more thorough)")
+        ]
+        for value, label in discovery_options:
+            discovery_combo.addItem(label, value)
+        
+        # Set default value
+        default_discovery = template.get("discovery_method", "ping")
+        for i in range(discovery_combo.count()):
+            if discovery_combo.itemData(i) == default_discovery:
+                discovery_combo.setCurrentIndex(i)
+                break
+                
+        basic_layout.addRow("Host discovery method:", discovery_combo)
+        
+        tabs.addTab(basic_tab, "Basic Settings")
+        
+        # Port Scanning Tab
+        port_tab = QWidget()
+        port_layout = QFormLayout(port_tab)
         
         # Port scanning
-        port_check = QCheckBox("Scan common ports")
+        port_check = QCheckBox("Enable port scanning")
         port_check.setChecked("ports" in template)
-        settings_layout.addRow("", port_check)
+        port_layout.addRow("", port_check)
         
-        # Port list
+        # Port scan type
+        port_scan_combo = QComboBox()
+        port_scan_options = [
+            ("connect", "TCP Connect Scan (most compatible)"),
+            ("syn", "TCP SYN Scan (stealthier, requires root)"),
+            ("fin", "TCP FIN Scan (very stealthy, may be filtered)"),
+            ("udp", "UDP Scan (for UDP services)"),
+            ("all", "Full port scan (all methods, very slow)")
+        ]
+        for value, label in port_scan_options:
+            port_scan_combo.addItem(label, value)
+        
+        # Set default value
+        default_port_scan = template.get("port_scan_type", "connect")
+        for i in range(port_scan_combo.count()):
+            if port_scan_combo.itemData(i) == default_port_scan:
+                port_scan_combo.setCurrentIndex(i)
+                break
+                
+        port_layout.addRow("Port scan type:", port_scan_combo)
+        port_scan_combo.setEnabled(port_check.isChecked())
+        
+        # Port selection
+        port_selection_layout = QVBoxLayout()
+        
+        # Predefined port groups
+        port_group_check = QCheckBox("Scan common ports")
+        port_group_check.setChecked(template.get("use_common_ports", True))
+        port_selection_layout.addWidget(port_group_check)
+        
+        port_group_combo = QComboBox()
+        port_groups = [
+            ("top10", "Top 10 ports"),
+            ("top100", "Top 100 ports"),
+            ("top1000", "Top 1000 ports"),
+            ("common", "Common service ports"),
+            ("all", "All ports (1-65535, very slow)")
+        ]
+        for value, label in port_groups:
+            port_group_combo.addItem(label, value)
+        
+        # Set default port group
+        default_port_group = template.get("port_group", "common")
+        for i in range(port_group_combo.count()):
+            if port_group_combo.itemData(i) == default_port_group:
+                port_group_combo.setCurrentIndex(i)
+                break
+                
+        port_selection_layout.addWidget(port_group_combo)
+        port_group_combo.setEnabled(port_group_check.isChecked() and port_check.isChecked())
+        
+        # Custom port list
+        custom_ports_check = QCheckBox("Specify custom ports")
+        custom_ports_check.setChecked(template.get("use_custom_ports", False))
+        port_selection_layout.addWidget(custom_ports_check)
+        
         ports_input = QLineEdit()
         default_ports = template.get("ports", [21, 22, 23, 25, 53, 80, 443, 445, 3389])
         if default_ports:
             ports_input.setText(",".join(map(str, default_ports)))
-        ports_input.setEnabled(port_check.isChecked())
-        settings_layout.addRow("Ports to scan:", ports_input)
+        ports_input.setPlaceholderText("e.g., 22,80,443,8080 or 1000-2000")
+        port_selection_layout.addWidget(ports_input)
+        ports_input.setEnabled(custom_ports_check.isChecked() and port_check.isChecked())
         
-        # Connect port check to ports input
-        port_check.toggled.connect(ports_input.setEnabled)
+        port_layout.addRow("Port selection:", port_selection_layout)
         
-        layout.addWidget(settings_group)
+        # Connect port check to port controls
+        port_check.toggled.connect(port_scan_combo.setEnabled)
+        port_check.toggled.connect(lambda checked: port_group_combo.setEnabled(checked and port_group_check.isChecked()))
+        port_check.toggled.connect(lambda checked: ports_input.setEnabled(checked and custom_ports_check.isChecked()))
+        port_group_check.toggled.connect(lambda checked: port_group_combo.setEnabled(checked and port_check.isChecked()))
+        custom_ports_check.toggled.connect(lambda checked: ports_input.setEnabled(checked and port_check.isChecked()))
+        
+        tabs.addTab(port_tab, "Port Scanning")
+        
+        # Advanced Tab
+        advanced_tab = QWidget()
+        advanced_layout = QFormLayout(advanced_tab)
+        
+        # OS Detection
+        os_detection_check = QCheckBox("Enable OS detection")
+        os_detection_check.setChecked(template.get("os_detection", False))
+        advanced_layout.addRow("", os_detection_check)
+        
+        # Service Version Detection
+        service_detection_check = QCheckBox("Enable service version detection")
+        service_detection_check.setChecked(template.get("service_detection", False))
+        advanced_layout.addRow("", service_detection_check)
+        
+        # Script scanning
+        script_scan_check = QCheckBox("Enable script scanning")
+        script_scan_check.setChecked(template.get("script_scan", False))
+        advanced_layout.addRow("", script_scan_check)
+        
+        # Script category
+        script_category_combo = QComboBox()
+        script_categories = [
+            ("default", "Default scripts"),
+            ("discovery", "Discovery scripts"),
+            ("safe", "Safe scripts"),
+            ("all", "All scripts (potentially intrusive)")
+        ]
+        for value, label in script_categories:
+            script_category_combo.addItem(label, value)
+        
+        # Set default script category
+        default_script_category = template.get("script_category", "safe")
+        for i in range(script_category_combo.count()):
+            if script_category_combo.itemData(i) == default_script_category:
+                script_category_combo.setCurrentIndex(i)
+                break
+                
+        advanced_layout.addRow("Script category:", script_category_combo)
+        script_category_combo.setEnabled(script_scan_check.isChecked())
+        
+        # Connect script scan check to script category combo
+        script_scan_check.toggled.connect(script_category_combo.setEnabled)
+        
+        # Timing template
+        timing_combo = QComboBox()
+        timing_options = [
+            (0, "T0 - Paranoid (very slow, avoid IDS)"),
+            (1, "T1 - Sneaky (slow, avoid IDS)"),
+            (2, "T2 - Polite (slower, low impact)"),
+            (3, "T3 - Normal (default)"),
+            (4, "T4 - Aggressive (faster, may impact targets)"),
+            (5, "T5 - Insane (very fast, may impact targets)")
+        ]
+        for value, label in timing_options:
+            timing_combo.addItem(label, value)
+        
+        # Set default timing
+        default_timing = template.get("timing", 3)
+        for i in range(timing_combo.count()):
+            if timing_combo.itemData(i) == default_timing:
+                timing_combo.setCurrentIndex(i)
+                break
+                
+        advanced_layout.addRow("Scan timing:", timing_combo)
+        
+        tabs.addTab(advanced_tab, "Advanced Options")
+        
+        layout.addWidget(tabs)
         
         # Add note about scan time
         note_label = QLabel(
-            "Note: High parallelism can speed up scans but may cause network congestion or false negatives.\n"
-            "For reliable results, keep parallel hosts between 25-50."
+            "Note: Advanced options can significantly increase scan time and network traffic.\n"
+            "Some features require root/administrator privileges to work correctly."
         )
         note_label.setWordWrap(True)
         layout.addWidget(note_label)
@@ -803,18 +1000,47 @@ class ScanControlPanel(QWidget):
             options = {
                 "timeout": timeout_spin.value(),
                 "retries": retries_spin.value(),
-                "parallel": parallel_spin.value()
+                "parallel": parallel_spin.value(),
+                "discovery_method": discovery_combo.itemData(discovery_combo.currentIndex())
             }
             
-            # Add ports if enabled
-            if port_check.isChecked() and ports_input.text().strip():
-                try:
-                    port_list = [int(p.strip()) for p in ports_input.text().split(",") if p.strip()]
-                    if port_list:
-                        options["ports"] = port_list
-                except ValueError:
-                    self.plugin.api.log("Invalid port format. Using default ports.", level="WARNING")
-                    options["ports"] = default_ports
+            # Port scanning options
+            if port_check.isChecked():
+                options["port_scan_type"] = port_scan_combo.itemData(port_scan_combo.currentIndex())
+                
+                # Port groups
+                options["use_common_ports"] = port_group_check.isChecked()
+                if port_group_check.isChecked():
+                    options["port_group"] = port_group_combo.itemData(port_group_combo.currentIndex())
+                
+                # Custom ports
+                options["use_custom_ports"] = custom_ports_check.isChecked()
+                if custom_ports_check.isChecked() and ports_input.text().strip():
+                    try:
+                        # Support for port ranges (e.g., 1000-2000) and comma-separated values
+                        port_list = []
+                        for port_str in ports_input.text().split(","):
+                            port_str = port_str.strip()
+                            if "-" in port_str:
+                                start, end = map(int, port_str.split("-"))
+                                port_list.extend(range(start, end + 1))
+                            else:
+                                port_list.append(int(port_str))
+                        
+                        if port_list:
+                            options["ports"] = port_list
+                    except ValueError:
+                        self.plugin.api.log("Invalid port format. Using default ports.", level="WARNING")
+                        options["ports"] = default_ports
+            
+            # Advanced options
+            options["os_detection"] = os_detection_check.isChecked()
+            options["service_detection"] = service_detection_check.isChecked()
+            options["script_scan"] = script_scan_check.isChecked()
+            if script_scan_check.isChecked():
+                options["script_category"] = script_category_combo.itemData(script_category_combo.currentIndex())
+            
+            options["timing"] = timing_combo.itemData(timing_combo.currentIndex())
             
             return {
                 "interface": interface,

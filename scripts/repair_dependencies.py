@@ -15,9 +15,10 @@ if not os.path.exists('logs'):
     os.makedirs('logs', exist_ok=True)
 
 logging.basicConfig(
-    filename=os.path.join('logs', 'dependency_repair.log'),
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[logging.StreamHandler()]
 )
 
 # Console colors for Windows and other platforms

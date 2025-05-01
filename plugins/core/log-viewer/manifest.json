@@ -1,0 +1,41 @@
+{
+    "name": "log-viewer",
+    "displayName": "Log Viewer",
+    "version": "1.0.0",
+    "description": "View, filter, and download application logs",
+    "author": "netWORKS",
+    "main": "main.py",
+    "init": "init_plugin",
+    "dependencies": [],
+    "ui": {
+        "panels": [],
+        "toolbar": [
+            {"name": "help", "section": "Diagnostics", "label": "View Logs"}
+        ],
+        "menu": [
+            {"name": "Help", "label": "View Logs"}
+        ]
+    },
+    "exports": {
+        "open_log_viewer": {
+            "description": "Open the log viewer dialog",
+            "parameters": [],
+            "returns": "None"
+        },
+        "get_logs": {
+            "description": "Get logs from the system",
+            "parameters": ["filter_criteria"],
+            "returns": "List of log entries"
+        },
+        "download_logs": {
+            "description": "Download logs as a file",
+            "parameters": ["log_entries", "file_path"],
+            "returns": "Boolean success status"
+        }
+    },
+    "changelog": {
+        "1.0.0": [
+            "Initial release"
+        ]
+    }
+} 

@@ -1,51 +1,17 @@
 {
   "plugins": {
-    "port-scanner": {
-      "enabled": true,
-      "settings": {}
-    },
-    "core-scanner": {
-      "enabled": true,
-      "locked": true,
-      "settings": {}
-    },
-    "core-workspace": {
-      "enabled": true,
-      "locked": true,
-      "settings": {}
-    },
-    "test-menu": {
-      "enabled": false,
-      "locked": false,
-      "settings": {}
-    },
-    "log-viewer": {
-      "enabled": true,
-      "locked": false,
-      "settings": {}
-    },
-    "Core Scanner": {
-      "enabled": true,
-      "locked": true,
-      "settings": {}
-    },
-    "example-plugin": {
-      "enabled": false,
-      "locked": false,
-      "settings": {}
-    },
     "base-network-scanner": {
       "enabled": true,
-      "locked": false,
+      "locked": true,
       "settings": {
         "settings": {
           "scan_history": [
             {
-              "id": "scan_1745892039",
+              "id": "scan_1746065710",
               "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
               "range": "10.1.8.1-254",
               "scan_type": "quick_scan",
-              "start_time": "2025-04-28 21:00:39",
+              "start_time": "2025-04-30 21:15:10",
               "status": "starting",
               "devices_found": 0,
               "total_devices": 0,
@@ -57,11 +23,11 @@
               "parallel": 50
             },
             {
-              "id": "scan_1745887502",
+              "id": "scan_1746020959",
               "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
               "range": "10.1.8.1-254",
               "scan_type": "quick_scan",
-              "start_time": "2025-04-28 19:45:02",
+              "start_time": "2025-04-30 08:49:19",
               "status": "starting",
               "devices_found": 0,
               "total_devices": 0,
@@ -73,11 +39,11 @@
               "parallel": 50
             },
             {
-              "id": "scan_1745887178",
+              "id": "scan_1745941771",
               "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
               "range": "10.1.8.1-254",
               "scan_type": "quick_scan",
-              "start_time": "2025-04-28 19:39:38",
+              "start_time": "2025-04-29 10:49:31",
               "status": "starting",
               "devices_found": 0,
               "total_devices": 0,
@@ -89,11 +55,11 @@
               "parallel": 50
             },
             {
-              "id": "scan_1745887061",
+              "id": "scan_1745941524",
               "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
               "range": "10.1.8.1-254",
               "scan_type": "quick_scan",
-              "start_time": "2025-04-28 19:37:41",
+              "start_time": "2025-04-29 10:45:24",
               "status": "starting",
               "devices_found": 0,
               "total_devices": 0,
@@ -105,38 +71,11 @@
               "parallel": 50
             },
             {
-              "id": "scan_1745885127",
-              "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
-              "range": "10.1.8.1-254",
-              "scan_type": "deep_scan",
-              "start_time": "2025-04-28 19:05:27",
-              "status": "starting",
-              "devices_found": 0,
-              "total_devices": 0,
-              "end_time": null,
-              "name": "Deep Scan",
-              "description": "Comprehensive scan with port checks",
-              "timeout": 2,
-              "retries": 2,
-              "parallel": 25,
-              "ports": [
-                21,
-                22,
-                23,
-                25,
-                53,
-                80,
-                443,
-                445,
-                3389
-              ]
-            },
-            {
-              "id": "scan_1745876726",
+              "id": "scan_1745941058",
               "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
               "range": "10.1.8.1-254",
               "scan_type": "quick_scan",
-              "start_time": "2025-04-28 16:45:26",
+              "start_time": "2025-04-29 10:37:38",
               "status": "starting",
               "devices_found": 0,
               "total_devices": 0,
@@ -148,11 +87,91 @@
               "parallel": 50
             },
             {
-              "id": "scan_1745894218",
+              "id": "scan_1745940902",
               "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
               "range": "10.1.8.1-254",
               "scan_type": "quick_scan",
-              "start_time": "2025-04-28 21:36:58",
+              "start_time": "2025-04-29 10:35:02",
+              "status": "starting",
+              "devices_found": 0,
+              "total_devices": 0,
+              "end_time": null,
+              "name": "Quick Scan",
+              "description": "Fast ping sweep of network",
+              "timeout": 1,
+              "retries": 1,
+              "parallel": 50
+            },
+            {
+              "id": "scan_1745940550",
+              "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
+              "range": "10.1.8.1-254",
+              "scan_type": "quick_scan",
+              "start_time": "2025-04-29 10:29:10",
+              "status": "starting",
+              "devices_found": 0,
+              "total_devices": 0,
+              "end_time": null,
+              "name": "Quick Scan",
+              "description": "Fast ping sweep of network",
+              "timeout": 1,
+              "retries": 1,
+              "parallel": 50
+            },
+            {
+              "id": "scan_1745939238",
+              "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
+              "range": "10.1.8.1-254",
+              "scan_type": "quick_scan",
+              "start_time": "2025-04-29 10:07:18",
+              "status": "starting",
+              "devices_found": 0,
+              "total_devices": 0,
+              "end_time": null,
+              "name": "Quick Scan",
+              "description": "Fast ping sweep of network",
+              "timeout": 1,
+              "retries": 1,
+              "parallel": 50
+            },
+            {
+              "id": "scan_1745938555",
+              "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
+              "range": "10.1.8.1-254",
+              "scan_type": "quick_scan",
+              "start_time": "2025-04-29 09:55:55",
+              "status": "starting",
+              "devices_found": 0,
+              "total_devices": 0,
+              "end_time": null,
+              "name": "Quick Scan",
+              "description": "Fast ping sweep of network",
+              "timeout": 1,
+              "retries": 1,
+              "parallel": 50
+            },
+            {
+              "id": "scan_1745938279",
+              "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
+              "range": "10.1.8.1-254",
+              "scan_type": "quick_scan",
+              "start_time": "2025-04-29 09:51:19",
+              "status": "starting",
+              "devices_found": 0,
+              "total_devices": 0,
+              "end_time": null,
+              "name": "Quick Scan",
+              "description": "Fast ping sweep of network",
+              "timeout": 1,
+              "retries": 1,
+              "parallel": 50
+            },
+            {
+              "id": "scan_1746066242",
+              "interface": "{D00D117D-8ADC-4676-A56B-7BEF4B567626}",
+              "range": "10.1.8.1-254",
+              "scan_type": "quick_scan",
+              "start_time": "2025-04-30 21:24:02",
               "status": "starting",
               "devices_found": 0,
               "total_devices": 0,
@@ -163,11 +182,77 @@
               "retries": 1,
               "parallel": 50
             }
-          ]
+          ],
+          "config": {
+            "scan_templates": {
+              "quick_scan": {
+                "name": "Quick Scan",
+                "description": "Fast ping sweep of network",
+                "timeout": 1,
+                "retries": 1,
+                "parallel": 50
+              },
+              "deep_scan": {
+                "name": "Deep Scan",
+                "description": "Comprehensive scan with port checks",
+                "timeout": 2,
+                "retries": 2,
+                "parallel": 25,
+                "ports": [
+                  21,
+                  22,
+                  23,
+                  25,
+                  53,
+                  80,
+                  443,
+                  445,
+                  3389
+                ]
+              },
+              "stealth_scan": {
+                "name": "Stealth Scan",
+                "description": "Slow, stealthy scan with minimal impact",
+                "timeout": 3,
+                "retries": 1,
+                "parallel": 5
+              },
+              "manual_scan": {
+                "name": "Manual Scan",
+                "description": "Configure scan settings manually",
+                "timeout": 2,
+                "retries": 2,
+                "parallel": 25,
+                "manual": true,
+                "first_use": true
+              },
+              "template_1746066199": {
+                "name": "Test Template",
+                "description": "testintg",
+                "timeout": 2,
+                "retries": 2,
+                "parallel": 25,
+                "discovery_method": "arp",
+                "manual": false,
+                "timing": 3,
+                "os_detection": false,
+                "service_detection": false,
+                "script_scan": false
+              }
+            },
+            "default_interface": "",
+            "default_range": "192.168.1.1-254",
+            "max_scan_history": 50
+          }
         }
       }
     },
     "network-device-manager": {
+      "enabled": true,
+      "locked": false,
+      "settings": {}
+    },
+    "log-viewer": {
       "enabled": true,
       "locked": false,
       "settings": {}

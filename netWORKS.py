@@ -248,85 +248,164 @@ def main():
         
         # Setup directories
         update_stage()  # Stage 3: Setting up directories
-        print("[DEBUG] Creating required directories")
+        print("[DEBUG] Setting up directories")
         setup_directories()
         app.processEvents()
         
-        # Check for critical paths and files
+        # Check environment
         update_stage()  # Stage 4: Checking environment
         print("[DEBUG] Checking environment")
-        if not check_environment():
-            logger.error("Environment check failed - critical paths/files missing")
-            raise RuntimeError("Environment check failed - see logs for details")
+        env_ok, env_message = check_environment()
+        logger.info(f"Environment check: {env_message}")
+        if not env_ok:
+            logger.warning(f"Environment issue: {env_message}")
+            # Show dialog based on environment check result
+            QMessageBox.warning(None, "Environment Warning", env_message)
         app.processEvents()
         
         # Load version information
         update_stage()  # Stage 5: Loading version information
         print("[DEBUG] Loading version information")
-        manifest = load_manifest()
-        if manifest:
-            logger.info(f"Application version: {manifest['version_string']}")
-            logger.info(f"Build date: {manifest['build_date']}")
-            logger.info(f"API compatibility: {manifest['compatibility']['min_plugin_api']}")
-            logger.info(f"Min Python version: {manifest['compatibility']['min_python_version']}")
-        else:
-            logger.warning("Failed to load version manifest, using default version information")
+        version_string = get_version_string()
+        version_manifest = load_manifest()
+        logger.info(f"Application version: {version_string}")
         app.processEvents()
         
-        # Create plugin manager
+        # Load plugin manager
         update_stage()  # Stage 6: Loading plugin manager
-        print("[DEBUG] Creating plugin manager")
-        try:
-            plugin_manager = PluginManager(os.path.join("config", "plugins.json"))
-        except Exception as e:
-            logger.error(f"Error creating plugin manager: {str(e)}", exc_info=True)
-            print(f"[ERROR] Plugin manager creation failed: {str(e)}")
-            # Create a minimal plugin manager to allow the application to continue
-            plugin_manager = PluginManager(os.path.join("config", "plugins.json"), skip_discovery=True)
+        print("[DEBUG] Loading plugin manager")
+        plugin_manager = PluginManager(os.path.join("config", "plugins.json"))
+        
+        # Discover and load available plugins
+        plugin_manager.discover_plugins()
         app.processEvents()
         
-        # Create main window but don't show it yet
+        # Create main window
         update_stage()  # Stage 7: Creating main window
         print("[DEBUG] Creating main window")
-        try:
-            main_window = MainWindow(plugin_manager)
-            # Note: We don't set the main window reference here anymore
-            # It will be set in the plugin configuration stage (stage 10)
-        except Exception as e:
-            logger.error(f"Error creating main window: {str(e)}", exc_info=True)
-            print(f"[ERROR] Main window creation failed: {str(e)}")
-            raise  # This is critical - we can't continue without a main window
+        main_window = MainWindow(plugin_manager)
+        
+        # Handle database initialization
+        update_stage()  # Stage 8: Initializing database manager
+        print("[DEBUG] Initializing database manager")
+        logger.debug("Database manager initialization handled by main window")
         app.processEvents()
         
-        # Removed workspace manager creation - now using database manager
-        update_stage()  # Stage 8: Initializing database manager (handled by core module)
-        update_stage()  # Stage 9: Connecting database manager (handled by core module)
+        # Handle database connection
+        update_stage()  # Stage 9: Connecting database manager
+        print("[DEBUG] Connecting database manager")
+        logger.debug("Database connection handled by main window")
+        app.processEvents()
         
-        # Set main window reference in plugin APIs
+        # Configure plugins
         update_stage()  # Stage 10: Configuring plugins
-        print("[DEBUG] Configuring plugins with main window reference")
-        
-        # Use the plugin manager's method to set the main window reference
-        plugin_manager.set_main_window(main_window)
-        
-        # Successfully set the main window for all plugins
-        plugin_connection_results = {"success": len(plugin_manager.plugin_apis), "failure": 0}
-        print(f"[DEBUG] Plugin configuration results: {plugin_connection_results['success']} succeeded, {plugin_connection_results['failure']} failed")
-        logger.info(f"Plugin configuration results: {plugin_connection_results['success']} succeeded, {plugin_connection_results['failure']} failed")
+        print("[DEBUG] Configuring plugins")
+        logger.debug("Plugin configuration handled by main window")
         app.processEvents()
+        
+        # Start UI
+        update_stage()  # Stage 11: Starting UI
+        print("[DEBUG] Starting UI")
+        logger.debug("Starting user interface")
+        app.processEvents()
+        
+        # Close splash screen
+        print("[DEBUG] Closing splash screen")
+        splash.close()
+        logger.debug("Splash screen closed")
+        
+        # Show workspace selection dialog
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem
+        
+        def show_workspace_dialog():
+            dialog = QDialog(main_window)
+            dialog.setWindowTitle("Workspace Selection")
+            dialog.setMinimumSize(500, 400)
+            layout = QVBoxLayout(dialog)
+            
+            # Add header
+            header_label = QLabel("Select a workspace or create a new one")
+            header_label.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
+            layout.addWidget(header_label)
+            
+            # Get available workspaces
+            workspaces = main_window.workspace_manager.get_workspaces()
+            
+            # Check if we have any workspaces besides default
+            if len(workspaces) <= 1:
+                # Just use default workspace and close dialog
+                return False
+            
+            # Add list widget for workspaces
+            workspace_list = QListWidget()
+            workspace_list.setStyleSheet("QListWidget::item { padding: 8px; }")
+            
+            # Add workspaces to list
+            for workspace_id, workspace_data in workspaces.items():
+                # Skip default workspace
+                if workspace_data.get('name', '').lower() == 'default' and workspace_id == main_window.workspace_manager.current_workspace_id:
+                    continue
+                    
+                item = QListWidgetItem(f"{workspace_data.get('name', 'Unnamed')} - {workspace_data.get('devices_count', 0)} devices")
+                item.setData(Qt.UserRole, workspace_id)
+                workspace_list.addItem(item)
+            
+            # Select first item
+            if workspace_list.count() > 0:
+                workspace_list.setCurrentRow(0)
+                
+            layout.addWidget(workspace_list)
+            
+            # Add buttons
+            button_layout = QHBoxLayout()
+            
+            new_workspace_btn = QPushButton("Create New Workspace")
+            open_workspace_btn = QPushButton("Open Selected Workspace")
+            cancel_btn = QPushButton("Use Default Workspace")
+            
+            # Connect signals
+            def on_new_workspace():
+                # Show new workspace dialog
+                from PySide6.QtWidgets import QInputDialog
+                name, ok = QInputDialog.getText(dialog, "New Workspace", "Enter name for new workspace:")
+                if ok and name:
+                    # Create new workspace
+                    workspace_id = main_window.workspace_manager.create_workspace(name)
+                    if workspace_id:
+                        # Open new workspace
+                        main_window.workspace_manager.open_workspace(workspace_id)
+                        dialog.accept()
+            
+            def on_open_workspace():
+                # Get selected workspace ID
+                selected_items = workspace_list.selectedItems()
+                if selected_items:
+                    workspace_id = selected_items[0].data(Qt.UserRole)
+                    # Open selected workspace
+                    main_window.workspace_manager.open_workspace(workspace_id)
+                    dialog.accept()
+            
+            new_workspace_btn.clicked.connect(on_new_workspace)
+            open_workspace_btn.clicked.connect(on_open_workspace)
+            cancel_btn.clicked.connect(dialog.reject)
+            
+            button_layout.addWidget(new_workspace_btn)
+            button_layout.addWidget(open_workspace_btn)
+            button_layout.addWidget(cancel_btn)
+            
+            layout.addLayout(button_layout)
+            
+            # Execute dialog
+            return dialog.exec_() == QDialog.Accepted
+            
+        # Show workspace dialog after a short delay to ensure UI is fully loaded
+        QTimer.singleShot(500, show_workspace_dialog)
         
         # Show main window
-        update_stage()  # Stage 11: Starting UI
-        print("[DEBUG] Showing main window")
         main_window.show()
-        logger.info("Application initialized and main window shown")
-        app.processEvents()
+        logger.debug("Main window displayed")
         
-        # Close splash screen after a short delay
-        print("[DEBUG] Closing splash screen")
-        QTimer.singleShot(1000, splash.close)
-        
-        # Set exception hook for unhandled exceptions
+        # Set exception handler
         def exception_hook(exctype, value, traceback):
             logger.critical("Unhandled exception", exc_info=(exctype, value, traceback))
             print(f"[ERROR] Unhandled exception: {exctype.__name__}: {value}")
@@ -381,7 +460,7 @@ def check_environment():
     for directory in critical_dirs:
         if not os.path.isdir(directory):
             print(f"[ERROR] Critical directory missing: {directory}")
-            return False
+            return False, f"Critical directory missing: {directory}"
     
     # Check for critical files
     critical_files = [
@@ -392,9 +471,9 @@ def check_environment():
     for file in critical_files:
         if not os.path.isfile(file):
             print(f"[ERROR] Critical file missing: {file}")
-            return False
+            return False, f"Critical file missing: {file}"
     
-    return True
+    return True, "All critical paths and files exist"
 
 class MainApp(QApplication):
     """Main application class."""

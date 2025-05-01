@@ -11,6 +11,7 @@ pysnmp==4.4.12  # For SNMP scanning
 python-whois==0.8.0  # For domain information
 dnspython==2.4.2  # For DNS resolution
 netaddr==0.8.0  # For IP address manipulation
+netmiko==4.5.0  # For network device connections and automation
 
 # Core dependencies
 requests>=2.31.0

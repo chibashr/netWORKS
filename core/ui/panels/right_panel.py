@@ -275,4 +275,38 @@ class RightPanel(QScrollArea):
     
     def set_notes(self, notes):
         """Set the notes text."""
-        self.notes_edit.setPlainText(notes) 
+        self.notes_edit.setPlainText(notes)
+
+    def clear_plugin_panels(self):
+        """Remove all plugin panels from the right panel.
+        
+        This is used when reloading the UI after plugin changes.
+        
+        Returns:
+            bool - True if operation was successful
+        """
+        try:
+            # Create a copy of the panels dict to iterate over while modifying
+            panels_to_remove = list(self.plugin_panels.values())
+            
+            # Remove each panel
+            for panel_info in panels_to_remove:
+                self.remove_plugin_panel(panel_info['widget'])
+            
+            self.logger.debug(f"Cleared {len(panels_to_remove)} plugin panels from right panel")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error clearing plugin panels: {str(e)}", exc_info=True)
+            return False
+            
+    def has_plugin_panel(self, panel):
+        """Check if a panel is in this container.
+        
+        Args:
+            panel: QWidget - The panel to check
+            
+        Returns:
+            bool - True if panel is in this container
+        """
+        panel_id = panel.objectName() or id(panel)
+        return panel_id in self.plugin_panels 

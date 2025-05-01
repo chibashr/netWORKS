@@ -155,8 +155,8 @@ class NetworkScannerPlugin(QObject):
                 parent_menu="Tools"
             )
             
-            # Add templates to toolbar instead of right panel
-            self.setup_toolbar_templates()
+            # Templates are now managed in the left panel scan type section
+            # self.setup_toolbar_templates()
             
             self.logger.debug("UI components created and registered successfully")
             self.ui_initialized = True
@@ -319,13 +319,14 @@ class NetworkScannerPlugin(QObject):
             from PySide6.QtWidgets import (
                 QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
                 QPushButton, QFormLayout, QLineEdit, QTextEdit, QSpinBox,
-                QDialogButtonBox, QGroupBox, QLabel, QMessageBox
+                QDialogButtonBox, QGroupBox, QLabel, QMessageBox, QTabWidget,
+                QComboBox, QCheckBox, QWidget
             )
             from PySide6.QtCore import Qt
             
             dialog = QDialog(self.api.main_window)
             dialog.setWindowTitle("Manage Scan Templates")
-            dialog.setMinimumSize(600, 500)
+            dialog.setMinimumSize(800, 600)
             
             # Create layout
             layout = QVBoxLayout(dialog)
@@ -349,11 +350,14 @@ class NetworkScannerPlugin(QObject):
             templates = self.get_scan_templates()
             for template_id, template in templates.items():
                 name = template.get("name", template_id)
-                item = QListWidgetItem(name)
+                desc = template.get("description", "")
+                display_text = f"{name} - {desc}" if desc else name
+                
+                item = QListWidgetItem(display_text)
                 item.setData(Qt.UserRole, template_id)
                 template_list.addItem(item)
             
-            # Buttons for list management
+            # Button bar under list
             button_layout = QHBoxLayout()
             
             new_btn = QPushButton("New")
@@ -363,226 +367,604 @@ class NetworkScannerPlugin(QObject):
             button_layout.addWidget(new_btn)
             button_layout.addWidget(edit_btn)
             button_layout.addWidget(delete_btn)
-            button_layout.addStretch()
             
             list_layout.addLayout(button_layout)
             
-            main_layout.addWidget(list_group)
+            main_layout.addWidget(list_group, 1)  # 1 is stretch factor
             
             # Right side - template editor
             editor_group = QGroupBox("Template Editor")
-            editor_layout = QFormLayout(editor_group)
+            editor_layout = QVBoxLayout(editor_group)
             
+            # Create tabs for organizing template settings
+            tabs = QTabWidget()
+            
+            # Basic Settings Tab
+            basic_tab = QWidget()
+            basic_layout = QFormLayout(basic_tab)
+            
+            # Basic template info
             name_input = QLineEdit()
-            editor_layout.addRow("Name:", name_input)
+            basic_layout.addRow("Name:", name_input)
             
             id_input = QLineEdit()
-            editor_layout.addRow("ID:", id_input)
+            basic_layout.addRow("ID:", id_input)
             
             description_input = QTextEdit()
-            description_input.setMaximumHeight(80)
-            editor_layout.addRow("Description:", description_input)
+            description_input.setMaximumHeight(100)
+            basic_layout.addRow("Description:", description_input)
             
+            # Basic scan settings
             timeout_spin = QSpinBox()
             timeout_spin.setMinimum(1)
             timeout_spin.setMaximum(30)
-            timeout_spin.setValue(1)
-            editor_layout.addRow("Timeout:", timeout_spin)
+            timeout_spin.setValue(2)
+            basic_layout.addRow("Timeout (seconds):", timeout_spin)
             
             retries_spin = QSpinBox()
             retries_spin.setMinimum(1)
             retries_spin.setMaximum(10)
-            retries_spin.setValue(1)
-            editor_layout.addRow("Retries:", retries_spin)
+            retries_spin.setValue(2)
+            basic_layout.addRow("Retries:", retries_spin)
             
             parallel_spin = QSpinBox()
             parallel_spin.setMinimum(1)
             parallel_spin.setMaximum(100)
-            parallel_spin.setValue(50)
-            editor_layout.addRow("Parallel hosts:", parallel_spin)
+            parallel_spin.setValue(25)
+            basic_layout.addRow("Parallel hosts:", parallel_spin)
+            
+            # Host discovery method
+            discovery_combo = QComboBox()
+            discovery_options = [
+                ("ping", "ICMP Echo (ping)"),
+                ("arp", "ARP Scan (local network only)"),
+                ("syn", "TCP SYN Scan"),
+                ("ack", "TCP ACK Scan"),
+                ("udp", "UDP Scan"),
+                ("all", "Multiple methods (slower but more thorough)")
+            ]
+            for value, label in discovery_options:
+                discovery_combo.addItem(label, value)
+            basic_layout.addRow("Host discovery method:", discovery_combo)
+            
+            tabs.addTab(basic_tab, "Basic Settings")
+            
+            # Port Scanning Tab
+            port_tab = QWidget()
+            port_layout = QFormLayout(port_tab)
+            
+            # Port scanning
+            port_check = QCheckBox("Enable port scanning")
+            port_layout.addRow("", port_check)
+            
+            # Port scan type
+            port_scan_combo = QComboBox()
+            port_scan_options = [
+                ("connect", "TCP Connect Scan (most compatible)"),
+                ("syn", "TCP SYN Scan (stealthier, requires root)"),
+                ("fin", "TCP FIN Scan (very stealthy, may be filtered)"),
+                ("udp", "UDP Scan (for UDP services)"),
+                ("all", "Full port scan (all methods, very slow)")
+            ]
+            for value, label in port_scan_options:
+                port_scan_combo.addItem(label, value)
+            port_layout.addRow("Port scan type:", port_scan_combo)
+            
+            # Port selection
+            port_group_check = QCheckBox("Scan common ports")
+            port_group_check.setChecked(True)
+            port_layout.addRow("", port_group_check)
+            
+            port_group_combo = QComboBox()
+            port_groups = [
+                ("top10", "Top 10 ports"),
+                ("top100", "Top 100 ports"),
+                ("top1000", "Top 1000 ports"),
+                ("common", "Common service ports"),
+                ("all", "All ports (1-65535, very slow)")
+            ]
+            for value, label in port_groups:
+                port_group_combo.addItem(label, value)
+            port_layout.addRow("Port group:", port_group_combo)
+            
+            custom_ports_check = QCheckBox("Specify custom ports")
+            port_layout.addRow("", custom_ports_check)
             
             ports_input = QLineEdit()
-            ports_input.setPlaceholderText("80,443,22,3389")
-            editor_layout.addRow("Ports:", ports_input)
+            ports_input.setPlaceholderText("e.g., 22,80,443,8080 or 1000-2000")
+            port_layout.addRow("Custom ports:", ports_input)
             
-            editor_buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-            editor_layout.addRow(editor_buttons)
+            # Connect checkboxes to enable/disable related controls
+            port_check.toggled.connect(port_scan_combo.setEnabled)
+            port_check.toggled.connect(port_group_check.setEnabled)
+            port_check.toggled.connect(custom_ports_check.setEnabled)
+            port_check.toggled.connect(lambda checked: port_group_combo.setEnabled(checked and port_group_check.isChecked()))
+            port_check.toggled.connect(lambda checked: ports_input.setEnabled(checked and custom_ports_check.isChecked()))
+            port_group_check.toggled.connect(lambda checked: port_group_combo.setEnabled(checked and port_check.isChecked()))
+            custom_ports_check.toggled.connect(lambda checked: ports_input.setEnabled(checked and port_check.isChecked()))
             
-            main_layout.addWidget(editor_group)
+            tabs.addTab(port_tab, "Port Scanning")
+            
+            # Advanced Tab
+            advanced_tab = QWidget()
+            advanced_layout = QFormLayout(advanced_tab)
+            
+            # OS Detection
+            os_detection_check = QCheckBox("Enable OS detection")
+            advanced_layout.addRow("", os_detection_check)
+            
+            # Service Version Detection
+            service_detection_check = QCheckBox("Enable service version detection")
+            advanced_layout.addRow("", service_detection_check)
+            
+            # Script scanning
+            script_scan_check = QCheckBox("Enable script scanning")
+            advanced_layout.addRow("", script_scan_check)
+            
+            # Script category
+            script_category_combo = QComboBox()
+            script_categories = [
+                ("default", "Default scripts"),
+                ("discovery", "Discovery scripts"),
+                ("safe", "Safe scripts"),
+                ("all", "All scripts (potentially intrusive)")
+            ]
+            for value, label in script_categories:
+                script_category_combo.addItem(label, value)
+            script_category_combo.setEnabled(False)  # Disabled by default
+            
+            # Connect script scan check to script category combo
+            script_scan_check.toggled.connect(lambda checked: script_category_combo.setEnabled(checked))
+            
+            # Timing template
+            timing_combo = QComboBox()
+            timing_options = [
+                (0, "T0 - Paranoid (very slow, avoid IDS)"),
+                (1, "T1 - Sneaky (slow, avoid IDS)"),
+                (2, "T2 - Polite (slower, low impact)"),
+                (3, "T3 - Normal (default)"),
+                (4, "T4 - Aggressive (faster, may impact targets)"),
+                (5, "T5 - Insane (very fast, may impact targets)")
+            ]
+            for value, label in timing_options:
+                timing_combo.addItem(label, value)
+            timing_combo.setCurrentIndex(3)  # Default to T3 Normal
+            advanced_layout.addRow("Scan timing:", timing_combo)
+            
+            # Make sure script category combo is properly positioned in the layout
+            advanced_layout.addRow("Script category:", script_category_combo)
+            
+            # Mark template as manual (allows configuration)
+            manual_check = QCheckBox("Manual template (shows configure button)")
+            advanced_layout.addRow("", manual_check)
+            
+            tabs.addTab(advanced_tab, "Advanced Options")
+            
+            editor_layout.addWidget(tabs)
+            
+            # Make sure controls are in the proper initial state
+            port_scan_combo.setEnabled(port_check.isChecked())
+            port_group_check.setEnabled(port_check.isChecked())
+            port_group_combo.setEnabled(port_check.isChecked() and port_group_check.isChecked())
+            custom_ports_check.setEnabled(port_check.isChecked())
+            ports_input.setEnabled(port_check.isChecked() and custom_ports_check.isChecked())
+            script_category_combo.setEnabled(script_scan_check.isChecked())
+            
+            # Add note about advanced options
+            note_label = QLabel(
+                "Note: Advanced options can significantly increase scan time and may require administrative privileges."
+            )
+            note_label.setWordWrap(True)
+            editor_layout.addWidget(note_label)
+            
+            # Editor button bar
+            editor_button_layout = QHBoxLayout()
+            
+            save_btn = QPushButton("Save")
+            cancel_btn = QPushButton("Cancel")
+            
+            editor_button_layout.addWidget(save_btn)
+            editor_button_layout.addWidget(cancel_btn)
+            
+            editor_layout.addLayout(editor_button_layout)
+            
+            main_layout.addWidget(editor_group, 2)  # 2 is stretch factor (editor gets more space)
             
             # Dialog buttons
-            dialog_buttons = QDialogButtonBox(QDialogButtonBox.Close)
-            layout.addWidget(dialog_buttons)
+            dialog_btn_layout = QHBoxLayout()
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dialog.close)
+            dialog_btn_layout.addStretch()
+            dialog_btn_layout.addWidget(close_btn)
+            layout.addLayout(dialog_btn_layout)
             
-            # Connect signals
+            # Set initial state of editor (disabled until new/edit)
+            def set_editor_enabled(enabled):
+                name_input.setEnabled(enabled)
+                id_input.setEnabled(enabled)
+                description_input.setEnabled(enabled)
+                timeout_spin.setEnabled(enabled)
+                retries_spin.setEnabled(enabled)
+                parallel_spin.setEnabled(enabled)
+                discovery_combo.setEnabled(enabled)
+                port_check.setEnabled(enabled)
+                port_scan_combo.setEnabled(enabled and port_check.isChecked())
+                port_group_check.setEnabled(enabled and port_check.isChecked())
+                port_group_combo.setEnabled(enabled and port_check.isChecked() and port_group_check.isChecked())
+                custom_ports_check.setEnabled(enabled and port_check.isChecked())
+                ports_input.setEnabled(enabled and port_check.isChecked() and custom_ports_check.isChecked())
+                os_detection_check.setEnabled(enabled)
+                service_detection_check.setEnabled(enabled)
+                script_scan_check.setEnabled(enabled)
+                script_category_combo.setEnabled(enabled and script_scan_check.isChecked())
+                timing_combo.setEnabled(enabled)
+                manual_check.setEnabled(enabled)
+                save_btn.setEnabled(enabled)
+                cancel_btn.setEnabled(enabled)
+            
+            set_editor_enabled(False)
+            edit_btn.setEnabled(False)
+            delete_btn.setEnabled(False)
+            
+            is_editing = False
+            current_template_id = None
+            
             def on_new():
                 # Clear editor fields
-                name_input.setText("")
-                id_input.setText("")
-                id_input.setEnabled(True)
-                description_input.setText("")
-                timeout_spin.setValue(1)
-                retries_spin.setValue(1)
-                parallel_spin.setValue(50)
-                ports_input.setText("")
+                nonlocal is_editing, current_template_id
+                is_editing = False
+                current_template_id = None
+                
+                # Generate a new template name with incrementing number if needed
+                templates = self.get_scan_templates()
+                base_name = "New Template"
+                template_name = base_name
+                counter = 1
+                
+                # Check if the name exists and generate a new one with number
+                existing_names = [template.get("name", "") for template in templates.values()]
+                while template_name in existing_names:
+                    template_name = f"{base_name} {counter}"
+                    counter += 1
+                
+                # Generate a default ID based on timestamp
+                import time
+                default_id = f"template_{int(time.time())}"
+                
+                # Set default values
+                name_input.setText(template_name)
+                id_input.setText(default_id)
+                description_input.clear()
+                timeout_spin.setValue(2)
+                retries_spin.setValue(2)
+                parallel_spin.setValue(25)
+                discovery_combo.setCurrentIndex(0)
+                port_check.setChecked(False)
+                port_scan_combo.setCurrentIndex(0)
+                port_group_check.setChecked(True)
+                port_group_combo.setCurrentIndex(3)  # Default to "common"
+                custom_ports_check.setChecked(False)
+                ports_input.clear()
+                os_detection_check.setChecked(False)
+                service_detection_check.setChecked(False)
+                script_scan_check.setChecked(False)
+                script_category_combo.setCurrentIndex(2)  # Default to "safe"
+                timing_combo.setCurrentIndex(3)  # Default to T3
+                manual_check.setChecked(False)
+                
+                # Enable editor
+                set_editor_enabled(True)
+                
+                # Clear list selection
+                template_list.clearSelection()
             
             def on_edit():
-                selected_items = template_list.selectedItems()
-                if not selected_items:
+                # Edit the selected template
+                nonlocal is_editing, current_template_id
+                
+                items = template_list.selectedItems()
+                if not items:
                     return
                 
-                item = selected_items[0]
-                template_id = item.data(Qt.UserRole)
+                template_id = items[0].data(Qt.UserRole)
+                current_template_id = template_id
+                is_editing = True
                 
-                template = self.config.get("scan_templates", {}).get(template_id)
-                if not template:
-                    return
-                
-                # Fill editor fields
-                name_input.setText(template.get("name", ""))
-                id_input.setText(template_id)
-                id_input.setEnabled(False)  # Don't allow changing ID when editing
-                description_input.setText(template.get("description", ""))
-                timeout_spin.setValue(template.get("timeout", 1))
-                retries_spin.setValue(template.get("retries", 1))
-                parallel_spin.setValue(template.get("parallel", 50))
-                
-                ports = template.get("ports", [])
-                ports_input.setText(",".join(map(str, ports)) if ports else "")
+                # Enable editor
+                set_editor_enabled(True)
             
             def on_delete():
-                selected_items = template_list.selectedItems()
-                if not selected_items:
+                # Delete the selected template
+                items = template_list.selectedItems()
+                if not items:
                     return
                 
-                item = selected_items[0]
-                template_id = item.data(Qt.UserRole)
+                template_id = items[0].data(Qt.UserRole)
+                template_name = items[0].text().split(" - ")[0]
                 
-                # Don't allow deleting built-in templates
-                if template_id in ["quick_scan", "deep_scan", "stealth_scan"]:
-                    QMessageBox.warning(dialog, "Warning", "Cannot delete built-in templates")
-                    return
-                
-                # Ask for confirmation
+                # Confirm deletion
                 confirm = QMessageBox.question(
-                    dialog, 
+                    dialog,
                     "Confirm Deletion",
-                    f"Are you sure you want to delete template '{item.text()}'?",
+                    f"Are you sure you want to delete the template '{template_name}'?",
                     QMessageBox.Yes | QMessageBox.No
                 )
                 
                 if confirm == QMessageBox.Yes:
-                    # Delete template
+                    # Delete the template
                     if self.remove_scan_template(template_id):
-                        # Refresh list
-                        template_list.clear()
-                        templates = self.get_scan_templates()
-                        for tid, template in templates.items():
-                            name = template.get("name", tid)
-                            new_item = QListWidgetItem(name)
-                            new_item.setData(Qt.UserRole, tid)
-                            template_list.addItem(new_item)
+                        # Remove from list
+                        row = template_list.row(items[0])
+                        template_list.takeItem(row)
                         
-                        self.logger.info(f"Template '{template_id}' deleted")
+                        # Clear editor
+                        on_cancel()
+                        
+                        # Log success
+                        self.logger.info(f"Deleted template: {template_id}")
+                    else:
+                        QMessageBox.warning(
+                            dialog,
+                            "Delete Failed",
+                            f"Could not delete template: {template_id}",
+                            QMessageBox.Ok
+                        )
             
             def on_save():
+                # Save the template
+                nonlocal is_editing, current_template_id
+                
+                # Validate inputs
                 name = name_input.text().strip()
                 template_id = id_input.text().strip()
                 description = description_input.toPlainText().strip()
                 
-                if not name or not template_id:
-                    QMessageBox.warning(dialog, "Warning", "Template name and ID are required")
+                if not name:
+                    QMessageBox.warning(dialog, "Validation Error", "Template name is required", QMessageBox.Ok)
                     return
                 
-                # Create template data
+                if not template_id:
+                    QMessageBox.warning(dialog, "Validation Error", "Template ID is required", QMessageBox.Ok)
+                    return
+                
+                # Build template data
                 template = {
                     "name": name,
                     "description": description,
                     "timeout": timeout_spin.value(),
                     "retries": retries_spin.value(),
-                    "parallel": parallel_spin.value()
+                    "parallel": parallel_spin.value(),
+                    "discovery_method": discovery_combo.itemData(discovery_combo.currentIndex()),
+                    "manual": manual_check.isChecked(),
+                    "timing": timing_combo.itemData(timing_combo.currentIndex()),
+                    "os_detection": os_detection_check.isChecked(),
+                    "service_detection": service_detection_check.isChecked(),
+                    "script_scan": script_scan_check.isChecked()
                 }
                 
-                # Add ports if provided
-                if ports_input.text():
-                    try:
-                        port_list = [int(p.strip()) for p in ports_input.text().split(",") if p.strip()]
-                        if port_list:
-                            template["ports"] = port_list
-                    except ValueError:
-                        QMessageBox.warning(dialog, "Warning", "Invalid port format. Use comma-separated numbers.")
-                        return
+                # Add script category if script scanning is enabled
+                if script_scan_check.isChecked():
+                    template["script_category"] = script_category_combo.itemData(script_category_combo.currentIndex())
                 
-                # Save template
-                is_edit = not id_input.isEnabled()
+                # Add port scanning settings if enabled
+                if port_check.isChecked():
+                    template["port_scan_type"] = port_scan_combo.itemData(port_scan_combo.currentIndex())
+                    template["use_common_ports"] = port_group_check.isChecked()
+                    
+                    if port_group_check.isChecked():
+                        template["port_group"] = port_group_combo.itemData(port_group_combo.currentIndex())
+                    
+                    template["use_custom_ports"] = custom_ports_check.isChecked()
+                    
+                    if custom_ports_check.isChecked():
+                        # Parse custom ports
+                        port_str = ports_input.text().strip()
+                        if port_str:
+                            try:
+                                port_list = []
+                                for part in port_str.split(","):
+                                    part = part.strip()
+                                    if "-" in part:
+                                        start, end = map(int, part.split("-"))
+                                        port_list.extend(range(start, end + 1))
+                                    else:
+                                        port_list.append(int(part))
+                                
+                                if port_list:
+                                    template["ports"] = port_list
+                            except ValueError:
+                                QMessageBox.warning(
+                                    dialog,
+                                    "Validation Error",
+                                    "Invalid port format. Use comma-separated values or ranges (e.g., 22,80,443 or 1000-2000)",
+                                    QMessageBox.Ok
+                                )
+                                return
                 
-                if is_edit:
-                    success = self.update_scan_template(template_id, template)
-                    message = f"Template '{template_id}' updated"
+                # Save the template
+                success = False
+                if is_editing and current_template_id:
+                    # Update existing template
+                    success = self.update_scan_template(current_template_id, template)
+                    
+                    # Update the list item if ID changed
+                    if success and current_template_id != template_id:
+                        items = template_list.selectedItems()
+                        if items:
+                            # Remove old template
+                            self.remove_scan_template(current_template_id)
+                            
+                            # Add with new ID
+                            success = self.add_scan_template(template_id, template)
+                            
+                            if success:
+                                # Update list item
+                                items[0].setText(f"{name} - {description}" if description else name)
+                                items[0].setData(Qt.UserRole, template_id)
+                    elif success:
+                        # Just update the display text
+                        items = template_list.selectedItems()
+                        if items:
+                            items[0].setText(f"{name} - {description}" if description else name)
                 else:
+                    # Add new template
                     success = self.add_scan_template(template_id, template)
-                    message = f"Template '{template_id}' created"
+                    
+                    # Add to list
+                    if success:
+                        item = QListWidgetItem(f"{name} - {description}" if description else name)
+                        item.setData(Qt.UserRole, template_id)
+                        template_list.addItem(item)
+                        template_list.setCurrentItem(item)
                 
                 if success:
-                    # Refresh list
-                    template_list.clear()
-                    templates = self.get_scan_templates()
-                    for tid, template in templates.items():
-                        name = template.get("name", tid)
-                        new_item = QListWidgetItem(name)
-                        new_item.setData(Qt.UserRole, tid)
-                        template_list.addItem(new_item)
-                    
                     # Reset editor
-                    id_input.setEnabled(True)
-                    name_input.setText("")
-                    id_input.setText("")
-                    description_input.setText("")
-                    timeout_spin.setValue(1)
-                    retries_spin.setValue(1)
-                    parallel_spin.setValue(50)
-                    ports_input.setText("")
+                    set_editor_enabled(False)
+                    is_editing = False
+                    current_template_id = None
                     
-                    self.logger.info(message)
+                    # Select the template in the scan type dropdown after saving
+                    if hasattr(self, 'left_panel') and self.left_panel:
+                        self.select_scan_template(template_id)
+                    
+                    # Log success
+                    self.logger.info(f"Saved template: {template_id}")
                 else:
-                    QMessageBox.warning(dialog, "Warning", f"Failed to save template '{template_id}'")
+                    QMessageBox.warning(
+                        dialog,
+                        "Save Failed",
+                        f"Could not save template: {template_id}",
+                        QMessageBox.Ok
+                    )
             
             def on_cancel():
                 # Reset editor
-                id_input.setEnabled(True)
-                name_input.setText("")
-                id_input.setText("")
-                description_input.setText("")
-                timeout_spin.setValue(1)
-                retries_spin.setValue(1)
-                parallel_spin.setValue(50)
-                ports_input.setText("")
+                nonlocal is_editing, current_template_id
+                is_editing = False
+                current_template_id = None
+                
+                # Disable editor
+                set_editor_enabled(False)
+                
+                # Clear selection
+                template_list.clearSelection()
             
-            # Connect signals
+            def on_selection_changed():
+                # Update editor with selected template
+                items = template_list.selectedItems()
+                if not items:
+                    edit_btn.setEnabled(False)
+                    delete_btn.setEnabled(False)
+                    return
+                
+                template_id = items[0].data(Qt.UserRole)
+                template = self.config.get("scan_templates", {}).get(template_id)
+                
+                if not template:
+                    return
+                
+                # Enable edit/delete buttons
+                edit_btn.setEnabled(True)
+                delete_btn.setEnabled(True)
+                
+                # Populate editor fields with template data (but keep them disabled)
+                name_input.setText(template.get("name", ""))
+                id_input.setText(template_id)
+                description_input.setText(template.get("description", ""))
+                timeout_spin.setValue(template.get("timeout", 2))
+                retries_spin.setValue(template.get("retries", 2))
+                parallel_spin.setValue(template.get("parallel", 25))
+                
+                # Set discovery method
+                discovery_method = template.get("discovery_method", "ping")
+                for i in range(discovery_combo.count()):
+                    if discovery_combo.itemData(i) == discovery_method:
+                        discovery_combo.setCurrentIndex(i)
+                        break
+                
+                # Port scanning settings
+                has_ports = "ports" in template or template.get("port_scan_type") is not None
+                port_check.setChecked(has_ports)
+                
+                # Port scan type
+                port_scan_type = template.get("port_scan_type", "connect")
+                for i in range(port_scan_combo.count()):
+                    if port_scan_combo.itemData(i) == port_scan_type:
+                        port_scan_combo.setCurrentIndex(i)
+                        break
+                
+                # Port groups
+                port_group_check.setChecked(template.get("use_common_ports", True))
+                
+                port_group = template.get("port_group", "common")
+                for i in range(port_group_combo.count()):
+                    if port_group_combo.itemData(i) == port_group:
+                        port_group_combo.setCurrentIndex(i)
+                        break
+                
+                # Custom ports
+                custom_ports_check.setChecked(template.get("use_custom_ports", False))
+                
+                ports = template.get("ports", [])
+                if ports:
+                    # Convert port list to string, handling ranges
+                    port_ranges = []
+                    start = end = None
+                    
+                    for port in sorted(ports):
+                        if start is None:
+                            start = end = port
+                        elif port == end + 1:
+                            end = port
+                        else:
+                            if start == end:
+                                port_ranges.append(str(start))
+                            else:
+                                port_ranges.append(f"{start}-{end}")
+                            start = end = port
+                    
+                    if start is not None:
+                        if start == end:
+                            port_ranges.append(str(start))
+                        else:
+                            port_ranges.append(f"{start}-{end}")
+                    
+                    ports_input.setText(",".join(port_ranges))
+                else:
+                    ports_input.clear()
+                
+                # Advanced options
+                os_detection_check.setChecked(template.get("os_detection", False))
+                service_detection_check.setChecked(template.get("service_detection", False))
+                script_scan_check.setChecked(template.get("script_scan", False))
+                
+                script_category = template.get("script_category", "safe")
+                for i in range(script_category_combo.count()):
+                    if script_category_combo.itemData(i) == script_category:
+                        script_category_combo.setCurrentIndex(i)
+                        break
+                
+                timing = template.get("timing", 3)
+                for i in range(timing_combo.count()):
+                    if timing_combo.itemData(i) == timing:
+                        timing_combo.setCurrentIndex(i)
+                        break
+                
+                manual_check.setChecked(template.get("manual", False))
+            
+            # Now that all functions are defined, connect signals
+            save_btn.clicked.connect(on_save)
+            cancel_btn.clicked.connect(on_cancel)
             new_btn.clicked.connect(on_new)
             edit_btn.clicked.connect(on_edit)
             delete_btn.clicked.connect(on_delete)
-            
-            editor_buttons.accepted.connect(on_save)
-            editor_buttons.rejected.connect(on_cancel)
-            
-            dialog_buttons.accepted.connect(dialog.accept)
-            dialog_buttons.rejected.connect(dialog.reject)
-            
-            # Selection change
-            def on_selection_changed():
-                has_selection = len(template_list.selectedItems()) > 0
-                edit_btn.setEnabled(has_selection)
-                delete_btn.setEnabled(has_selection)
-            
             template_list.itemSelectionChanged.connect(on_selection_changed)
-            on_selection_changed()  # Initialize button states
             
-            # Show dialog
+            # Show the dialog
             dialog.exec()
-            
         except Exception as e:
-            self.logger.error(f"Error showing template manager: {str(e)}", exc_info=True)
+            self.logger.error(f"Error showing template manager: {str(e)}")
+            self.api.log(f"Error showing template manager: {str(e)}", level="ERROR")
     
     def create_new_template(self):
         """Create a new scan template."""
@@ -606,6 +988,10 @@ class NetworkScannerPlugin(QObject):
         # Update the templates menu after updating a template
         if hasattr(self, 'update_templates_menu'):
             self.update_templates_menu()
+        
+        # Also refresh the templates in the left panel
+        if hasattr(self, 'left_panel') and self.left_panel:
+            self.left_panel.refresh_templates()
             
         return True
     
@@ -620,6 +1006,10 @@ class NetworkScannerPlugin(QObject):
         # Update the templates menu after adding a template
         if hasattr(self, 'update_templates_menu'):
             self.update_templates_menu()
+        
+        # Also refresh the templates in the left panel
+        if hasattr(self, 'left_panel') and self.left_panel:
+            self.left_panel.refresh_templates()
             
         return True
     
@@ -634,6 +1024,10 @@ class NetworkScannerPlugin(QObject):
         # Update the templates menu after removing a template
         if hasattr(self, 'update_templates_menu'):
             self.update_templates_menu()
+        
+        # Also refresh the templates in the left panel
+        if hasattr(self, 'left_panel') and self.left_panel:
+            self.left_panel.refresh_templates()
             
         return True
     

@@ -3,4 +3,15 @@
 
 from .workspace_toolbar import WorkspaceToolbar
 
-__all__ = ['WorkspaceToolbar'] 
+from core.ui.toolbar.toolbar_functions import (
+    create_toolbar_group,
+    add_toolbar_separator,
+    update_toolbar_groups_visibility
+)
+
+__all__ = [
+    'WorkspaceToolbar',
+    'create_toolbar_group',
+    'add_toolbar_separator',
+    'update_toolbar_groups_visibility'
+] 

@@ -6,6 +6,21 @@
     "author": "chibashr",
     "main": "main.py",
     "dependencies": [],
+    "data": {
+        "directories": [
+            "/data/commands",
+            "/data/outputs",
+            "/data/logs",
+            "/data/devices",
+            "/data/indexes",
+            "/data/command_metadata"
+        ],
+        "plugin_directories": [
+            "data/config"
+        ],
+        "export": true,
+        "backup": true
+    },
     "ui": {
         "panels": ["bottom", "right"],
         "menus": ["device_context"]

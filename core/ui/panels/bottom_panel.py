@@ -369,4 +369,76 @@ class BottomPanel(QTabWidget):
         self.traffic_table.setItem(row_position, 1, QTableWidgetItem(source))
         self.traffic_table.setItem(row_position, 2, QTableWidgetItem(destination))
         self.traffic_table.setItem(row_position, 3, QTableWidgetItem(protocol))
-        self.traffic_table.setItem(row_position, 4, QTableWidgetItem(f"{size} bytes")) 
+        self.traffic_table.setItem(row_position, 4, QTableWidgetItem(f"{size} bytes"))
+
+    def clear_plugin_panels(self):
+        """Remove all plugin panels from the bottom panel.
+        
+        This is used when reloading the UI after plugin changes.
+        
+        Returns:
+            bool - True if operation was successful
+        """
+        try:
+            # Create a copy of the panels dict to iterate over while modifying
+            panels_to_remove = list(self.plugin_panels.values())
+            
+            # Remove each panel
+            for panel_info in panels_to_remove:
+                self.remove_plugin_panel(panel_info['panel'])
+            
+            self.logger.debug(f"Cleared {len(panels_to_remove)} plugin panels from bottom panel")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error clearing plugin panels: {str(e)}", exc_info=True)
+            return False
+            
+    def remove_plugin_panel(self, panel):
+        """Remove a plugin panel from the bottom panel.
+        
+        Args:
+            panel: QWidget - The panel to remove
+            
+        Returns:
+            bool - True if removal was successful
+        """
+        try:
+            # Get panel ID
+            panel_id = panel.objectName() or id(panel)
+            
+            # If we have this panel registered
+            if panel_id in self.plugin_panels:
+                panel_info = self.plugin_panels[panel_id]
+                name = panel_info['name']
+                
+                # Remove from tab widget
+                index = self.indexOf(panel)
+                if index != -1:
+                    self.removeTab(index)
+                
+                # Remove from tracking dictionaries
+                if name in self.plugin_tabs:
+                    del self.plugin_tabs[name]
+                del self.plugin_panels[panel_id]
+                
+                # Don't delete the panel, just remove it from parent
+                panel.setParent(None)
+                
+                self.logger.debug(f"Removed plugin panel: {panel_id}")
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error removing plugin panel: {str(e)}", exc_info=True)
+            return False
+            
+    def has_plugin_panel(self, panel):
+        """Check if a panel is in this container.
+        
+        Args:
+            panel: QWidget - The panel to check
+            
+        Returns:
+            bool - True if panel is in this container
+        """
+        panel_id = panel.objectName() or id(panel)
+        return panel_id in self.plugin_panels 
