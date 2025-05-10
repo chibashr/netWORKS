@@ -1,0 +1,14 @@
+{
+  "sample": {
+    "id": "sample",
+    "name": "Sample Plugin",
+    "version": "0.1.0",
+    "description": "A sample plugin to demonstrate the plugin system",
+    "author": "NetWORKS Team",
+    "entry_point": "sample_plugin.py",
+    "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\sample",
+    "enabled": false,
+    "loaded": false,
+    "state": "DISABLED"
+  }
+}

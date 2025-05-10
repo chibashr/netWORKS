@@ -1,0 +1,159 @@
+{
+  "name": "NetWORKS",
+  "version": "0.8.16",
+  "description": "Network management and monitoring tool",
+  "author": "NetWORKS Team",
+  "license": "MIT",
+  "main": "networks.py",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/networks/networks.git"
+  },
+  "version_string": "0.8.16",
+  "version_info": {
+    "major": 0,
+    "minor": 8,
+    "patch": 16,
+    "build": 0,
+    "release_type": "alpha"
+  },
+  "build_date": "2025-05-18",
+  "release_notes": "Improved plugin documentation system. Added documentation tab to Plugin Manager, comprehensive signals documentation, and enforced API.md requirement for plugins.",
+  "release_type": "alpha",
+  "compatibility": {
+    "min_plugin_api": "1.0.0",
+    "recommended_plugin_api": "1.0.0",
+    "api_versions_supported": [
+      "1.0.0"
+    ]
+  },
+  "dependencies": {
+    "required": [
+      "PySide6>=6.5.0",
+      "loguru>=0.6.0",
+      "chardet>=5.1.0",
+      "jsonschema>=4.17.3",
+      "markdown>=3.4.0"
+    ],
+    "optional": [
+      "pandas>=1.5.3",
+      "python-docx>=0.8.11",
+      "openpyxl>=3.1.2",
+      "xlrd>=2.0.1",
+      "qtawesome>=1.2.2",
+      "qtpy>=2.3.0"
+    ]
+  },
+  "version_history": [
+    {
+      "version": "0.8.16",
+      "date": "2025-05-18",
+      "changes": "Improved plugin documentation system. Added documentation tab to Plugin Manager, comprehensive signals documentation, and enforced API.md requirement for plugins."
+    },
+    {
+      "version": "0.8.15",
+      "date": "2025-05-17",
+      "changes": "Implemented reliable signal connection tracking to eliminate RuntimeWarnings when disconnecting signals during plugin unloading."
+    },
+    {
+      "version": "0.8.14",
+      "date": "2025-05-17",
+      "changes": "Fixed missing QTabWidget import in plugin manager, resolving error when unloading plugins with UI components."
+    },
+    {
+      "version": "0.8.13",
+      "date": "2025-05-17",
+      "changes": "Fixed signal disconnection and UI component removal issues when unloading plugins. Improved dock widget cleanup and fixed PySide6 signal disconnection logic to properly clean up all UI components."
+    },
+    {
+      "version": "0.8.12",
+      "date": "2025-05-17",
+      "changes": "Fixed signal disconnection issues when unloading plugins by adding safer signal connection checks and improved error handling for Qt signal disconnections."
+    },
+    {
+      "version": "0.8.11",
+      "date": "2025-05-17",
+      "changes": "Fixed issue with plugin UI components not being properly removed after plugin unloading, giving the appearance that plugins were still loaded when they weren't. Added proper QDockWidget handling and improved plugin cleanup."
+    },
+    {
+      "version": "0.8.10",
+      "date": "2025-05-16",
+      "changes": "Fixed critical issues with plugin unloading system. Added proper type checking for UI component removal, fixed signal disconnection errors, and improved module cleanup for better memory management."
+    },
+    {
+      "version": "0.8.9",
+      "date": "2025-05-16",
+      "changes": "Completely overhauled plugin unloading system with comprehensive memory cleanup. Added automatic removal of all UI components, disconnection of all signals, and forced garbage collection to ensure plugins are fully unloaded from memory."
+    },
+    {
+      "version": "0.8.8",
+      "date": "2025-05-16",
+      "changes": "Fixed critical issue where plugins weren't properly unloading when the unload button was clicked. Enhanced logging, state tracking, and UI feedback to ensure plugins are completely unloaded."
+    },
+    {
+      "version": "0.8.7",
+      "date": "2025-05-16",
+      "changes": "Fixed critical crash in plugin manager when saving changes that caused 'dictionary changed size during iteration' error by creating a copy of the dictionary before processing changes."
+    },
+    {
+      "version": "0.8.6",
+      "date": "2025-05-16",
+      "changes": "Fixed critical plugin state synchronization issues in the UI. Plugins now properly unload when disabled, and the UI accurately reflects the current plugin states. Improved plugin manager dialog to ensure consistent behavior when enabling and disabling plugins."
+    },
+    {
+      "version": "0.8.5",
+      "date": "2025-05-16",
+      "changes": "Fixed critical issue with plugin disabling to ensure plugins are always properly unloaded when disabled, with multiple layers of protection to guarantee complete resource cleanup. Improved state transitions to consistently clear plugin instances."
+    },
+    {
+      "version": "0.8.4",
+      "date": "2025-05-16",
+      "changes": "Strengthened plugin system with advanced state validation, enhanced startup validation, and stricter enforcement of plugin states to ensure only enabled plugins load. Fixed potential issues with disabled plugins accidentally being loaded."
+    },
+    {
+      "version": "0.8.3",
+      "date": "2025-05-16",
+      "changes": "Fixed issue where disabling plugins required application restart to fully unload. Now plugins are immediately unloaded when disabled in the UI, providing immediate feedback and ensuring resources are properly released."
+    },
+    {
+      "version": "0.8.2",
+      "date": "2025-05-16",
+      "changes": "Improved plugin disabling process to ensure plugins are properly unloaded before being disabled, preventing potential memory leaks and resource issues."
+    },
+    {
+      "version": "0.8.1",
+      "date": "2025-05-15",
+      "changes": "Added more detailed plugin information in the plugin manager. Fixed issue with plugin settings not being saved correctly."
+    },
+    {
+      "version": "0.8.0",
+      "date": "2025-05-14",
+      "changes": "Major UI overhaul. Added plugin manager dialog for managing installed plugins. Improved device discovery process."
+    },
+    {
+      "version": "0.7.2",
+      "date": "2025-05-10",
+      "changes": "Fixed critical bug in device connection handling. Improved error reporting."
+    },
+    {
+      "version": "0.7.1",
+      "date": "2025-05-05",
+      "changes": "Added support for custom device properties. Enhanced logging system."
+    },
+    {
+      "version": "0.7.0",
+      "date": "2025-05-01",
+      "changes": "Initial release of plugin system. Added support for third-party plugins."
+    },
+    {
+      "version": "0.6.0",
+      "date": "2025-04-15",
+      "changes": "Added workspace management. Multiple configuration profiles now supported."
+    },
+    {
+      "version": "0.5.0",
+      "date": "2025-04-01",
+      "changes": "First alpha release with core functionality implemented."
+    }
+  ]
+}

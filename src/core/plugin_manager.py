@@ -1,0 +1,1476 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Plugin manager for NetWORKS
+"""
+
+import sys
+import os
+import gc
+import importlib.util
+import importlib.machinery
+import inspect
+import json
+import pkgutil
+import shutil
+import time
+import typing
+from datetime import datetime
+from enum import Enum, auto
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Any, Union, Set
+
+from loguru import logger
+from PySide6.QtCore import QObject, Signal
+from PySide6.QtWidgets import QToolBar, QMenu, QDockWidget, QWidget, QTabWidget
+
+from .plugin_interface import PluginInterface
+
+
+class PluginState(Enum):
+    """Enum representing possible plugin states"""
+    DISCOVERED = auto()    # Plugin is discovered but not enabled or loaded
+    ENABLED = auto()       # Plugin is enabled but not loaded
+    LOADED = auto()        # Plugin is enabled and loaded
+    DISABLED = auto()      # Plugin is explicitly disabled
+    ERROR = auto()         # Plugin has an error
+
+    @staticmethod
+    def from_enabled_loaded(enabled, loaded):
+        """Create a PluginState from enabled and loaded flags"""
+        if not enabled:
+            return PluginState.DISABLED
+        elif loaded:
+            return PluginState.LOADED
+        else:
+            return PluginState.ENABLED
+            
+    @property
+    def is_enabled(self):
+        """Check if the state represents an enabled plugin"""
+        return self in (PluginState.ENABLED, PluginState.LOADED)
+        
+    @property
+    def is_loaded(self):
+        """Check if the state represents a loaded plugin"""
+        return self == PluginState.LOADED
+        
+    @property
+    def is_disabled(self):
+        """Check if the state represents a disabled plugin"""
+        return self == PluginState.DISABLED
+        
+    @staticmethod
+    def validate_transition(current_state, target_state):
+        """
+        Validate if a state transition is allowed
+        
+        Args:
+            current_state: The current PluginState
+            target_state: The desired target PluginState
+            
+        Returns:
+            bool: True if the transition is valid, False otherwise
+        """
+        # Valid transitions:
+        # DISCOVERED -> ENABLED | DISABLED
+        # ENABLED -> LOADED | DISABLED
+        # LOADED -> ENABLED | DISABLED
+        # DISABLED -> ENABLED
+        # Any -> ERROR
+        
+        # Any state can transition to ERROR
+        if target_state == PluginState.ERROR:
+            return True
+            
+        # Map of allowed transitions
+        allowed_transitions = {
+            PluginState.DISCOVERED: [PluginState.ENABLED, PluginState.DISABLED],
+            PluginState.ENABLED: [PluginState.LOADED, PluginState.DISABLED],
+            PluginState.LOADED: [PluginState.ENABLED, PluginState.DISABLED],
+            PluginState.DISABLED: [PluginState.ENABLED],
+            PluginState.ERROR: [PluginState.ENABLED, PluginState.DISABLED]
+        }
+        
+        # State can always transition to itself
+        if current_state == target_state:
+            return True
+            
+        # Check if the transition is allowed
+        return target_state in allowed_transitions.get(current_state, [])
+
+
+class PluginInfo:
+    """Information about a plugin"""
+    
+    def __init__(self, id, name, version, description, author, entry_point, path=None):
+        """Initialize plugin info"""
+        self.id = id
+        self.name = name
+        self.version = version
+        self.description = description
+        self.author = author
+        self.entry_point = entry_point
+        self.path = path
+        self._state = PluginState.DISCOVERED
+        self.instance = None
+        
+    @property
+    def state(self):
+        """Get the current state of the plugin"""
+        return self._state
+        
+    @state.setter
+    def state(self, value):
+        """Set the state of the plugin"""
+        if not isinstance(value, PluginState):
+            raise TypeError("Expected PluginState value")
+            
+        # Previous state for logging
+        previous_state = self._state
+        
+        # Always clear the instance when transitioning to DISABLED or ERROR state
+        if value in (PluginState.DISABLED, PluginState.ERROR) and self.instance is not None:
+            logger.debug(f"Clearing instance for plugin {self.id} during transition to {value.name}")
+            
+            # Call cleanup if possible
+            if hasattr(self.instance, 'cleanup') and callable(self.instance.cleanup):
+                try:
+                    logger.debug(f"Calling cleanup for plugin {self.id} during state transition")
+                    self.instance.cleanup()
+                except Exception as e:
+                    logger.error(f"Error during cleanup in state transition: {e}")
+            
+            # Force clear instance
+            self.instance = None
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+        # Set the new state
+        self._state = value
+        
+        # Log the transition
+        if previous_state != self._state:
+            logger.debug(f"Plugin {self.id} state transition: {previous_state.name} -> {self._state.name}")
+            
+            # If transitioning to DISABLED, enforce instance is None
+            if self._state == PluginState.DISABLED and self.instance is not None:
+                logger.warning(f"Plugin {self.id} instance still exists after transition to DISABLED - forcing clear")
+                self.instance = None
+                
+                # Run garbage collection again
+                import gc
+                gc.collect()
+        
+    @property
+    def enabled(self):
+        """Check if the plugin is enabled"""
+        return self.state.is_enabled
+        
+    @enabled.setter
+    def enabled(self, value):
+        """Set the enabled status of the plugin"""
+        current_state = self.state
+        
+        if value and self.state == PluginState.DISABLED:
+            # Enabling a disabled plugin
+            self.state = PluginState.ENABLED
+            logger.debug(f"Plugin {self.id} enabled via enabled setter")
+        elif not value and self.state != PluginState.DISABLED:
+            # Disabling an enabled or loaded plugin
+            
+            # If loaded and has an instance, perform cleanup
+            if self.instance is not None:
+                if hasattr(self.instance, 'cleanup') and callable(self.instance.cleanup):
+                    try:
+                        logger.debug(f"Calling cleanup for plugin {self.id} via enabled setter")
+                        self.instance.cleanup()
+                    except Exception as e:
+                        logger.error(f"Error cleaning up plugin {self.id}: {e}")
+                
+                # Always clear the instance when disabling
+                logger.debug(f"Clearing instance for plugin {self.id} via enabled setter")
+                self.instance = None
+                
+            # Set to disabled state
+            self.state = PluginState.DISABLED
+            logger.debug(f"Plugin {self.id} disabled via enabled setter")
+        
+    @property
+    def loaded(self):
+        """Check if the plugin is loaded"""
+        return self.state.is_loaded
+        
+    @loaded.setter
+    def loaded(self, value):
+        """Set the loaded status of the plugin"""
+        if value and self.enabled:
+            self._state = PluginState.LOADED
+        elif not value and self.state == PluginState.LOADED:
+            self._state = PluginState.ENABLED
+        
+    def to_dict(self):
+        """Convert to dictionary"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "author": self.author,
+            "entry_point": self.entry_point,
+            "path": self.path,
+            "enabled": self.enabled,
+            "loaded": self.loaded,
+            "state": self.state.name
+        }
+        
+    @classmethod
+    def from_dict(cls, data):
+        """Create from dictionary"""
+        plugin_info = cls(
+            data["id"],
+            data["name"],
+            data["version"],
+            data["description"],
+            data["author"],
+            data["entry_point"],
+            data.get("path")
+        )
+        # Handle state
+        if "state" in data and data["state"] in PluginState.__members__:
+            plugin_info._state = PluginState[data["state"]]
+        else:
+            # Backward compatibility with old registry format
+            enabled = data.get("enabled", True)
+            loaded = data.get("loaded", False)
+            plugin_info._state = PluginState.from_enabled_loaded(enabled, loaded)
+            
+        return plugin_info
+        
+    def __str__(self):
+        """String representation"""
+        return f"{self.name} v{self.version} ({self.id}, {self.state.name})"
+
+
+class PluginManager(QObject):
+    """
+    Manages plugin discovery, loading, and lifecycle
+    """
+    
+    plugin_loaded = Signal(object)
+    plugin_unloaded = Signal(object)
+    plugin_enabled = Signal(object)
+    plugin_disabled = Signal(object)
+    plugin_state_changed = Signal(object)  # New signal for any state change
+    
+    def __init__(self, app):
+        """Initialize the plugin manager"""
+        super().__init__()
+        logger.debug("Initializing plugin manager")
+        
+        self.app = app
+        self.plugins = {}  # id -> PluginInfo
+        
+        # Set plugin directories
+        self.internal_plugins_dir = self.app.config.get(
+            "application.plugins_directory", 
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "plugins"))
+        )
+        
+        self.external_plugins_dir = self.app.config.get(
+            "application.external_plugins_directory",
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "plugins"))
+        )
+        
+        # Ensure external plugins directory exists
+        os.makedirs(self.external_plugins_dir, exist_ok=True)
+        
+        # Plugin registry file
+        self.registry_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "config", "plugins.json"
+        )
+        
+        # Registry caching to avoid excessive file operations
+        self._registry_cache = None
+        self._registry_dirty = False
+        
+        # Discover and register plugins
+        self.discover_plugins()
+        
+    def _sync_registry(self, force_save=False):
+        """Synchronize in-memory state with registry file"""
+        logger.debug(f"Synchronizing plugin registry (force_save={force_save})")
+        
+        # Build updated registry
+        updated_registry = {}
+        for plugin_id, plugin_info in self.plugins.items():
+            registry_entry = plugin_info.to_dict()
+            # Log each plugin's state as we save it
+            logger.debug(f"Registry entry for {plugin_id}: state={registry_entry['state']}, enabled={registry_entry['enabled']}, loaded={registry_entry['loaded']}")
+            updated_registry[plugin_id] = registry_entry
+            
+        # Save registry if needed
+        if force_save or self._registry_dirty:
+            logger.debug(f"Saving registry because {'force_save was specified' if force_save else 'registry is dirty'}")
+            success = self._save_registry(updated_registry)
+            if success:
+                self._registry_cache = updated_registry
+                self._registry_dirty = False
+                logger.debug("Registry synchronized successfully")
+            else:
+                logger.error("Failed to synchronize registry")
+        else:
+            logger.debug("No changes to registry, skipping save")
+                
+        return True
+        
+    def _load_registry(self):
+        """Load plugin registry"""
+        # Return cached registry if available
+        if self._registry_cache is not None and not self._registry_dirty:
+            logger.debug("Using cached registry")
+            return self._registry_cache
+            
+        logger.debug(f"Loading plugin registry from: {self.registry_file}")
+        
+        if os.path.exists(self.registry_file):
+            try:
+                with open(self.registry_file, 'r') as f:
+                    registry_data = json.load(f)
+                    logger.debug(f"Successfully loaded registry with {len(registry_data)} plugins")
+                    # Log the enabled status of each plugin in registry
+                    for plugin_id, plugin_data in registry_data.items():
+                        state = plugin_data.get("state", None)
+                        if state:
+                            logger.debug(f"Registry: {plugin_id} -> state={state}")
+                        else:
+                            # Legacy format
+                            logger.debug(f"Registry: {plugin_id} -> enabled={plugin_data.get('enabled', True)}, loaded={plugin_data.get('loaded', False)}")
+                    
+                    # Update cache
+                    self._registry_cache = registry_data
+                    self._registry_dirty = False
+                    return registry_data
+            except Exception as e:
+                logger.error(f"Error loading plugin registry from {self.registry_file}: {e}", exc_info=True)
+        else:
+            logger.warning(f"Plugin registry file not found: {self.registry_file}")
+            
+        # Empty registry
+        self._registry_cache = {}
+        return {}
+        
+    def _save_registry(self, registry):
+        """Save plugin registry"""
+        try:
+            # Log the registry data being saved
+            logger.debug(f"Saving plugin registry to {self.registry_file} with {len(registry)} plugins")
+            
+            # Create directory structure if it doesn't exist
+            registry_dir = os.path.dirname(self.registry_file)
+            os.makedirs(registry_dir, exist_ok=True)
+            logger.debug(f"Ensured registry directory exists: {registry_dir}")
+            
+            # Write registry to file
+            with open(self.registry_file, 'w') as f:
+                json.dump(registry, f, indent=2)
+                
+            # Verify the file was written successfully
+            if os.path.exists(self.registry_file):
+                file_size = os.path.getsize(self.registry_file)
+                logger.debug(f"Plugin registry saved successfully. File size: {file_size} bytes")
+                
+                # Re-read to verify data integrity
+                try:
+                    with open(self.registry_file, 'r') as f:
+                        verify_data = json.load(f)
+                    logger.debug(f"Registry file verified with {len(verify_data)} plugins")
+                    
+                    # Update cache
+                    self._registry_cache = verify_data
+                    self._registry_dirty = False
+                except Exception as e:
+                    logger.error(f"Registry file verification failed: {e}")
+                    return False
+            else:
+                logger.error(f"Registry file not found after writing: {self.registry_file}")
+                return False
+                
+            return True
+        except Exception as e:
+            logger.error(f"Error saving plugin registry to {self.registry_file}: {e}", exc_info=True)
+            return False
+        
+    def discover_plugins(self):
+        """Discover available plugins"""
+        logger.info("Discovering plugins")
+        
+        # Discover plugins in both internal and external directories
+        internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
+        logger.debug(f"Discovered {len(internal_plugins)} internal plugins")
+        
+        external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
+        logger.debug(f"Discovered {len(external_plugins)} external plugins")
+        
+        # Merge plugins, external plugins take precedence over internal plugins with the same ID
+        discovered_plugins = {**internal_plugins, **external_plugins}
+        logger.info(f"Discovered {len(discovered_plugins)} total plugins")
+        
+        # Load registry to check for enabled/disabled state
+        registry = self._load_registry()
+        logger.debug(f"Loaded registry with {len(registry)} entries")
+        
+        # For plugins that were previously loaded but no longer exist, we'll keep them in the registry
+        # but remove them from the in-memory list
+        missing_plugins = {id: info for id, info in registry.items() if id not in discovered_plugins}
+        if missing_plugins:
+            logger.warning(f"Found {len(missing_plugins)} plugins in registry that are no longer available: {', '.join(missing_plugins.keys())}")
+        
+        # Update plugins with registry information
+        for plugin_id, plugin_info in discovered_plugins.items():
+            if plugin_id in registry:
+                # Get state from registry if available
+                if "state" in registry[plugin_id] and registry[plugin_id]["state"] in PluginState.__members__:
+                    previous_state = plugin_info.state
+                    new_state = PluginState[registry[plugin_id]["state"]]
+                    
+                    # Don't preserve LOADED state from registry - it must be explicitly loaded at runtime
+                    if new_state == PluginState.LOADED:
+                        new_state = PluginState.ENABLED
+                    
+                    plugin_info.state = new_state
+                    logger.debug(f"Plugin {plugin_id} state loaded from registry: {previous_state} -> {new_state}")
+                else:
+                    # Legacy format - convert from enabled/loaded flags
+                    previous_state = plugin_info.state
+                    enabled = registry[plugin_id].get("enabled", True)
+                    # Force loaded to false on startup regardless of registry
+                    plugin_info.state = PluginState.from_enabled_loaded(enabled, False)
+                    logger.debug(f"Plugin {plugin_id} state loaded from legacy registry format: {previous_state} -> {plugin_info.state}")
+            else:
+                # New plugins default to ENABLED state
+                plugin_info.state = PluginState.ENABLED
+                logger.debug(f"New plugin {plugin_id} not found in registry, set to {PluginState.ENABLED}")
+        
+        # Store the discovered plugins
+        self.plugins = discovered_plugins
+        
+        # Synchronize registry with discovered plugins
+        self._registry_dirty = True
+        self._sync_registry()
+        
+        logger.info(f"Plugin discovery complete. Found {len(self.plugins)} plugins.")
+        return self.plugins
+        
+    def _discover_plugins_in_directory(self, directory):
+        """Discover plugins in a directory"""
+        plugins = {}
+        
+        if not os.path.exists(directory):
+            logger.warning(f"Plugin directory not found: {directory}")
+            return plugins
+            
+        # Look for plugin directories in the plugins directory
+        for item in os.listdir(directory):
+            plugin_dir = os.path.join(directory, item)
+            
+            # Skip if not a directory
+            if not os.path.isdir(plugin_dir):
+                continue
+                
+            # Look for manifest files in priority order
+            manifest_json = os.path.join(plugin_dir, "manifest.json")
+            plugin_json = os.path.join(plugin_dir, "plugin.json")
+            plugin_yaml = os.path.join(plugin_dir, "plugin.yaml")
+            
+            plugin_info = None
+            
+            # Try to load plugin info from manifest files
+            if os.path.exists(manifest_json):
+                plugin_info = self._load_plugin_info_from_json(manifest_json, plugin_dir)
+            elif os.path.exists(plugin_json):
+                plugin_info = self._load_plugin_info_from_json(plugin_json, plugin_dir)
+            elif os.path.exists(plugin_yaml):
+                plugin_info = self._load_plugin_info_from_yaml(plugin_yaml, plugin_dir)
+                
+            if plugin_info:
+                # Verify compatibility with app version
+                if not self._is_plugin_compatible(plugin_info):
+                    logger.warning(f"Plugin {plugin_info.id} is not compatible with current app version")
+                    continue
+                    
+                plugins[plugin_info.id] = plugin_info
+                logger.debug(f"Discovered plugin: {plugin_info}")
+                
+        return plugins
+        
+    def _load_plugin_info_from_json(self, json_file, plugin_dir):
+        """Load plugin info from JSON file"""
+        try:
+            with open(json_file, 'r') as f:
+                data = json.load(f)
+                
+            # Validate required fields
+            required_fields = ["id", "name", "version", "entry_point"]
+            for field in required_fields:
+                if field not in data:
+                    logger.warning(f"Plugin JSON missing required field: {field}")
+                    return None
+                    
+            # Create plugin info
+            plugin_info = PluginInfo(
+                data["id"],
+                data["name"],
+                data["version"],
+                data.get("description", ""),
+                data.get("author", ""),
+                data["entry_point"],
+                plugin_dir
+            )
+            
+            # Add additional fields that might be in the manifest
+            plugin_info.min_app_version = data.get("min_app_version")
+            plugin_info.max_app_version = data.get("max_app_version")
+            plugin_info.dependencies = data.get("dependencies", [])
+            plugin_info.changelog = data.get("changelog", [])
+            
+            # Check for API.md documentation
+            api_doc_path = os.path.join(plugin_dir, "API.md")
+            if not os.path.exists(api_doc_path):
+                logger.warning(f"Plugin {data['id']} is missing API.md documentation file. Documentation is required.")
+                plugin_info.missing_docs = True
+            
+            return plugin_info
+        except Exception as e:
+            logger.error(f"Error loading plugin info from JSON: {e}")
+            return None
+
+    def _load_plugin_info_from_yaml(self, yaml_file, plugin_dir):
+        """Load plugin info from YAML file"""
+        try:
+            with open(yaml_file, 'r') as f:
+                data = yaml.safe_load(f)
+                
+            # Validate required fields
+            required_fields = ["id", "name", "version", "entry_point"]
+            for field in required_fields:
+                if field not in data:
+                    logger.warning(f"Plugin YAML missing required field: {field}")
+                    return None
+                    
+            # Create plugin info
+            plugin_info = PluginInfo(
+                data["id"],
+                data["name"],
+                data["version"],
+                data.get("description", ""),
+                data.get("author", ""),
+                data["entry_point"],
+                plugin_dir
+            )
+            
+            # Check for API.md documentation
+            api_doc_path = os.path.join(plugin_dir, "API.md")
+            if not os.path.exists(api_doc_path):
+                logger.warning(f"Plugin {data['id']} is missing API.md documentation file. Documentation is required.")
+                plugin_info.missing_docs = True
+            
+            return plugin_info
+        except Exception as e:
+            logger.error(f"Error loading plugin info from YAML: {e}")
+            return None
+            
+    def get_plugins(self):
+        """Get all plugins"""
+        return list(self.plugins.values())
+        
+    def get_plugin(self, plugin_id):
+        """Get a plugin by ID"""
+        return self.plugins.get(plugin_id)
+        
+    def _transition_plugin_state(self, plugin_id, target_state, action_name="transition"):
+        """
+        Central method to handle plugin state transitions.
+        
+        Args:
+            plugin_id: The ID of the plugin
+            target_state: The PluginState to transition to
+            action_name: The name of the action for logging
+            
+        Returns:
+            tuple: (success, plugin_info)
+        """
+        logger.debug(f"Attempting to {action_name} plugin: {plugin_id} to state {target_state}")
+        
+        plugin_info = self.get_plugin(plugin_id)
+        
+        if not plugin_info:
+            logger.warning(f"Cannot {action_name} plugin: Plugin not found with ID: {plugin_id}")
+            return False, None
+            
+        # Track the state before we change it
+        previous_state = plugin_info.state
+        current_state = previous_state
+        
+        # Check if already in the target state
+        if current_state == target_state:
+            logger.debug(f"Plugin {plugin_id} already in state {target_state}, no action needed")
+            return True, plugin_info
+        
+        # Validate the transition
+        if not PluginState.validate_transition(current_state, target_state):
+            logger.error(f"Invalid state transition for plugin {plugin_id}: {current_state} -> {target_state}")
+            return False, plugin_info
+            
+        logger.info(f"{action_name.capitalize()} plugin: {plugin_info} from {current_state} to {target_state}")
+        
+        # Apply the transition
+        plugin_info.state = target_state
+        
+        # Mark registry as dirty to be saved later
+        self._registry_dirty = True
+        
+        # Emit appropriate signals based on the transition
+        if current_state != PluginState.LOADED and target_state == PluginState.LOADED:
+            self.plugin_loaded.emit(plugin_info)
+        elif current_state == PluginState.LOADED and target_state != PluginState.LOADED:
+            self.plugin_unloaded.emit(plugin_info)
+            
+        if not current_state.is_enabled and target_state.is_enabled:
+            self.plugin_enabled.emit(plugin_info)
+        elif current_state.is_enabled and not target_state.is_enabled:
+            self.plugin_disabled.emit(plugin_info)
+            
+        # Always emit the state changed signal
+        self.plugin_state_changed.emit(plugin_info)
+        
+        # Sync with registry
+        self._sync_registry()
+        
+        logger.info(f"Successfully transitioned plugin {plugin_id} from {previous_state} to {target_state}")
+        return True, plugin_info
+    
+    def enable_plugin(self, plugin_id):
+        """Enable a plugin by ID"""
+        logger.info(f"Attempting to enable plugin: {plugin_id}")
+        
+        plugin_info = self.get_plugin(plugin_id)
+        if not plugin_info:
+            logger.warning(f"Cannot enable plugin: Plugin not found with ID: {plugin_id}")
+            return False
+            
+        if plugin_info.state.is_enabled:
+            logger.debug(f"Plugin {plugin_id} already enabled, no action needed")
+            return True
+            
+        success, _ = self._transition_plugin_state(plugin_id, PluginState.ENABLED, "enable")
+        return success
+        
+    def disable_plugin(self, plugin_id):
+        """Disable a plugin by ID"""
+        logger.info(f"Attempting to disable plugin: {plugin_id}")
+        
+        plugin_info = self.get_plugin(plugin_id)
+        if not plugin_info:
+            logger.warning(f"Cannot disable plugin: Plugin not found with ID: {plugin_id}")
+            return False
+            
+        if not plugin_info.state.is_enabled:
+            logger.debug(f"Plugin {plugin_id} already disabled, no action needed")
+            return True
+            
+        # ALWAYS attempt to unload the plugin first if it has an instance, regardless of state
+        if plugin_info.instance is not None:
+            logger.info(f"Unloading plugin {plugin_id} as part of disabling it")
+            unload_success = self.unload_plugin(plugin_id)
+            if not unload_success:
+                logger.error(f"Failed to unload plugin {plugin_id} while disabling it, will force instance to None")
+                # Force instance to None even if unload failed
+                try:
+                    if hasattr(plugin_info.instance, 'cleanup') and callable(plugin_info.instance.cleanup):
+                        try:
+                            plugin_info.instance.cleanup()
+                        except Exception as e:
+                            logger.error(f"Error during forced cleanup: {e}")
+                    
+                    # Force clear the instance
+                    plugin_info.instance = None
+                    
+                    # Force GC
+                    import gc
+                    gc.collect()
+                except Exception as e:
+                    logger.error(f"Error during forced instance clear: {e}")
+                    plugin_info.instance = None  # Try one more time
+        
+        # Now set the state to DISABLED - this will also force instance to None again via state setter
+        success, _ = self._transition_plugin_state(plugin_id, PluginState.DISABLED, "disable")
+        
+        if success:
+            # Verify plugin is in disabled state
+            if plugin_info.state != PluginState.DISABLED:
+                logger.warning(f"Plugin state transition did not complete correctly: {plugin_info.state.name}")
+                # Force the state directly
+                plugin_info.state = PluginState.DISABLED
+                self._registry_dirty = True
+                self._sync_registry(force_save=True)
+            
+            # Verify instance is completely cleared
+            if plugin_info.instance is not None:
+                logger.warning(f"Plugin instance still exists after disabling - forcing clear")
+                plugin_info.instance = None
+                
+                # Run GC one more time
+                import gc
+                gc.collect()
+            
+            logger.info(f"Successfully disabled plugin: {plugin_id}")
+        else:
+            logger.error(f"Failed to disable plugin: {plugin_id}")
+        
+        # Always sync the registry to make sure changes are saved
+        self._registry_dirty = True
+        self._sync_registry(force_save=True)
+        
+        return success
+    
+    def load_plugin(self, plugin_id):
+        """Load a plugin by ID"""
+        logger.info(f"Attempting to load plugin: {plugin_id}")
+        
+        plugin_info = self.get_plugin(plugin_id)
+        if not plugin_info:
+            logger.warning(f"Cannot load plugin: Plugin not found with ID: {plugin_id}")
+            return None
+            
+        # Check for DISABLED state - this is a strict check that cannot be bypassed
+        if plugin_info.state == PluginState.DISABLED:
+            logger.warning(f"Cannot load plugin: Plugin {plugin_id} is DISABLED")
+            return None
+            
+        # Strict checking for enabled status - only explicitly ENABLED or LOADED states can be loaded
+        if plugin_info.state != PluginState.ENABLED and plugin_info.state != PluginState.LOADED:
+            logger.warning(f"Cannot load plugin: Plugin {plugin_id} is not in ENABLED state (current state: {plugin_info.state.name})")
+            return None
+            
+        if plugin_info.state == PluginState.LOADED and plugin_info.instance:
+            logger.debug(f"Plugin {plugin_id} already loaded, returning existing instance")
+            return plugin_info.instance
+            
+        logger.info(f"Loading plugin: {plugin_info}")
+        
+        try:
+            # Calculate the full path to the entry point file
+            entry_point_path = os.path.join(plugin_info.path, plugin_info.entry_point)
+            logger.debug(f"Plugin entry point path: {entry_point_path}")
+            
+            if not os.path.exists(entry_point_path):
+                logger.error(f"Plugin entry point not found: {entry_point_path}")
+                plugin_info.state = PluginState.ERROR
+                self._registry_dirty = True
+                self._sync_registry()
+                return None
+                
+            # Determine the module name and path
+            module_name = os.path.splitext(os.path.basename(plugin_info.entry_point))[0]
+            module_path = os.path.dirname(plugin_info.path)
+            logger.debug(f"Module name: {module_name}, Module path: {module_path}")
+            
+            # Add plugin directory to sys.path if not already there
+            if module_path not in sys.path:
+                logger.debug(f"Adding plugin path to sys.path: {module_path}")
+                sys.path.insert(0, module_path)
+                
+            # Get plugin folder name
+            plugin_folder = os.path.basename(plugin_info.path)
+            logger.debug(f"Plugin folder: {plugin_folder}")
+            
+            # Import the plugin module
+            full_module_name = f"{plugin_folder}.{module_name}"
+            logger.debug(f"Importing plugin module: {full_module_name}")
+            
+            try:
+                plugin_module = importlib.import_module(full_module_name)
+                logger.debug(f"Successfully imported module: {full_module_name}")
+            except ImportError as e:
+                logger.error(f"Failed to import module {full_module_name}: {e}", exc_info=True)
+                plugin_info.state = PluginState.ERROR
+                self._registry_dirty = True
+                self._sync_registry()
+                return None
+            
+            # Reload the module to ensure we have the latest version
+            logger.debug(f"Reloading plugin module: {full_module_name}")
+            try:
+                plugin_module = importlib.reload(plugin_module)
+                logger.debug(f"Successfully reloaded module: {full_module_name}")
+            except Exception as e:
+                logger.error(f"Failed to reload module {full_module_name}: {e}", exc_info=True)
+                plugin_info.state = PluginState.ERROR
+                self._registry_dirty = True
+                self._sync_registry()
+                return None
+            
+            # Look for a class that implements PluginInterface
+            logger.debug("Searching for plugin class that implements PluginInterface")
+            plugin_class = None
+            found_classes = []
+            
+            for name, obj in inspect.getmembers(plugin_module):
+                if inspect.isclass(obj):
+                    found_classes.append(name)
+                    if issubclass(obj, PluginInterface) and obj != PluginInterface:
+                        plugin_class = obj
+                        logger.debug(f"Found plugin class: {name}")
+                        break
+            
+            if not plugin_class:
+                logger.error(f"No plugin class found in {plugin_id}. Found classes: {', '.join(found_classes)}")
+                plugin_info.state = PluginState.ERROR
+                self._registry_dirty = True
+                self._sync_registry()
+                return None
+                
+            # Create an instance of the plugin class
+            logger.debug(f"Creating instance of plugin class: {plugin_class.__name__}")
+            try:
+                plugin_instance = plugin_class()
+                logger.debug(f"Successfully created plugin instance of class {plugin_class.__name__}")
+            except Exception as e:
+                logger.error(f"Failed to create plugin instance: {e}", exc_info=True)
+                plugin_info.state = PluginState.ERROR
+                self._registry_dirty = True
+                self._sync_registry()
+                return None
+            
+            # Initialize the plugin
+            logger.debug(f"Initializing plugin: {plugin_id}")
+            try:
+                init_result = plugin_instance.initialize(self.app, plugin_info)
+                logger.debug(f"Plugin initialization result: {init_result}")
+                if not init_result:
+                    logger.error(f"Plugin {plugin_id} initialization returned False")
+                    plugin_info.state = PluginState.ERROR
+                    self._registry_dirty = True
+                    self._sync_registry()
+                    return None
+            except Exception as e:
+                logger.error(f"Error during plugin initialization: {e}", exc_info=True)
+                plugin_info.state = PluginState.ERROR
+                self._registry_dirty = True
+                self._sync_registry()
+                return None
+            
+            # Update plugin info and transition state
+            plugin_info.instance = plugin_instance
+            success, _ = self._transition_plugin_state(plugin_id, PluginState.LOADED, "load")
+            
+            if not success:
+                logger.error(f"Failed to transition plugin {plugin_id} to LOADED state")
+                plugin_info.instance = None
+                return None
+            
+            logger.info(f"Plugin loaded successfully: {plugin_info}")
+            return plugin_instance
+        except Exception as e:
+            logger.error(f"Unhandled error loading plugin {plugin_id}: {str(e)}", exc_info=True)
+            plugin_info.state = PluginState.ERROR
+            plugin_info.instance = None
+            self._registry_dirty = True
+            self._sync_registry()
+            return None
+            
+    def unload_plugin(self, plugin_id):
+        """
+        Unload a plugin from memory.
+        
+        Args:
+            plugin_id: The ID of the plugin to unload
+            
+        Returns:
+            bool: True if the plugin was successfully unloaded, False otherwise
+        """
+        if plugin_id not in self.plugins:
+            logger.warning(f"Cannot unload plugin {plugin_id}: Plugin not loaded")
+            return False
+        
+        plugin_info = self.plugins[plugin_id]
+        logger.info(f"Unloading plugin: {plugin_info}")
+        
+        try:
+            # Keep reference to instance for cleanup
+            instance = plugin_info.instance
+            
+            # Remove UI components
+            self._remove_plugin_ui_components(plugin_info)
+            
+            # Disconnect all signals
+            self._disconnect_device_manager_signals(plugin_info)
+            self._disconnect_plugin_signals(plugin_info)
+            
+            # Call cleanup if needed
+            if instance and hasattr(instance, 'cleanup'):
+                try:
+                    instance.cleanup()
+                except Exception as e:
+                    logger.error(f"Error during plugin cleanup for {plugin_id}: {e}", exc_info=True)
+            
+            # Set state first to prevent any accidental reloading
+            original_state = plugin_info.state
+            plugin_info.state = PluginState.ENABLED if original_state.is_enabled else PluginState.DISABLED
+            
+            # Force delete the instance
+            if instance:
+                # Clear any modules first to break circular references
+                self._clear_plugin_from_cache(plugin_id)
+                
+                # Nullify all attributes that might contain references
+                for attr_name in dir(instance):
+                    if not attr_name.startswith('__'):
+                        try:
+                            setattr(instance, attr_name, None)
+                        except (AttributeError, TypeError):
+                            pass
+                
+                # Remove the instance reference from plugin_info
+                plugin_info.instance = None
+                
+                # Break any potential circular references
+                try:
+                    instance.__dict__.clear()
+                except:
+                    pass
+                
+                # Force deletion attempt
+                try:
+                    del instance
+                except:
+                    pass
+                
+                # Force GC to run
+                import gc
+                gc.collect()
+            
+            # Triple check that instance is None
+            if hasattr(plugin_info, 'instance') and plugin_info.instance is not None:
+                logger.warning(f"Plugin instance reference still persists after unload for {plugin_id}, forcing to None")
+                plugin_info.instance = None
+                gc.collect()
+            
+            # Save changes to the registry
+            self._sync_registry(force_save=True)
+            
+            logger.info(f"Successfully unloaded plugin: {plugin_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error unloading plugin {plugin_id}: {e}", exc_info=True)
+            # Make sure the instance is still cleared even on error
+            if hasattr(plugin_info, 'instance') and plugin_info.instance is not None:
+                plugin_info.instance = None
+                # Force GC
+                import gc
+                gc.collect()
+            return False
+
+    def _remove_plugin_ui_components(self, plugin_info):
+        """Remove all UI components added by the plugin"""
+        if not plugin_info.instance or not self.app.main_window:
+            return
+            
+        instance = plugin_info.instance
+        main_window = self.app.main_window
+        
+        logger.debug(f"Removing UI components for plugin: {plugin_info.id}")
+        
+        try:
+            # Remove toolbar actions
+            toolbar_actions = getattr(instance, 'get_toolbar_actions', lambda: [])()
+            if toolbar_actions:
+                logger.debug(f"Removing {len(toolbar_actions)} toolbar actions")
+                # Find all toolbars in the main window
+                toolbars = [tb for tb in main_window.findChildren(QToolBar)]
+                for action in toolbar_actions:
+                    try:
+                        for toolbar in toolbars:
+                            if action in toolbar.actions():
+                                logger.debug(f"Removing action from toolbar: {toolbar.objectName()}")
+                                toolbar.removeAction(action)
+                        if hasattr(action, 'deleteLater'):
+                            action.deleteLater()
+                    except Exception as e:
+                        logger.error(f"Error removing toolbar action: {e}")
+                        
+            # Remove menu actions
+            menu_actions = getattr(instance, 'get_menu_actions', lambda: {})()
+            if menu_actions:
+                logger.debug(f"Removing menu actions from {len(menu_actions)} menus")
+                for menu_name, actions in menu_actions.items():
+                    try:
+                        menu = main_window.findMenu(menu_name)
+                        if menu:
+                            logger.debug(f"Found menu {menu_name}, removing {len(actions)} actions")
+                            for action in actions:
+                                menu.removeAction(action)
+                                if hasattr(action, 'deleteLater'):
+                                    action.deleteLater()
+                    except Exception as e:
+                        logger.error(f"Error removing menu action from {menu_name}: {e}")
+                        
+            # Remove dock widgets
+            dock_widgets = getattr(instance, 'get_dock_widgets', lambda: [])()
+            if dock_widgets:
+                logger.debug(f"Removing {len(dock_widgets)} dock widgets")
+                # First try to find existing dock widgets with the same title
+                all_dock_widgets = main_window.findChildren(QDockWidget)
+                for dock_info in dock_widgets:
+                    try:
+                        dock_name, widget, area = dock_info
+                        removed = False
+                        
+                        # Try to find by title first
+                        for dock in all_dock_widgets:
+                            if dock.windowTitle() == dock_name:
+                                logger.debug(f"Found dock widget by title: {dock_name}")
+                                main_window.removeDockWidget(dock)
+                                dock.setWidget(None)  # Detach widget to prevent it from being deleted
+                                dock.deleteLater()
+                                removed = True
+                                break
+                                
+                        # If not found by title, try by widget reference
+                        if not removed:
+                            for dock in all_dock_widgets:
+                                if dock.widget() == widget:
+                                    logger.debug(f"Found dock widget by widget reference")
+                                    main_window.removeDockWidget(dock)
+                                    dock.setWidget(None)
+                                    dock.deleteLater()
+                                    removed = True
+                                    break
+                                    
+                        # If still not found, look for the exact dock passed
+                        if not removed and isinstance(widget, QDockWidget):
+                            logger.debug(f"Widget is a QDockWidget, removing directly")
+                            main_window.removeDockWidget(widget)
+                            widget.deleteLater()
+                            removed = True
+                            
+                        # Clean up the widget if it wasn't part of a dock
+                        if not removed and widget:
+                            logger.debug(f"Dock not found by title or widget, cleaning up widget")
+                            if widget.parent() == main_window:
+                                widget.setParent(None)
+                            widget.deleteLater()
+                            
+                    except Exception as e:
+                        logger.error(f"Error removing dock widget: {e}", exc_info=True)
+                        
+            # Remove device panels
+            device_panels = getattr(instance, 'get_device_panels', lambda: [])()
+            if device_panels:
+                logger.debug(f"Removing {len(device_panels)} device panels")
+                if hasattr(main_window, 'device_details_panel'):
+                    for panel_info in device_panels:
+                        try:
+                            panel_name, panel_widget = panel_info
+                            logger.debug(f"Removing device panel: {panel_name}")
+                            main_window.device_details_panel.remove_panel(panel_name)
+                        except Exception as e:
+                            logger.error(f"Error removing device panel: {e}")
+                elif hasattr(main_window, 'properties_widget') and isinstance(main_window.properties_widget, QTabWidget):
+                    # Fallback to looking for tabs in the properties widget
+                    for panel_info in device_panels:
+                        try:
+                            panel_name, panel_widget = panel_info
+                            logger.debug(f"Fallback: looking for tab with name {panel_name}")
+                            
+                            # Look for the tab by name
+                            for i in range(main_window.properties_widget.count()):
+                                if main_window.properties_widget.tabText(i) == panel_name:
+                                    logger.debug(f"Found tab with name {panel_name}, removing")
+                                    main_window.properties_widget.removeTab(i)
+                                    if panel_widget.parent() == main_window.properties_widget:
+                                        panel_widget.setParent(None)
+                                    panel_widget.deleteLater()
+                                    break
+                        except Exception as e:
+                            logger.error(f"Error removing tab from properties widget: {e}")
+            
+            # Remove custom device columns
+            if hasattr(main_window, 'device_table_model'):
+                columns = getattr(instance, 'get_device_table_columns', lambda: [])()
+                if columns:
+                    logger.debug(f"Removing {len(columns)} custom device columns")
+                    for column_info in columns:
+                        try:
+                            column_name = column_info[0]
+                            logger.debug(f"Removing device column: {column_name}")
+                            main_window.device_table_model.remove_column(column_name)
+                        except Exception as e:
+                            logger.error(f"Error removing device column: {e}")
+            
+            logger.debug(f"Successfully removed UI components for plugin: {plugin_info.id}")
+        except Exception as e:
+            logger.error(f"Error while removing UI components for plugin {plugin_info.id}: {e}", exc_info=True)
+            
+    def _disconnect_device_manager_signals(self, plugin_info):
+        """Disconnect all device manager signals for a plugin"""
+        if not plugin_info.instance:
+            return
+        
+        instance = plugin_info.instance
+        logger.debug(f"Disconnecting device manager signals for plugin: {plugin_info.id}")
+        
+        try:
+            # Check for connected signals attribute from plugin
+            connected_signals = getattr(instance, '_connected_signals', set())
+            
+            # Only disconnect signals that were actually connected
+            if connected_signals:
+                logger.debug(f"Plugin has tracked connected signals: {connected_signals}")
+                
+                if "device_added" in connected_signals and hasattr(instance, 'on_device_added'):
+                    try:
+                        self.app.device_manager.device_added.disconnect(instance.on_device_added)
+                        logger.debug(f"Successfully disconnected device_added signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Error disconnecting device_added signal: {e}")
+                
+                if "device_removed" in connected_signals and hasattr(instance, 'on_device_removed'):
+                    try:
+                        self.app.device_manager.device_removed.disconnect(instance.on_device_removed)
+                        logger.debug(f"Successfully disconnected device_removed signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Error disconnecting device_removed signal: {e}")
+                
+                if "device_changed" in connected_signals and hasattr(instance, 'on_device_changed'):
+                    try:
+                        self.app.device_manager.device_changed.disconnect(instance.on_device_changed)
+                        logger.debug(f"Successfully disconnected device_changed signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Error disconnecting device_changed signal: {e}")
+                
+                if "group_added" in connected_signals and hasattr(instance, 'on_group_added'):
+                    try:
+                        self.app.device_manager.group_added.disconnect(instance.on_group_added)
+                        logger.debug(f"Successfully disconnected group_added signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Error disconnecting group_added signal: {e}")
+                
+                if "group_removed" in connected_signals and hasattr(instance, 'on_group_removed'):
+                    try:
+                        self.app.device_manager.group_removed.disconnect(instance.on_group_removed)
+                        logger.debug(f"Successfully disconnected group_removed signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Error disconnecting group_removed signal: {e}")
+                
+                if "selection_changed" in connected_signals and hasattr(instance, 'on_device_selected'):
+                    try:
+                        self.app.device_manager.selection_changed.disconnect(instance.on_device_selected)
+                        logger.debug(f"Successfully disconnected selection_changed signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Error disconnecting selection_changed signal: {e}")
+            else:
+                # Fall back to the old method of trying to disconnect all potential signals
+                logger.debug(f"No tracked signals found for {plugin_info.id}, using fallback disconnection")
+                
+                if hasattr(self.app.device_manager, 'device_added') and hasattr(instance, 'on_device_added'):
+                    try:
+                        self.app.device_manager.device_added.disconnect(instance.on_device_added)
+                        logger.debug(f"Successfully disconnected device_added signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Signal device_added not connected to {plugin_info.id}: {e}")
+                
+                if hasattr(self.app.device_manager, 'device_removed') and hasattr(instance, 'on_device_removed'):
+                    try:
+                        self.app.device_manager.device_removed.disconnect(instance.on_device_removed)
+                        logger.debug(f"Successfully disconnected device_removed signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Signal device_removed not connected to {plugin_info.id}: {e}")
+                
+                if hasattr(self.app.device_manager, 'device_changed') and hasattr(instance, 'on_device_changed'):
+                    try:
+                        self.app.device_manager.device_changed.disconnect(instance.on_device_changed)
+                        logger.debug(f"Successfully disconnected device_changed signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Signal device_changed not connected to {plugin_info.id}: {e}")
+                
+                if hasattr(self.app.device_manager, 'group_added') and hasattr(instance, 'on_group_added'):
+                    try:
+                        self.app.device_manager.group_added.disconnect(instance.on_group_added)
+                        logger.debug(f"Successfully disconnected group_added signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Signal group_added not connected to {plugin_info.id}: {e}")
+                
+                if hasattr(self.app.device_manager, 'group_removed') and hasattr(instance, 'on_group_removed'):
+                    try:
+                        self.app.device_manager.group_removed.disconnect(instance.on_group_removed)
+                        logger.debug(f"Successfully disconnected group_removed signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Signal group_removed not connected to {plugin_info.id}: {e}")
+                
+                if hasattr(self.app.device_manager, 'selection_changed') and hasattr(instance, 'on_device_selected'):
+                    try:
+                        self.app.device_manager.selection_changed.disconnect(instance.on_device_selected)
+                        logger.debug(f"Successfully disconnected selection_changed signal for {plugin_info.id}")
+                    except Exception as e:
+                        logger.debug(f"Signal selection_changed not connected to {plugin_info.id}: {e}")
+                
+            logger.debug(f"Successfully disconnected device manager signals for plugin: {plugin_info.id}")
+        except Exception as e:
+            logger.error(f"Error disconnecting device manager signals for plugin {plugin_info.id}: {e}", exc_info=True)
+
+    def _disconnect_plugin_signals(self, plugin_info):
+        """Disconnect all plugin-specific signals"""
+        if not plugin_info.instance:
+            return
+        
+        instance = plugin_info.instance
+        logger.debug(f"Disconnecting plugin signals for: {plugin_info.id}")
+        
+        try:
+            # Check for connected signals attribute from plugin
+            connected_signals = getattr(instance, '_connected_signals', None)
+            if connected_signals:
+                logger.debug(f"Found tracked signals in plugin: {connected_signals}")
+                
+            # List of signals to disconnect from the plugin instance
+            signal_names = [
+                'plugin_initialized', 'plugin_starting', 'plugin_running',
+                'plugin_stopping', 'plugin_cleaned_up', 'plugin_error'
+            ]
+            
+            for signal_name in signal_names:
+                if hasattr(instance, signal_name):
+                    signal = getattr(instance, signal_name)
+                    # Only attempt disconnect if it's actually a Signal object
+                    if hasattr(signal, 'disconnect'):
+                        try:
+                            # Check if the signal has any connections
+                            # Use a safer approach to determine if it can be disconnected
+                            logger.debug(f"Attempting safe disconnect of {signal_name}")
+                            
+                            # In PySide6, we can safely disconnect without arguments to disconnect all connections
+                            # But this will fail if there are no receivers, so we need to catch exceptions
+                            signal.disconnect()
+                            logger.debug(f"Successfully disconnected signal {signal_name}")
+                        except Exception as e:
+                            # Downgrade to debug level since this is not a critical error
+                            logger.debug(f"Signal {signal_name} disconnection error: {e}")
+                    else:
+                        logger.debug(f"Attribute {signal_name} is not a disconnectable signal")
+                    
+            logger.debug(f"Successfully disconnected plugin signals for: {plugin_info.id}")
+        except Exception as e:
+            logger.error(f"Error disconnecting plugin signals for {plugin_info.id}: {e}", exc_info=True)
+
+    def _is_plugin_compatible(self, plugin_info):
+        """Check if plugin is compatible with current app version"""
+        current_version = self.app.get_version()
+        
+        # Check minimum version requirement
+        min_version = getattr(plugin_info, "min_app_version", None)
+        if min_version and self._compare_versions(current_version, min_version) < 0:
+            logger.warning(f"Plugin {plugin_info.id} requires minimum app version {min_version}, but current is {current_version}")
+            return False
+            
+        # Check maximum version constraint
+        max_version = getattr(plugin_info, "max_app_version", None)
+        if max_version and self._compare_versions(current_version, max_version) > 0:
+            logger.warning(f"Plugin {plugin_info.id} requires maximum app version {max_version}, but current is {current_version}")
+            return False
+            
+        return True
+
+    def _compare_versions(self, version1, version2):
+        """Compare two version strings, returns -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2"""
+        def parse_version(v):
+            return tuple(map(int, v.split('.')))
+            
+        v1_parts = parse_version(version1)
+        v2_parts = parse_version(version2)
+        
+        # Compare each part of the version
+        for i in range(max(len(v1_parts), len(v2_parts))):
+            v1 = v1_parts[i] if i < len(v1_parts) else 0
+            v2 = v2_parts[i] if i < len(v2_parts) else 0
+            
+            if v1 < v2:
+                return -1
+            elif v1 > v2:
+                return 1
+                
+        return 0  # Versions are equal 
+
+    def reload_plugin(self, plugin_id):
+        """Reload a plugin by ID"""
+        logger.info(f"Attempting to reload plugin: {plugin_id}")
+        
+        plugin_info = self.get_plugin(plugin_id)
+        if not plugin_info:
+            logger.warning(f"Cannot reload plugin: Plugin not found with ID: {plugin_id}")
+            return None
+            
+        # Remember if the plugin was enabled
+        was_enabled = plugin_info.state.is_enabled
+        was_loaded = plugin_info.state.is_loaded
+        
+        # First unload the plugin
+        if was_loaded:
+            logger.debug(f"Unloading plugin {plugin_id} before reload")
+            success = self.unload_plugin(plugin_id)
+            if not success:
+                logger.error(f"Failed to unload plugin {plugin_id} for reload")
+                return None
+        
+        # If the plugin wasn't enabled, nothing more to do
+        if not was_enabled:
+            logger.warning(f"Plugin {plugin_id} is disabled, skipping reload")
+            return None
+        
+        # Reload the plugin
+        logger.debug(f"Loading plugin {plugin_id} to complete reload")
+        instance = self.load_plugin(plugin_id)
+        
+        # Verify reload was successful
+        if instance:
+            logger.info(f"Successfully reloaded plugin: {plugin_id}")
+        else:
+            logger.error(f"Failed to reload plugin: {plugin_id}")
+            
+            # If the plugin was enabled but failed to load, make sure it stays in ERROR state
+            if was_enabled and plugin_info.state != PluginState.ERROR:
+                plugin_info.state = PluginState.ERROR
+                self._registry_dirty = True
+                self._sync_registry()
+        
+        return instance
+        
+    def load_all_plugins(self):
+        """Load all enabled plugins"""
+        logger.info("Loading all enabled plugins")
+        
+        # Get all enabled plugins
+        enabled_plugins = [p for p in self.plugins.values() if p.state.is_enabled and not p.state.is_loaded]
+        total_enabled = len(enabled_plugins)
+        logger.debug(f"Found {total_enabled} enabled plugins to load")
+        
+        # Track plugins that were already loaded
+        already_loaded = [p.id for p in self.plugins.values() if p.state.is_loaded]
+        logger.debug(f"Found {len(already_loaded)} plugins already loaded")
+        
+        loaded_plugins = []
+        load_failed = []
+        
+        # Load each plugin
+        for plugin_info in enabled_plugins:
+            logger.debug(f"Loading plugin: {plugin_info.id}")
+            instance = self.load_plugin(plugin_info.id)
+            
+            if instance:
+                loaded_plugins.append(plugin_info)
+                logger.debug(f"Successfully loaded plugin: {plugin_info.id}")
+            else:
+                load_failed.append(plugin_info.id)
+                logger.error(f"Failed to load plugin: {plugin_info.id}")
+        
+        # Log results
+        if loaded_plugins:
+            logger.info(f"Successfully loaded {len(loaded_plugins)} plugins: {', '.join([p.id for p in loaded_plugins])}")
+        
+        if load_failed:
+            logger.warning(f"Failed to load {len(load_failed)} plugins: {', '.join(load_failed)}")
+            
+        if already_loaded:
+            logger.debug(f"The following plugins were already loaded: {', '.join(already_loaded)}")
+                
+        logger.info(f"Loaded {len(loaded_plugins)} of {total_enabled} enabled plugins")
+        return loaded_plugins
+        
+    def unload_all_plugins(self):
+        """Unload all loaded plugins"""
+        logger.info("Unloading all loaded plugins")
+        
+        # Get all loaded plugins
+        loaded_plugins = [p for p in self.plugins.values() if p.state.is_loaded]
+        logger.debug(f"Found {len(loaded_plugins)} loaded plugins to unload")
+        
+        unloaded_plugins = []
+        unload_failed = []
+        
+        # Unload in reverse order of loading (in case of dependencies)
+        for plugin_info in reversed(loaded_plugins):
+            logger.debug(f"Unloading plugin: {plugin_info.id}")
+            success = self.unload_plugin(plugin_info.id)
+            
+            if success:
+                unloaded_plugins.append(plugin_info)
+                logger.debug(f"Successfully unloaded plugin: {plugin_info.id}")
+            else:
+                unload_failed.append(plugin_info.id)
+                logger.error(f"Failed to unload plugin: {plugin_info.id}")
+        
+        # Log results
+        if unloaded_plugins:
+            logger.info(f"Successfully unloaded {len(unloaded_plugins)} plugins: {', '.join([p.id for p in unloaded_plugins])}")
+        
+        if unload_failed:
+            logger.warning(f"Failed to unload {len(unload_failed)} plugins: {', '.join(unload_failed)}")
+            
+        # Final check to ensure all plugins are properly unloaded
+        still_loaded = [p.id for p in self.plugins.values() if p.state.is_loaded]
+        if still_loaded:
+            logger.error(f"Some plugins are still in LOADED state after unload_all_plugins: {', '.join(still_loaded)}")
+            
+        logger.info(f"Unloaded {len(unloaded_plugins)} plugins")
+        return unloaded_plugins
+
+    def _clear_plugin_from_cache(self, plugin_id):
+        """
+        Clear a plugin and all its related modules from the Python module cache.
+        This helps ensure a clean reload next time.
+        
+        Args:
+            plugin_id: The plugin ID to clear from cache
+        """
+        # Find all modules that belong to this plugin
+        modules_to_remove = [
+            mod_name for mod_name in list(sys.modules.keys())
+            if mod_name.startswith(plugin_id) or  # Direct module match
+               (mod_name.startswith('plugins.') and plugin_id in mod_name)  # Plugin in plugins directory
+        ]
+        
+        # Log what we're removing
+        if modules_to_remove:
+            logger.debug(f"Clearing {len(modules_to_remove)} modules from cache for plugin {plugin_id}: {modules_to_remove}")
+            
+            # Actually remove the modules
+            for mod_name in modules_to_remove:
+                try:
+                    if mod_name in sys.modules:
+                        del sys.modules[mod_name]
+                except Exception as e:
+                    logger.error(f"Error removing module {mod_name} from cache: {e}")
+        else:
+            logger.debug(f"No modules found to clear for plugin {plugin_id}")
+        
+        # Check both plugin directories
+        for plugin_dir_attr in ['external_plugins_dir', 'internal_plugins_dir']:
+            if hasattr(self, plugin_dir_attr):
+                plugin_dir = os.path.join(getattr(self, plugin_dir_attr), plugin_id)
+                if os.path.isdir(plugin_dir):
+                    pycache_dir = os.path.join(plugin_dir, "__pycache__")
+                    if os.path.isdir(pycache_dir):
+                        try:
+                            logger.debug(f"Clearing __pycache__ directory for plugin {plugin_id} in {plugin_dir_attr}")
+                            for cached_file in os.listdir(pycache_dir):
+                                try:
+                                    os.remove(os.path.join(pycache_dir, cached_file))
+                                except Exception as e:
+                                    logger.debug(f"Could not remove cached file {cached_file}: {e}")
+                        except Exception as e:
+                            logger.error(f"Error clearing __pycache__ for plugin {plugin_id}: {e}") 

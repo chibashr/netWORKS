@@ -1,0 +1,30 @@
+{
+  "id": "sample",
+  "name": "Sample Plugin",
+  "version": "1.0.0",
+  "description": "A comprehensive sample plugin that demonstrates the plugin system and provides testing capabilities",
+  "author": "NetWORKS Team",
+  "entry_point": "sample_plugin.py",
+  "min_app_version": "0.8.16",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2025-05-19",
+      "changes": [
+        "Added comprehensive application testing capabilities",
+        "Updated to comply with new documentation standards",
+        "Enhanced UI with testing dashboard",
+        "Added signal testing and monitoring functionality"
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": "2023-11-14",
+      "changes": [
+        "Initial sample plugin",
+        "Demonstrates basic plugin functionality",
+        "Shows how to register with the application"
+      ]
+    }
+  ]
+} 

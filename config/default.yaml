@@ -1,0 +1,18 @@
+application:
+  external_plugins_directory: D:\SynologyDrive\Development\New folder (2)\plugins
+  logs_level: INFO
+  plugins_directory: D:\SynologyDrive\Development\New folder (2)\src\plugins
+  plugins_enabled: true
+  theme: dark
+devices:
+  auto_discover: true
+  refresh_interval: 60
+ui:
+  device_table:
+    default_columns:
+    - name
+    - ip
+    - status
+  font_size: 10
+  show_statusbar: true
+  toolbar_position: top

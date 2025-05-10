@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Plugin Manifest Schema",
+  "description": "Schema for NetWORKS plugin manifests",
+  "type": "object",
+  "required": ["id", "name", "version", "entry_point"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the plugin",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name of the plugin"
+    },
+    "version": {
+      "type": "string",
+      "description": "Plugin version in semver format",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of the plugin's functionality"
+    },
+    "author": {
+      "type": "string",
+      "description": "Plugin author or organization"
+    },
+    "entry_point": {
+      "type": "string",
+      "description": "Main Python file that contains the plugin class"
+    },
+    "min_app_version": {
+      "type": "string",
+      "description": "Minimum NetWORKS version required",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "max_app_version": {
+      "type": "string",
+      "description": "Maximum NetWORKS version supported",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "List of plugin dependencies",
+      "items": {
+        "type": "object",
+        "required": ["id", "version"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Plugin ID of dependency"
+          },
+          "version": {
+            "type": "string",
+            "description": "Required version of dependency"
+          }
+        }
+      }
+    },
+    "changelog": {
+      "type": "array",
+      "description": "Changelog entries for the plugin",
+      "items": {
+        "type": "object",
+        "required": ["version", "date", "changes"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Version of this release"
+          },
+          "date": {
+            "type": "string",
+            "description": "Date of release (YYYY-MM-DD)"
+          },
+          "changes": {
+            "type": "array",
+            "description": "List of changes in this version",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+} 
