@@ -1,6 +1,6 @@
 {
   "name": "NetWORKS",
-  "version": "0.8.16",
+  "version": "1.0.0",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -9,17 +9,17 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-  "version_string": "0.8.16",
+  "version_string": "1.0.0",
   "version_info": {
-    "major": 0,
-    "minor": 8,
-    "patch": 16,
+    "major": 1,
+    "minor": 0,
+    "patch": 0,
     "build": 0,
-    "release_type": "alpha"
+    "release_type": "stable"
   },
-  "build_date": "2025-05-18",
-  "release_notes": "Improved plugin documentation system. Added documentation tab to Plugin Manager, comprehensive signals documentation, and enforced API.md requirement for plugins.",
-  "release_type": "alpha",
+  "build_date": "2025-05-20",
+  "release_notes": "First stable release. Includes complete plugin system, device management capabilities, workspace functionality, and comprehensive documentation.",
+  "release_type": "stable",
   "compatibility": {
     "min_plugin_api": "1.0.0",
     "recommended_plugin_api": "1.0.0",
@@ -45,6 +45,11 @@
     ]
   },
   "version_history": [
+    {
+      "version": "1.0.0",
+      "date": "2025-05-20",
+      "changes": "First stable release. Includes complete plugin system, device management capabilities, workspace functionality, and comprehensive documentation."
+    },
     {
       "version": "0.8.16",
       "date": "2025-05-18",
