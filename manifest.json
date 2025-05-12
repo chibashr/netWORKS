@@ -155,5 +155,28 @@
       "date": "2025-04-01",
       "changes": "First alpha release with core functionality implemented."
     }
+  ],
+  "changelog": [
+    {
+      "version": "1.0.3",
+      "date": "2025-05-11",
+      "changes": [
+        "Fix: Improved network_scanner UI by removing duplicate headers and routing scan results directly to device table."
+      ]
+    },
+    {
+      "version": "1.0.2",
+      "date": "2025-05-11",
+      "changes": [
+        "Fix: Remove duplicate UI headers in network_scanner plugin."
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "date": "2025-05-11",
+      "changes": [
+        "Fix: Correct QAction import in network_scanner plugin to resolve PySide6 import error."
+      ]
+    }
   ]
 }
