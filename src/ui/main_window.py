@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QAbstractItemView, QSizePolicy, QInputDialog, QLineEdit, QMessageBox, QDialog, QListWidget, QTableWidget, QTableWidgetItem
 )
 from PySide6.QtGui import QIcon, QAction, QFont, QKeySequence
-from PySide6.QtCore import Qt, QSize, Signal, Slot, QModelIndex
+from PySide6.QtCore import Qt, QSize, Signal, Slot, QModelIndex, QSettings
 from PySide6.QtWidgets import QStyle
 
 from .device_table import DeviceTableModel, DeviceTableView, QAbstractItemView
@@ -50,6 +50,9 @@ class MainWindow(QMainWindow):
         
         # Connect signals
         self._connect_signals()
+        
+        # Restore window state, size and position if available
+        self._restore_window_state()
         
         logger.info("Main window initialized")
         
@@ -1047,8 +1050,14 @@ class MainWindow(QMainWindow):
         self.remove_plugin_ui_components(plugin_info)
         
     def closeEvent(self, event):
-        """Handle window close event"""
-        logger.debug("Closing main window")
+        """Save window state and size on close"""
+        # Save window state, position and size
+        settings = QSettings(self.app.applicationName(), "WindowState")
+        settings.setValue("geometry", self.saveGeometry())
+        settings.setValue("windowState", self.saveState())
+        settings.setValue("size", self.size())
+        settings.setValue("pos", self.pos())
+        logger.debug("Window state and position saved")
         
         # Save the current workspace
         self.device_manager.save_workspace()
@@ -1058,6 +1067,31 @@ class MainWindow(QMainWindow):
         
         # Accept the event
         event.accept()
+        
+    def _restore_window_state(self):
+        """Restore window state from settings"""
+        try:
+            settings = QSettings(self.app.applicationName(), "WindowState")
+            # Restore geometry if available
+            if settings.contains("geometry"):
+                self.restoreGeometry(settings.value("geometry"))
+                logger.debug("Window geometry restored")
+            
+            # Restore window state (dock positions etc.)
+            if settings.contains("windowState"):
+                self.restoreState(settings.value("windowState"))
+                logger.debug("Window state restored")
+                
+            # Fallback to size and position if geometry not available
+            elif settings.contains("size") and settings.contains("pos"):
+                self.resize(settings.value("size"))
+                self.move(settings.value("pos"))
+                logger.debug("Window size and position restored")
+                
+        except Exception as e:
+            logger.error(f"Failed to restore window state: {e}")
+            # If restoration fails, use default size and position
+            self.resize(1200, 800)
         
     def findMenu(self, menu_name):
         """Find a menu by name

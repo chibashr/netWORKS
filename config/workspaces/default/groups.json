@@ -3,7 +3,9 @@
     {
       "name": "New Group",
       "description": "",
-      "devices": [],
+      "devices": [
+        "0b6be2b1-b70d-4436-b706-71353f38d9ec"
+      ],
       "subgroups": []
     }
   ]

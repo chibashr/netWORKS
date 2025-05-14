@@ -13,6 +13,7 @@ This guide provides comprehensive information for developing plugins for the Net
 - [Best Practices](#best-practices)
 - [Advanced Topics](#advanced-topics)
 - [Troubleshooting](#troubleshooting)
+- [Example Plugins](#example-plugins)
 
 ## Quick Start
 
@@ -728,6 +729,109 @@ def on_task_completed(self, result):
     # Handle the result
     pass
 ```
+
+## Example Plugins
+
+### Network Scanner Plugin
+
+The Network Scanner plugin provides an excellent example of a well-structured plugin that extends NetWORKS with network discovery capabilities.
+
+#### Features
+
+- Scans networks using nmap to discover devices
+- Adds discovered devices to the NetWORKS device inventory
+- Offers multiple scan types (quick, standard, comprehensive)
+- Supports custom scan profiles with configurable options
+- Provides UI integration through context menu actions
+- Incorporates a dedicated settings page for configuration
+
+#### Code Organization
+
+The Network Scanner plugin demonstrates proper organization with:
+
+- Clear separation of UI and business logic
+- Well-documented API in API.md
+- Comprehensive README with installation and usage instructions
+- Proper signal management for async operations
+- Complete settings integration
+
+#### Settings Management
+
+The plugin shows how to implement complex settings:
+
+```python
+self.settings = {
+    "default_scan_type": {
+        "name": "Default Scan Type",
+        "description": "The default scan type to use",
+        "type": "choice",
+        "default": "quick",
+        "value": "quick",
+        "choices": ["quick", "standard", "comprehensive"]
+    },
+    "scan_profiles": {
+        "name": "Scan Profiles",
+        "description": "Custom scan profiles",
+        "type": "json",
+        "default": {},
+        "value": {}
+    }
+}
+```
+
+#### UI Integration
+
+The plugin demonstrates proper UI integration through:
+
+1. Context menu actions:
+```python
+def setup_context_menu(self):
+    # Add scanner actions to the context menu
+    self.device_table.context_menu_requested.connect(self.on_context_menu_requested)
+    
+def on_context_menu_requested(self, devices, menu):
+    # Create a submenu for network scanner options
+    scanner_menu = menu.addMenu("Network Scanner")
+    scanner_menu.addAction("Scan Network...", self.show_scan_dialog)
+    scanner_menu.addAction("Scan Interface Subnet", self.scan_interface_subnet)
+    
+    # Only enable these options if devices are selected
+    if devices:
+        scanner_menu.addAction("Scan Device's Network", 
+                               lambda: self.scan_device_network(devices[0]))
+        scanner_menu.addAction("Rescan Selected Device(s)", 
+                               lambda: self.rescan_devices(devices))
+```
+
+2. Dock widget registration:
+```python
+def setup_dock_widget(self):
+    # Create the dock widget
+    self.dock_widget = QDockWidget("Network Scanner", self.main_window)
+    self.dock_widget.setObjectName("network_scanner_dock")
+    self.dock_widget.setWidget(self.dock_content)
+    
+    # Add the dock widget to the main window
+    self.main_window.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
+```
+
+#### Signal Management
+
+The plugin defines and emits appropriate signals:
+
+```python
+# Define signals
+scan_started = Signal(str)          # network range being scanned
+scan_progress = Signal(int, int)    # current, total progress
+scan_device_found = Signal(object)  # device found
+scan_completed = Signal(dict)       # results dictionary
+scan_error = Signal(str)            # error message
+profile_created = Signal(str)       # profile name
+profile_updated = Signal(str)       # profile name
+profile_deleted = Signal(str)       # profile name
+```
+
+For more details, see the [Network Scanner Plugin API documentation](../plugins/network_scanner/API.md).
 
 ## Troubleshooting
 

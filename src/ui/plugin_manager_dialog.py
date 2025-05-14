@@ -10,10 +10,10 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, 
     QListWidgetItem, QLabel, QTextEdit, QCheckBox, QWidget, QTabWidget,
     QGroupBox, QFormLayout, QMessageBox, QLineEdit, QComboBox, QSpinBox,
-    QDoubleSpinBox, QScrollArea, QApplication
+    QDoubleSpinBox, QScrollArea, QApplication, QDialogButtonBox, QSplitter, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSettings, QTimer, QSize, QMargins, QRect, QPoint
-from PySide6.QtGui import QIcon, QFont, QAction, QPixmap, QColor, QPainter, QPalette, QBrush, QLinearGradient, QShowEvent, QHideEvent
+from PySide6.QtGui import QIcon, QFont, QAction, QPixmap, QColor, QPainter, QPalette, QBrush, QLinearGradient, QShowEvent, QHideEvent, QIntValidator
 import os
 
 # Import from core
@@ -148,34 +148,84 @@ class PluginManagerDialog(QDialog):
         # Details tab
         self.details_tab = QWidget()
         self.details_layout = QVBoxLayout(self.details_tab)
+        self.details_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Plugin details form
-        self.details_form = QFormLayout()
-        self.plugin_name_label = QLabel()
-        self.plugin_version_label = QLabel()
-        self.plugin_author_label = QLabel()
-        self.plugin_path_label = QLabel()
-        self.plugin_status_label = QLabel()
+        # Create form layout for plugin details
+        self.form_layout = QFormLayout()
+        self.form_layout.setVerticalSpacing(10)
+        self.form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         
-        # Give the status label a border and padding to make it stand out
-        self.plugin_status_label.setFrameShape(QLabel.Panel)
-        self.plugin_status_label.setFrameShadow(QLabel.Sunken)
-        self.plugin_status_label.setStyleSheet("padding: 5px;")
+        # Add plugin details
+        self.id_label = QLabel("")
+        self.id_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Plugin ID:", self.id_label)
         
-        self.details_form.addRow("Name:", self.plugin_name_label)
-        self.details_form.addRow("Version:", self.plugin_version_label)
-        self.details_form.addRow("Author:", self.plugin_author_label)
-        self.details_form.addRow("Path:", self.plugin_path_label)
-        self.details_form.addRow("Status:", self.plugin_status_label)
+        self.name_label = QLabel("")
+        self.name_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Name:", self.name_label)
         
-        # Plugin description
-        self.plugin_description = QTextEdit()
-        self.plugin_description.setReadOnly(True)
+        self.version_label = QLabel("")
+        self.version_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Version:", self.version_label)
         
-        # Add widgets to details layout
-        self.details_layout.addLayout(self.details_form)
-        self.details_layout.addWidget(QLabel("Description:"))
-        self.details_layout.addWidget(self.plugin_description)
+        self.author_label = QLabel("")
+        self.author_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Author:", self.author_label)
+        
+        # Prepare labels for min/max app version
+        self.min_version_label = QLabel("")
+        self.min_version_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Min App Version:", self.min_version_label)
+        
+        self.max_version_label = QLabel("")
+        self.max_version_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Max App Version:", self.max_version_label)
+        
+        # Prepare label for dependencies
+        self.deps_label = QLabel("")
+        self.deps_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Dependencies:", self.deps_label)
+        
+        # Prepare labels for requirements
+        self.reqs_label = QLabel("")
+        self.reqs_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Python Requirements:", self.reqs_label)
+        
+        self.sys_reqs_label = QLabel("")
+        self.sys_reqs_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("System Requirements:", self.sys_reqs_label)
+        
+        # Add entry point and path labels
+        self.entry_point_label = QLabel("")
+        self.entry_point_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Entry Point:", self.entry_point_label)
+        
+        self.path_label = QLabel("")
+        self.path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.form_layout.addRow("Path:", self.path_label)
+        
+        # Add status label for showing current plugin status
+        self.status_label = QLabel("")
+        self.status_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet("color: #444; font-weight: bold;")
+        self.form_layout.addRow("Status:", self.status_label)
+        
+        self.details_layout.addLayout(self.form_layout)
+        
+        # Add a log widget for displaying plugin initialization progress
+        self.log_group = QGroupBox("Plugin Load Log")
+        self.log_layout = QVBoxLayout(self.log_group)
+        
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setMaximumHeight(150)
+        self.log_text.setPlaceholderText("Plugin initialization log will appear here...")
+        
+        self.log_layout.addWidget(self.log_text)
+        
+        self.details_layout.addWidget(self.log_group)
+        self.details_layout.addStretch(1)
         
         # Settings tab
         self.settings_tab = QWidget()
@@ -266,12 +316,16 @@ class PluginManagerDialog(QDialog):
         # Track plugin state changes for Apply All
         self.pending_plugin_changes = {}  # plugin_id -> {enabled: bool, settings: {setting_id: value}}
         
+        # Plugin log messages dictionary (plugin_id -> [messages])
+        self.plugin_logs = {}
+        
         # Connect to plugin manager signals
         self.plugin_manager.plugin_loaded.connect(self.on_plugin_loaded)
         self.plugin_manager.plugin_unloaded.connect(self.on_plugin_unloaded)
         self.plugin_manager.plugin_enabled.connect(self.on_plugin_enabled)
         self.plugin_manager.plugin_disabled.connect(self.on_plugin_disabled)
         self.plugin_manager.plugin_state_changed.connect(self.on_plugin_state_changed)
+        self.plugin_manager.plugin_status_changed.connect(self.on_plugin_status_changed)
         
         # Load plugins
         self.load_plugins()
@@ -327,13 +381,19 @@ class PluginManagerDialog(QDialog):
         
     def clear_details(self):
         """Clear the plugin details"""
-        self.plugin_name_label.setText("")
-        self.plugin_version_label.setText("")
-        self.plugin_author_label.setText("")
-        self.plugin_path_label.setText("")
-        self.plugin_status_label.setText("")
-        self.plugin_status_label.setStyleSheet("padding: 5px;")
-        self.plugin_description.clear()
+        self.id_label.setText("")
+        self.name_label.setText("")
+        self.version_label.setText("")
+        self.author_label.setText("")
+        self.min_version_label.setText("")
+        self.max_version_label.setText("")
+        self.deps_label.setText("")
+        self.reqs_label.setText("")
+        self.sys_reqs_label.setText("")
+        self.entry_point_label.setText("")
+        self.path_label.setText("")
+        self.status_label.setText("")
+        self.log_text.clear()
         self.clear_settings()
         
         # Clear documentation
@@ -358,26 +418,91 @@ class PluginManagerDialog(QDialog):
             return
             
         # Update basic details
-        self.plugin_name_label.setText(plugin_info.name)
-        self.plugin_version_label.setText(plugin_info.version)
-        self.plugin_author_label.setText(plugin_info.author)
-        self.plugin_path_label.setText(plugin_info.path if plugin_info.path else "Built-in")
+        self.id_label.setText(plugin_info.id)
+        self.name_label.setText(plugin_info.name)
+        self.version_label.setText(plugin_info.version)
+        self.author_label.setText(plugin_info.author or "Unknown")
+        self.min_version_label.setText(plugin_info.min_app_version or "")
+        self.max_version_label.setText(plugin_info.max_app_version or "")
+        self.deps_label.setText("\n".join([f"{dep['id']} ({dep['version']})" for dep in plugin_info.dependencies]) or "")
+        self.reqs_label.setText("\n".join(plugin_info.requirements["python"]) or "")
+        self.sys_reqs_label.setText("\n".join(plugin_info.requirements["system"]) or "")
+        self.entry_point_label.setText(plugin_info.entry_point or "")
+        self.path_label.setText(plugin_info.path or "")
+        
+        # Set status based on current plugin state
+        self.status_label.setText(f"Current state: {plugin_info.state.name}")
+        
+        # Load plugin log if available
+        if plugin_info.id in self.plugin_logs:
+            self.log_text.clear()
+            for log_entry in self.plugin_logs[plugin_info.id]:
+                self.log_text.append(log_entry)
+            
+            # Scroll to the bottom
+            self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
+        else:
+            self.log_text.clear()
+            self.log_text.setPlaceholderText("No initialization log available.")
         
         # Set status with appropriate color
         status_text = plugin_info.state.name.capitalize()
-        self.plugin_status_label.setText(status_text)
         
         if plugin_info.state.is_disabled:
-            self.plugin_status_label.setStyleSheet("padding: 5px; background-color: #f0f0f0; color: #888;")
+            self.id_label.setStyleSheet("color: #888;")
+            self.name_label.setStyleSheet("color: #888;")
+            self.version_label.setStyleSheet("color: #888;")
+            self.author_label.setStyleSheet("color: #888;")
+            self.min_version_label.setStyleSheet("color: #888;")
+            self.max_version_label.setStyleSheet("color: #888;")
+            self.deps_label.setStyleSheet("color: #888;")
+            self.reqs_label.setStyleSheet("color: #888;")
+            self.sys_reqs_label.setStyleSheet("color: #888;")
+            self.entry_point_label.setStyleSheet("color: #888;")
+            self.path_label.setStyleSheet("color: #888;")
+            self.status_label.setStyleSheet("color: #888; font-weight: bold;")
         elif plugin_info.state.is_loaded:
-            self.plugin_status_label.setStyleSheet("padding: 5px; background-color: #dff0d8; color: #3c763d;")
+            self.id_label.setStyleSheet("color: #3c763d;")
+            self.name_label.setStyleSheet("color: #3c763d;")
+            self.version_label.setStyleSheet("color: #3c763d;")
+            self.author_label.setStyleSheet("color: #3c763d;")
+            self.min_version_label.setStyleSheet("color: #3c763d;")
+            self.max_version_label.setStyleSheet("color: #3c763d;")
+            self.deps_label.setStyleSheet("color: #3c763d;")
+            self.reqs_label.setStyleSheet("color: #3c763d;")
+            self.sys_reqs_label.setStyleSheet("color: #3c763d;")
+            self.entry_point_label.setStyleSheet("color: #3c763d;")
+            self.path_label.setStyleSheet("color: #3c763d;")
+            self.status_label.setStyleSheet("color: #3c763d; font-weight: bold;")
         elif plugin_info.state.is_enabled:
-            self.plugin_status_label.setStyleSheet("padding: 5px; background-color: #d9edf7; color: #31708f;")
+            self.id_label.setStyleSheet("color: #31708f;")
+            self.name_label.setStyleSheet("color: #31708f;")
+            self.version_label.setStyleSheet("color: #31708f;")
+            self.author_label.setStyleSheet("color: #31708f;")
+            self.min_version_label.setStyleSheet("color: #31708f;")
+            self.max_version_label.setStyleSheet("color: #31708f;")
+            self.deps_label.setStyleSheet("color: #31708f;")
+            self.reqs_label.setStyleSheet("color: #31708f;")
+            self.sys_reqs_label.setStyleSheet("color: #31708f;")
+            self.entry_point_label.setStyleSheet("color: #31708f;")
+            self.path_label.setStyleSheet("color: #31708f;")
+            self.status_label.setStyleSheet("color: #31708f; font-weight: bold;")
         elif plugin_info.state == plugin_info.state.ERROR:
-            self.plugin_status_label.setStyleSheet("padding: 5px; background-color: #f2dede; color: #a94442;")
+            self.id_label.setStyleSheet("color: #a94442;")
+            self.name_label.setStyleSheet("color: #a94442;")
+            self.version_label.setStyleSheet("color: #a94442;")
+            self.author_label.setStyleSheet("color: #a94442;")
+            self.min_version_label.setStyleSheet("color: #a94442;")
+            self.max_version_label.setStyleSheet("color: #a94442;")
+            self.deps_label.setStyleSheet("color: #a94442;")
+            self.reqs_label.setStyleSheet("color: #a94442;")
+            self.sys_reqs_label.setStyleSheet("color: #a94442;")
+            self.entry_point_label.setStyleSheet("color: #a94442;")
+            self.path_label.setStyleSheet("color: #a94442;")
+            self.status_label.setStyleSheet("color: #a94442; font-weight: bold;")
         
         # Update description
-        self.plugin_description.setText(plugin_info.description)
+        self.documentation_view.setText(plugin_info.description)
         
         # Check if this plugin has pending changes
         has_pending_state_change = False
@@ -390,10 +515,62 @@ class PluginManagerDialog(QDialog):
                     
                     # Update the status text to indicate pending change
                     if pending_state:
-                        self.plugin_status_label.setText(f"{status_text} (will be enabled on save)")
+                        self.id_label.setText(f"{plugin_info.id} (will be enabled on save)")
+                        self.name_label.setText(f"{plugin_info.name} (will be enabled on save)")
+                        self.version_label.setText(f"{plugin_info.version} (will be enabled on save)")
+                        self.author_label.setText(f"{plugin_info.author or 'Unknown'} (will be enabled on save)")
+                        self.min_version_label.setText(f"{plugin_info.min_app_version or ''} (will be enabled on save)")
+                        self.max_version_label.setText(f"{plugin_info.max_app_version or ''} (will be enabled on save)")
+                        self.deps_label.setText(f"{self.deps_label.text()} (will be enabled on save)")
+                        self.reqs_label.setText(f"{self.reqs_label.text()} (will be enabled on save)")
+                        self.sys_reqs_label.setText(f"{self.sys_reqs_label.text()} (will be enabled on save)")
+                        self.entry_point_label.setText(f"{plugin_info.entry_point} (will be enabled on save)")
+                        self.path_label.setText(f"{plugin_info.path} (will be enabled on save)")
+                        self.id_label.setStyleSheet("color: orange;")
+                        self.name_label.setStyleSheet("color: orange;")
+                        self.version_label.setStyleSheet("color: orange;")
+                        self.author_label.setStyleSheet("color: orange;")
+                        self.min_version_label.setStyleSheet("color: orange;")
+                        self.max_version_label.setStyleSheet("color: orange;")
+                        self.deps_label.setStyleSheet("color: orange;")
+                        self.reqs_label.setStyleSheet("color: orange;")
+                        self.sys_reqs_label.setStyleSheet("color: orange;")
+                        self.entry_point_label.setStyleSheet("color: orange;")
+                        self.path_label.setStyleSheet("color: orange;")
                     else:
-                        self.plugin_status_label.setText(f"{status_text} (will be disabled on save)")
-                    self.plugin_status_label.setStyleSheet("padding: 5px; color: orange;")
+                        self.id_label.setText(f"{plugin_info.id} (will be disabled on save)")
+                        self.name_label.setText(f"{plugin_info.name} (will be disabled on save)")
+                        self.version_label.setText(f"{plugin_info.version} (will be disabled on save)")
+                        self.author_label.setText(f"{plugin_info.author or 'Unknown'} (will be disabled on save)")
+                        self.min_version_label.setText(f"{plugin_info.min_app_version or ''} (will be disabled on save)")
+                        self.max_version_label.setText(f"{plugin_info.max_app_version or ''} (will be disabled on save)")
+                        self.deps_label.setText(f"{self.deps_label.text()} (will be disabled on save)")
+                        self.reqs_label.setText(f"{self.reqs_label.text()} (will be disabled on save)")
+                        self.sys_reqs_label.setText(f"{self.sys_reqs_label.text()} (will be disabled on save)")
+                        self.entry_point_label.setText(f"{plugin_info.entry_point} (will be disabled on save)")
+                        self.path_label.setText(f"{plugin_info.path} (will be disabled on save)")
+                        self.id_label.setStyleSheet("color: #888;")
+                        self.name_label.setStyleSheet("color: #888;")
+                        self.version_label.setStyleSheet("color: #888;")
+                        self.author_label.setStyleSheet("color: #888;")
+                        self.min_version_label.setStyleSheet("color: #888;")
+                        self.max_version_label.setStyleSheet("color: #888;")
+                        self.deps_label.setStyleSheet("color: #888;")
+                        self.reqs_label.setStyleSheet("color: #888;")
+                        self.sys_reqs_label.setStyleSheet("color: #888;")
+                        self.entry_point_label.setStyleSheet("color: #888;")
+                        self.path_label.setStyleSheet("color: #888;")
+                    self.id_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.name_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.version_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.author_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.min_version_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.max_version_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.deps_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.reqs_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.sys_reqs_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.entry_point_label.setStyleSheet("padding: 5px; color: orange;")
+                    self.path_label.setStyleSheet("padding: 5px; color: orange;")
                 else:
                     # If there's no actual change, remove it from pending changes
                     logger.debug(f"Removing unnecessary enable/disable change for {plugin_info.id} as state already matches")
@@ -551,6 +728,38 @@ class PluginManagerDialog(QDialog):
                 widget.currentTextChanged.connect(lambda text, s_id=setting_id, p_id=plugin_info.id: 
                     self._on_setting_changed(p_id, s_id, text))
                     
+            elif setting["type"] == "json":
+                # For JSON type settings (like scan profiles), create a special widget
+                # This is a simplified representation for complex data structures
+                if setting_id == "scan_profiles":
+                    # For scan profiles, show a combobox of available profiles
+                    widget = QComboBox()
+                    profile_keys = list(setting["value"].keys())
+                    widget.addItems(profile_keys)
+                    widget.setCurrentIndex(0)
+                    widget.currentTextChanged.connect(lambda text, s_id=setting_id, p_id=plugin_info.id: 
+                        self._handle_profile_selection(p_id, s_id, text))
+                    
+                    # Add a button to edit the selected profile
+                    profile_button = QPushButton("Manage Profiles")
+                    profile_button.clicked.connect(lambda checked=False, s_id=setting_id, p_id=plugin_info.id: 
+                        self._show_profile_editor(p_id, s_id))
+                    
+                    # Create a horizontal layout to hold the combo and button
+                    json_layout = QHBoxLayout()
+                    json_layout.addWidget(widget)
+                    json_layout.addWidget(profile_button)
+                    
+                    # Create a container widget for the layout
+                    container = QWidget()
+                    container.setLayout(json_layout)
+                    widget = container  # The form will use this container
+                else:
+                    # For other JSON settings, show a simple edit button
+                    widget = QPushButton("Edit JSON Data")
+                    widget.clicked.connect(lambda checked=False, s_id=setting_id, p_id=plugin_info.id: 
+                        self._show_json_editor(p_id, s_id))
+                    
             # Add tooltip with description
             if widget:
                 widget.setToolTip(setting["description"])
@@ -649,6 +858,13 @@ class PluginManagerDialog(QDialog):
             elif setting_type == "choice":
                 value = widget.currentText()
                 
+            elif setting_type == "json":
+                # Handle JSON type data
+                # Since we're using buttons to edit JSON, we need to retrieve
+                # the pending changes directly rather than from the widget
+                if plugin_id in self.pending_plugin_changes and setting_id in self.pending_plugin_changes[plugin_id]["settings"]:
+                    value = self.pending_plugin_changes[plugin_id]["settings"][setting_id]
+                    
             if value is not None:
                 # Check if the value is different from the current plugin setting
                 current_value = plugin_info.instance.get_setting_value(setting_id)
@@ -1046,13 +1262,43 @@ class PluginManagerDialog(QDialog):
             # Make status text show the pending change
             if new_enabled_state:
                 status_suffix = " (will be enabled on save)"
-                self.plugin_status_label.setStyleSheet("padding: 5px; color: orange;")
+                self.id_label.setStyleSheet("color: orange;")
+                self.name_label.setStyleSheet("color: orange;")
+                self.version_label.setStyleSheet("color: orange;")
+                self.author_label.setStyleSheet("color: orange;")
+                self.min_version_label.setStyleSheet("color: orange;")
+                self.max_version_label.setStyleSheet("color: orange;")
+                self.deps_label.setStyleSheet("color: orange;")
+                self.reqs_label.setStyleSheet("color: orange;")
+                self.sys_reqs_label.setStyleSheet("color: orange;")
+                self.entry_point_label.setStyleSheet("color: orange;")
+                self.path_label.setStyleSheet("color: orange;")
             else:
                 status_suffix = " (will be disabled on save)"
-                self.plugin_status_label.setStyleSheet("padding: 5px; color: orange;")
+                self.id_label.setStyleSheet("color: #888;")
+                self.name_label.setStyleSheet("color: #888;")
+                self.version_label.setStyleSheet("color: #888;")
+                self.author_label.setStyleSheet("color: #888;")
+                self.min_version_label.setStyleSheet("color: #888;")
+                self.max_version_label.setStyleSheet("color: #888;")
+                self.deps_label.setStyleSheet("color: #888;")
+                self.reqs_label.setStyleSheet("color: #888;")
+                self.sys_reqs_label.setStyleSheet("color: #888;")
+                self.entry_point_label.setStyleSheet("color: #888;")
+                self.path_label.setStyleSheet("color: #888;")
                 
-            current_status = self.plugin_status_label.text().split(" (will be")[0]  # Remove any existing suffix
-            self.plugin_status_label.setText(current_status + status_suffix)
+            current_status = self.id_label.text().split(" (will be")[0]  # Remove any existing suffix
+            self.id_label.setText(current_status + status_suffix)
+            self.name_label.setText(current_status + status_suffix)
+            self.version_label.setText(current_status + status_suffix)
+            self.author_label.setText(current_status + status_suffix)
+            self.min_version_label.setText(current_status + status_suffix)
+            self.max_version_label.setText(current_status + status_suffix)
+            self.deps_label.setText(current_status + status_suffix)
+            self.reqs_label.setText(current_status + status_suffix)
+            self.sys_reqs_label.setText(current_status + status_suffix)
+            self.entry_point_label.setText(current_status + status_suffix)
+            self.path_label.setText(current_status + status_suffix)
             
             # Always enable the save button when there's a state change
             self.save_changes_button.setEnabled(True)
@@ -1177,7 +1423,7 @@ class PluginManagerDialog(QDialog):
             if changes.get("enabled") is not None:
                 plugin_info = self.plugin_manager.get_plugin(plugin_id)
                 current_state = plugin_info.state.is_enabled if plugin_info else False
-                pending_state = changes.get("enabled")
+                pending_state = changes["enabled"]
                 
                 if current_state != pending_state:
                     logger.debug(f"Found pending enabled state change for {plugin_id}: {current_state} -> {pending_state}")
@@ -1233,6 +1479,449 @@ class PluginManagerDialog(QDialog):
         logger.debug("No pending changes found")
         return False
         
+    def _handle_profile_selection(self, plugin_id, setting_id, profile_key):
+        """Handle selection of a scan profile in the combobox"""
+        logger.debug(f"Profile selected: {profile_key} for plugin {plugin_id}")
+        # This could be used to show details about the selected profile
+        # or to update other UI elements based on the selection
+        # For now, we'll just log it
+        
+    def _show_profile_editor(self, plugin_id, setting_id):
+        """Show a dialog to edit scan profiles"""
+        logger.debug(f"Opening profile editor for plugin {plugin_id}")
+        
+        # Get the plugin info
+        plugin_info = self.plugin_manager.get_plugin(plugin_id)
+        if not plugin_info or not plugin_info.instance:
+            logger.error(f"Cannot edit profiles: Plugin {plugin_id} is not loaded")
+            QMessageBox.warning(
+                self, 
+                "Plugin Not Loaded",
+                "Cannot edit profiles because the plugin is not loaded. Please load the plugin first."
+            )
+            return
+            
+        # Get the profiles settings from the plugin
+        settings = plugin_info.instance.get_settings()
+        if not settings or setting_id not in settings:
+            logger.error(f"Cannot find setting {setting_id} for plugin {plugin_id}")
+            QMessageBox.warning(
+                self, 
+                "Setting Not Found",
+                f"Cannot find setting {setting_id} for plugin {plugin_id}"
+            )
+            return
+            
+        # Get the profiles data
+        profiles = settings[setting_id]["value"]
+        
+        # Create a custom dialog for profiles editing
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Edit Scan Profiles - {plugin_info.name}")
+        dialog.setMinimumWidth(700)
+        dialog.setMinimumHeight(500)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Add explanation text
+        explanation = QLabel(
+            "Scan profiles define different scanning configurations. "
+            "Select a profile to view or edit its settings, or create a new profile."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+        
+        # Create a horizontal split for profiles list and details
+        splitter = QSplitter()
+        layout.addWidget(splitter, 1)  # Give the splitter most of the space
+        
+        # Left side: profiles list
+        profiles_widget = QWidget()
+        profiles_layout = QVBoxLayout(profiles_widget)
+        
+        profiles_layout.addWidget(QLabel("Available Profiles:"))
+        
+        profiles_list = QListWidget()
+        for profile_id in profiles.keys():
+            item = QListWidgetItem(profile_id)
+            if profile_id in ["quick", "standard", "comprehensive", "stealth", "service"]:
+                item.setToolTip("Built-in profile")
+                # Add visual indication that this is a built-in profile
+                font = item.font()
+                font.setItalic(True)
+                item.setFont(font)
+            else:
+                item.setToolTip("Custom profile")
+            profiles_list.addItem(item)
+        
+        profiles_layout.addWidget(profiles_list, 1)  # Give the list most of the space
+        
+        # Add profile buttons
+        profile_buttons_layout = QHBoxLayout()
+        add_button = QPushButton("Add Profile")
+        delete_button = QPushButton("Delete Profile")
+        # Disable delete button initially
+        delete_button.setEnabled(False)
+        
+        profile_buttons_layout.addWidget(add_button)
+        profile_buttons_layout.addWidget(delete_button)
+        profiles_layout.addLayout(profile_buttons_layout)
+        
+        splitter.addWidget(profiles_widget)
+        
+        # Right side: profile details
+        details_widget = QWidget()
+        details_layout = QVBoxLayout(details_widget)
+        
+        # Create a form layout for editing the selected profile
+        details_form = QFormLayout()
+        
+        # Add form fields
+        display_name = QLineEdit()
+        details_form.addRow("Display Name:", display_name)
+        
+        description = QLineEdit()
+        description.setPlaceholderText("Description of the scan profile")
+        details_form.addRow("Description:", description)
+        
+        arguments = QLineEdit()
+        arguments.setPlaceholderText("nmap arguments, e.g. -sn -F")
+        details_form.addRow("Arguments:", arguments)
+        
+        os_detection = QCheckBox()
+        details_form.addRow("OS Detection:", os_detection)
+        
+        port_scan = QCheckBox()
+        details_form.addRow("Port Scanning:", port_scan)
+        
+        timeout = QLineEdit()
+        # Allow only numbers between 30 and 600
+        timeout.setValidator(QIntValidator(30, 600))
+        details_form.addRow("Timeout (seconds):", timeout)
+        
+        details_layout.addWidget(QLabel("Profile Details:"))
+        details_layout.addLayout(details_form)
+        details_layout.addStretch(1)  # Push everything up
+        
+        # Add apply button for the details
+        apply_button = QPushButton("Apply Changes")
+        apply_button.setEnabled(False)  # Disabled until profile is selected
+        details_layout.addWidget(apply_button)
+        
+        splitter.addWidget(details_widget)
+        
+        # Add dialog buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+        
+        # Function to load profile data
+        def load_profile_data(item):
+            profile_id = item.text()
+            if profile_id in profiles:
+                profile = profiles[profile_id]
+                
+                display_name.setText(profile.get("name", profile_id))
+                description.setText(profile.get("description", ""))
+                arguments.setText(profile.get("arguments", ""))
+                os_detection.setChecked(profile.get("os_detection", False))
+                port_scan.setChecked(profile.get("port_scan", False))
+                timeout.setText(str(profile.get("timeout", 300)))
+                
+                # Enable or disable editing based on whether this is a built-in profile
+                is_builtin = profile_id in ["quick", "standard", "comprehensive", "stealth", "service"]
+                display_name.setEnabled(True)
+                description.setEnabled(True)
+                arguments.setEnabled(True)
+                os_detection.setEnabled(True)
+                port_scan.setEnabled(True)
+                timeout.setEnabled(True)
+                apply_button.setEnabled(True)
+                delete_button.setEnabled(not is_builtin)
+        
+        # Function to apply changes to the selected profile
+        def apply_changes():
+            if not profiles_list.currentItem():
+                return
+                
+            profile_id = profiles_list.currentItem().text()
+            if profile_id in profiles:
+                # Get values from form
+                name = display_name.text()
+                desc = description.text()
+                args = arguments.text()
+                os_detect = os_detection.isChecked()
+                port_scanning = port_scan.isChecked()
+                
+                try:
+                    timeout_val = int(timeout.text())
+                    if timeout_val < 30:
+                        timeout_val = 30
+                    elif timeout_val > 600:
+                        timeout_val = 600
+                except ValueError:
+                    timeout_val = 300
+                
+                # Update the profile
+                profiles[profile_id] = {
+                    "name": name,
+                    "description": desc,
+                    "arguments": args,
+                    "os_detection": os_detect,
+                    "port_scan": port_scanning,
+                    "timeout": timeout_val
+                }
+                
+                QMessageBox.information(
+                    dialog,
+                    "Profile Updated",
+                    f"Profile '{profile_id}' has been updated."
+                )
+        
+        # Function to add a new profile
+        def add_profile():
+            new_id, ok = QInputDialog.getText(
+                dialog,
+                "New Profile",
+                "Enter a unique profile ID (lowercase, no spaces):",
+                text="custom_scan"  # Default suggestion
+            )
+            
+            if not ok or not new_id:
+                return
+                
+            # Validate ID (lowercase, no spaces, etc.)
+            new_id = new_id.lower().strip().replace(" ", "_")
+            
+            # Check if ID already exists
+            if new_id in profiles:
+                QMessageBox.warning(
+                    dialog,
+                    "Profile Exists",
+                    f"A profile with ID '{new_id}' already exists. Please choose a different ID."
+                )
+                return
+                
+            # Create a new profile with default values
+            profiles[new_id] = {
+                "name": new_id.replace("_", " ").title(),
+                "description": "Custom scan profile",
+                "arguments": "-sn",
+                "os_detection": False,
+                "port_scan": False,
+                "timeout": 300
+            }
+            
+            # Add to list and select it
+            item = QListWidgetItem(new_id)
+            item.setToolTip("Custom profile")
+            profiles_list.addItem(item)
+            profiles_list.setCurrentItem(item)
+            
+            # Load the new profile data
+            load_profile_data(item)
+        
+        # Function to delete the selected profile
+        def delete_profile():
+            if not profiles_list.currentItem():
+                return
+                
+            profile_id = profiles_list.currentItem().text()
+            
+            # Don't allow deleting built-in profiles
+            if profile_id in ["quick", "standard", "comprehensive", "stealth", "service"]:
+                QMessageBox.warning(
+                    dialog,
+                    "Cannot Delete",
+                    "Built-in profiles cannot be deleted."
+                )
+                return
+                
+            # Confirm deletion
+            confirm = QMessageBox.question(
+                dialog,
+                "Confirm Deletion",
+                f"Are you sure you want to delete the profile '{profile_id}'?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if confirm == QMessageBox.Yes:
+                # Remove from profiles
+                if profile_id in profiles:
+                    del profiles[profile_id]
+                    
+                    # Remove from list
+                    item = profiles_list.takeItem(profiles_list.currentRow())
+                    del item
+                    
+                    # Clear form
+                    display_name.clear()
+                    description.clear()
+                    arguments.clear()
+                    os_detection.setChecked(False)
+                    port_scan.setChecked(False)
+                    timeout.setText("300")
+                    
+                    # Disable apply button
+                    apply_button.setEnabled(False)
+                    delete_button.setEnabled(False)
+        
+        # Connect signals
+        profiles_list.currentItemChanged.connect(load_profile_data)
+        apply_button.clicked.connect(apply_changes)
+        add_button.clicked.connect(add_profile)
+        delete_button.clicked.connect(delete_profile)
+        
+        # Select the first profile if available
+        if profiles_list.count() > 0:
+            profiles_list.setCurrentRow(0)
+        
+        # Show the dialog
+        if dialog.exec() == QDialog.Accepted:
+            # Update the plugin setting with the modified profiles
+            if plugin_id not in self.pending_plugin_changes:
+                self.pending_plugin_changes[plugin_id] = {"enabled": None, "settings": {}}
+                
+            self.pending_plugin_changes[plugin_id]["settings"][setting_id] = profiles
+            
+            # Update visual indication
+            for i in range(self.plugin_list.count()):
+                item = self.plugin_list.item(i)
+                if item.plugin_info.id == plugin_id:
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                    break
+            
+            # Update the Save Changes button state
+            self._update_save_button_state()
+            
+            # Show success message
+            QMessageBox.information(
+                self, 
+                "Profiles Updated",
+                "The scan profiles have been updated. Click 'Save Changes' to apply the changes."
+            )
+            
+            # Refresh the UI
+            self.update_settings(plugin_info)
+        
+    def _show_json_editor(self, plugin_id, setting_id):
+        """Show a dialog to edit JSON data"""
+        logger.debug(f"Opening JSON editor for plugin {plugin_id}, setting {setting_id}")
+        
+        # Get the plugin info
+        plugin_info = self.plugin_manager.get_plugin(plugin_id)
+        if not plugin_info or not plugin_info.instance:
+            logger.error(f"Cannot edit JSON: Plugin {plugin_id} is not loaded")
+            QMessageBox.warning(
+                self, 
+                "Plugin Not Loaded",
+                "Cannot edit JSON data because the plugin is not loaded. Please load the plugin first."
+            )
+            return
+            
+        # Get the settings from the plugin
+        settings = plugin_info.instance.get_settings()
+        if not settings or setting_id not in settings:
+            logger.error(f"Cannot find setting {setting_id} for plugin {plugin_id}")
+            QMessageBox.warning(
+                self, 
+                "Setting Not Found",
+                f"Cannot find setting {setting_id} for plugin {plugin_id}"
+            )
+            return
+            
+        # Get the JSON data
+        json_data = settings[setting_id]["value"]
+        
+        # Convert to string representation for editing
+        import json
+        try:
+            json_str = json.dumps(json_data, indent=4)
+        except Exception as e:
+            logger.error(f"Error converting JSON to string: {e}")
+            QMessageBox.warning(
+                self, 
+                "JSON Error",
+                f"An error occurred while trying to convert the data to JSON: {e}"
+            )
+            return
+            
+        # Create a dialog for editing
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Edit {settings[setting_id]['name']} - {plugin_info.name}")
+        dialog.setMinimumWidth(800)
+        dialog.setMinimumHeight(600)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Add explanation text
+        explanation = QLabel(settings[setting_id]["description"])
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+        
+        # Add editor
+        editor = QTextEdit()
+        editor.setPlainText(json_str)
+        editor.setFont(QFont("Courier New", 10))  # Use monospace font
+        layout.addWidget(editor)
+        
+        # Add warning about JSON format
+        warning = QLabel("Warning: The JSON data must be valid. Invalid JSON will not be saved.")
+        warning.setStyleSheet("color: red;")
+        layout.addWidget(warning)
+        
+        # Add buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+        
+        # Show the dialog
+        if dialog.exec() == QDialog.Accepted:
+            # Parse the JSON
+            try:
+                new_json_data = json.loads(editor.toPlainText())
+                
+                # Update the setting
+                if plugin_id not in self.pending_plugin_changes:
+                    self.pending_plugin_changes[plugin_id] = {"enabled": None, "settings": {}}
+                    
+                self.pending_plugin_changes[plugin_id]["settings"][setting_id] = new_json_data
+                
+                # Update visual indication
+                for i in range(self.plugin_list.count()):
+                    item = self.plugin_list.item(i)
+                    if item.plugin_info.id == plugin_id:
+                        font = item.font()
+                        font.setBold(True)
+                        item.setFont(font)
+                        break
+                
+                # Update the Save Changes button state
+                self._update_save_button_state()
+                
+                # Show success message
+                QMessageBox.information(
+                    self, 
+                    "JSON Updated",
+                    "The JSON data has been updated. Click 'Save Changes' to apply the changes."
+                )
+                
+                # Refresh the UI
+                self.update_settings(plugin_info)
+                
+            except json.JSONDecodeError as e:
+                # Show error
+                QMessageBox.critical(
+                    self, 
+                    "Invalid JSON",
+                    f"The JSON data is invalid and cannot be saved. Error: {e}"
+                )
+                
     def _update_save_button_state(self):
         """Update the Save Changes button state based on pending changes"""
         has_changes = self._are_there_pending_changes()
@@ -1383,9 +2072,29 @@ class PluginManagerDialog(QDialog):
         self.enable_button.setChecked(True)
         
         # Update status text
-        current_status = self.plugin_status_label.text().split(" (will be")[0]
-        self.plugin_status_label.setText(f"{current_status} (will be enabled on save)")
-        self.plugin_status_label.setStyleSheet("padding: 5px; color: orange;")
+        current_status = self.id_label.text().split(" (will be")[0]
+        self.id_label.setText(f"{current_status} (will be enabled on save)")
+        self.name_label.setText(f"{current_status} (will be enabled on save)")
+        self.version_label.setText(f"{current_status} (will be enabled on save)")
+        self.author_label.setText(f"{current_status} (will be enabled on save)")
+        self.min_version_label.setText(f"{current_status} (will be enabled on save)")
+        self.max_version_label.setText(f"{current_status} (will be enabled on save)")
+        self.deps_label.setText(f"{current_status} (will be enabled on save)")
+        self.reqs_label.setText(f"{current_status} (will be enabled on save)")
+        self.sys_reqs_label.setText(f"{current_status} (will be enabled on save)")
+        self.entry_point_label.setText(f"{current_status} (will be enabled on save)")
+        self.path_label.setText(f"{current_status} (will be enabled on save)")
+        self.id_label.setStyleSheet("color: orange;")
+        self.name_label.setStyleSheet("color: orange;")
+        self.version_label.setStyleSheet("color: orange;")
+        self.author_label.setStyleSheet("color: orange;")
+        self.min_version_label.setStyleSheet("color: orange;")
+        self.max_version_label.setStyleSheet("color: orange;")
+        self.deps_label.setStyleSheet("color: orange;")
+        self.reqs_label.setStyleSheet("color: orange;")
+        self.sys_reqs_label.setStyleSheet("color: orange;")
+        self.entry_point_label.setStyleSheet("color: orange;")
+        self.path_label.setStyleSheet("color: orange;")
         
         # Update status bar
         self._update_status_bar()
@@ -1451,9 +2160,29 @@ class PluginManagerDialog(QDialog):
         self.enable_button.setChecked(False)
         
         # Update status text
-        current_status = self.plugin_status_label.text().split(" (will be")[0]
-        self.plugin_status_label.setText(f"{current_status} (will be disabled on save)")
-        self.plugin_status_label.setStyleSheet("padding: 5px; color: orange;")
+        current_status = self.id_label.text().split(" (will be")[0]
+        self.id_label.setText(f"{current_status} (will be disabled on save)")
+        self.name_label.setText(f"{current_status} (will be disabled on save)")
+        self.version_label.setText(f"{current_status} (will be disabled on save)")
+        self.author_label.setText(f"{current_status} (will be disabled on save)")
+        self.min_version_label.setText(f"{current_status} (will be disabled on save)")
+        self.max_version_label.setText(f"{current_status} (will be disabled on save)")
+        self.deps_label.setText(f"{current_status} (will be disabled on save)")
+        self.reqs_label.setText(f"{current_status} (will be disabled on save)")
+        self.sys_reqs_label.setText(f"{current_status} (will be disabled on save)")
+        self.entry_point_label.setText(f"{current_status} (will be disabled on save)")
+        self.path_label.setText(f"{current_status} (will be disabled on save)")
+        self.id_label.setStyleSheet("color: #888;")
+        self.name_label.setStyleSheet("color: #888;")
+        self.version_label.setStyleSheet("color: #888;")
+        self.author_label.setStyleSheet("color: #888;")
+        self.min_version_label.setStyleSheet("color: #888;")
+        self.max_version_label.setStyleSheet("color: #888;")
+        self.deps_label.setStyleSheet("color: #888;")
+        self.reqs_label.setStyleSheet("color: #888;")
+        self.sys_reqs_label.setStyleSheet("color: #888;")
+        self.entry_point_label.setStyleSheet("color: #888;")
+        self.path_label.setStyleSheet("color: #888;")
         
         # Update status bar
         self._update_status_bar()
@@ -1569,3 +2298,38 @@ class PluginManagerDialog(QDialog):
                 "Unload Failed",
                 f"Failed to unload plugin '{plugin_info.name}'. Check the logs for details."
             ) 
+
+    def on_plugin_status_changed(self, plugin_info, status_message):
+        """Handle plugin status changed signal"""
+        if not plugin_info:
+            return
+            
+        # Add timestamp to status message
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        formatted_message = f"[{timestamp}] {status_message}"
+        
+        # Store log messages for this plugin
+        if plugin_info.id not in self.plugin_logs:
+            self.plugin_logs[plugin_info.id] = []
+            
+        self.plugin_logs[plugin_info.id].append(formatted_message)
+        
+        # If this is the currently displayed plugin, update the log view
+        current_item = self.plugin_list.currentItem()
+        if current_item and current_item.plugin_info.id == plugin_info.id:
+            self.log_text.append(formatted_message)
+            self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
+            
+            # Update status label
+            self.status_label.setText(status_message)
+            
+            # Color status based on message content
+            if "Error" in status_message or "Failed" in status_message:
+                self.status_label.setStyleSheet("color: #a94442; font-weight: bold;")
+            elif "Warning" in status_message:
+                self.status_label.setStyleSheet("color: #8a6d3b; font-weight: bold;")
+            elif "Success" in status_message:
+                self.status_label.setStyleSheet("color: #3c763d; font-weight: bold;")
+            else:
+                self.status_label.setStyleSheet("color: #31708f; font-weight: bold;") 

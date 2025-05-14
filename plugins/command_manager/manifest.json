@@ -1,0 +1,29 @@
+{
+  "id": "command_manager",
+  "name": "Command Manager",
+  "version": "1.0.0",
+  "description": "Run and manage commands on network devices",
+  "author": "NetWORKS",
+  "entry_point": "command_manager.py",
+  "min_app_version": "0.1.0",
+  "dependencies": [],
+  "requirements": {
+    "python": [
+      "paramiko",
+      "pycryptodome"
+    ],
+    "system": []
+  },
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "changes": [
+        "Initial release",
+        "Support for running commands on network devices",
+        "Credential management for devices",
+        "Command output history and reporting",
+        "Bulk command execution"
+      ]
+    }
+  ]
+} 

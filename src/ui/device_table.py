@@ -7,12 +7,8 @@ Device table model and view for NetWORKS
 
 from loguru import logger
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Signal, Slot
-from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, QMenu, QApplication, QWidget, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QTextEdit, QPushButton, QHBoxLayout, QComboBox, QTabWidget, QListWidget, QListWidgetItem, QMessageBox, QGroupBox, QCheckBox, QTableWidget, QTableWidgetItem, QFileDialog, QWizard, QWizardPage)
-from PySide6.QtGui import QColor, QBrush, QFont, QIcon
-try:
-    from PySide6.QtGui import QAction
-except ImportError:
-    from PySide6.QtWidgets import QAction
+from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, QMenu, QApplication, QWidget, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QTextEdit, QPushButton, QHBoxLayout, QComboBox, QTabWidget, QListWidget, QListWidgetItem, QMessageBox, QGroupBox, QCheckBox, QTableWidget, QTableWidgetItem, QFileDialog, QWizard, QWizardPage, QScrollArea)
+from PySide6.QtGui import QColor, QBrush, QFont, QIcon, QAction
 from ..core.device_manager import Device
 import csv
 import io
@@ -767,6 +763,22 @@ class DeviceTableView(QTableView):
         tags_tab = QWidget()
         tags_layout = QVBoxLayout(tags_tab)
         
+        # Search filter for tags
+        tags_filter_layout = QHBoxLayout()
+        tags_filter_label = QLabel("Search Tags:")
+        tags_filter_edit = QLineEdit()
+        tags_filter_edit.setPlaceholderText("Filter tags...")
+        tags_filter_layout.addWidget(tags_filter_label)
+        tags_filter_layout.addWidget(tags_filter_edit)
+        tags_layout.addLayout(tags_filter_layout)
+        
+        # Create a scroll area for tags to prevent infinite vertical stretching
+        tags_scroll = QScrollArea()
+        tags_scroll.setWidgetResizable(True)
+        tags_scroll.setMaximumHeight(300)  # Limit maximum height
+        tags_container = QWidget()
+        tags_container_layout = QVBoxLayout(tags_container)
+        
         # Tag list
         tags_list = QListWidget()
         tags_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -776,9 +788,13 @@ class DeviceTableView(QTableView):
         for tag in current_tags:
             item = QListWidgetItem(tag)
             tags_list.addItem(item)
-            
-        tags_layout.addWidget(QLabel("Tags:"))
-        tags_layout.addWidget(tags_list)
+        
+        # Set a reasonable minimum size for the tags list
+        tags_list.setMinimumHeight(150)
+        
+        tags_container_layout.addWidget(tags_list)
+        tags_scroll.setWidget(tags_container)
+        tags_layout.addWidget(tags_scroll)
         
         # Tag controls
         tags_control_layout = QHBoxLayout()
@@ -805,9 +821,17 @@ class DeviceTableView(QTableView):
             for item in reversed(tags_list.selectedItems()):
                 row = tags_list.row(item)
                 tags_list.takeItem(row)
+        
+        # Add tag filter function
+        def filter_tags(text):
+            filter_text = text.lower()
+            for i in range(tags_list.count()):
+                item = tags_list.item(i)
+                item.setHidden(filter_text and filter_text not in item.text().lower())
                 
         add_tag_button.clicked.connect(add_tag)
         remove_tag_button.clicked.connect(remove_selected_tags)
+        tags_filter_edit.textChanged.connect(filter_tags)
         
         # Add enter key press to add tag
         def on_tag_return_pressed():
@@ -1126,7 +1150,7 @@ class DeviceTableView(QTableView):
         
         # SECTION 1: Device Management Actions
         if len(devices) == 1:
-            menu.addAction("Edit Properties", lambda: self._handle_action(self._on_action_edit_properties, devices[0]))
+            menu.addAction("Edit Properties", lambda: self._handle_action(self._on_action_edit_properties, devices))
         else:
             menu.addAction(f"Edit Selected Devices ({len(devices)})", lambda: self._handle_action(self._on_action_edit_properties, devices))
             
@@ -1175,9 +1199,11 @@ class DeviceTableView(QTableView):
             for name, callback, _ in sorted_actions:
                 # Create a closure that captures the current callback
                 action = menu.addAction(name)
+                # Create a local copy of the callback to ensure it's properly captured in the lambda
+                local_callback = callback
                 # Use the same _handle_action pattern for consistency with built-in actions
                 action.triggered.connect(
-                    lambda checked=False, cb=callback: self._handle_action(cb, devices)
+                    lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
                 )
         
         # Emit signal for plugins to add to menu
@@ -1194,11 +1220,16 @@ class DeviceTableView(QTableView):
             return
             
         if devices:
-            if len(devices) == 1:
-                # Single device
-                callback(devices[0])
+            # Check if devices is a list or a single device
+            if isinstance(devices, list):
+                if len(devices) == 1:
+                    # Single device from a list
+                    callback(devices[0])
+                else:
+                    # Multiple devices
+                    callback(devices)
             else:
-                # Multiple devices
+                # Single device (not in a list)
                 callback(devices)
         else:
             # No device selected
@@ -1307,8 +1338,16 @@ class DeviceTableView(QTableView):
                 row = tags_list.row(item)
                 tags_list.takeItem(row)
                 
+        # Add tag filter function
+        def filter_tags(text):
+            filter_text = text.lower()
+            for i in range(tags_list.count()):
+                item = tags_list.item(i)
+                item.setHidden(filter_text and filter_text not in item.text().lower())
+                
         add_tag_button.clicked.connect(add_tag)
         remove_tag_button.clicked.connect(remove_selected_tags)
+        tags_filter_edit.textChanged.connect(filter_tags)
         
         # Add enter key press to add tag
         def on_tag_return_pressed():
@@ -1392,123 +1431,117 @@ class DeviceTableView(QTableView):
                     self.device_manager.remove_device(device)
 
     def _on_action_add_to_group(self, data):
-        """Add devices to a group"""
-        # Check if we got a tuple of (devices, group)
+        """Add device(s) to a group"""
+        # Extract devices and group from data
         if isinstance(data, tuple) and len(data) == 2:
             devices, group = data
-            device_count = len(devices)
-            logger.debug(f"Adding {device_count} devices to group '{group.name}'")
-            
-            # Add each device to the group
-            added_count = 0
-            for device in devices:
-                # Only add if not already in the group
-                if device not in group.devices:
-                    self.device_manager.add_device_to_group(device, group)
-                    added_count += 1
-                else:
-                    logger.debug(f"Device {device.get_property('alias', 'Unnamed')} already in group {group.name}")
-            
-            # Save after all devices are added
-            self.device_manager.save_devices()
-            
-            # Show a message to the user with the result
-            from PySide6.QtWidgets import QMessageBox
-            if added_count > 0:
-                QMessageBox.information(
-                    self, 
-                    "Devices Added",
-                    f"Added {added_count} device{'s' if added_count != 1 else ''} to group '{group.name}'."
-                )
-            else:
-                QMessageBox.information(
-                    self,
-                    "No Changes",
-                    f"The selected device{'s' if device_count > 1 else ''} {'were' if device_count > 1 else 'was'} already in group '{group.name}'."
-                )
-            
+        else:
+            logger.error(f"Invalid data format for add_to_group: {data}")
             return
             
-        # Legacy handling for backward compatibility
-        device_or_devices = data
-        
-        # Multiple devices
-        if isinstance(device_or_devices, list):
-            devices = device_or_devices
-        else:
-            # Single device
-            devices = [device_or_devices]
+        # Get list of devices
+        if not isinstance(devices, list):
+            devices = [devices]
             
-        # No devices to add
         if not devices:
             return
             
-        # Get all groups
-        groups = [g for g in self.device_manager.get_groups() 
-                 if g != self.device_manager.root_group]
-                 
-        if not groups:
-            self.device_manager.create_group("New Group")
-            groups = [g for g in self.device_manager.get_groups() 
-                     if g != self.device_manager.root_group]
-                     
-        # Show group selection dialog
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QListWidget, QDialogButtonBox
+        # Ask if user wants to auto-group by type
+        auto_group = False
+        if len(devices) > 1:
+            reply = QMessageBox.question(
+                self,
+                "Auto-group by Type",
+                "Would you like to automatically create subgroups based on device types?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            auto_group = (reply == QMessageBox.Yes)
         
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Add to Group")
-        dialog.setMinimumWidth(300)
+        # Helper function to get the device type
+        def get_device_type(device):
+            # Use device_type property if it exists
+            device_type = device.get_property("device_type", "")
+            if not device_type:
+                # Try to determine from other properties
+                if device.get_property("is_switch", False) or device.get_property("is_router", False):
+                    device_type = "network"
+                elif device.get_property("is_server", False):
+                    device_type = "server"
+                elif device.get_property("is_workstation", False):
+                    device_type = "workstation"
+                elif device.get_property("is_printer", False):
+                    device_type = "printer"
+                else:
+                    # Default fallback
+                    device_type = "unknown"
+            return device_type
         
-        layout = QVBoxLayout(dialog)
+        # Process devices
+        added_count = 0
         
-        # Header with device count
-        header = QLabel(f"Select group to add {len(devices)} device{'s' if len(devices) > 1 else ''} to:")
-        layout.addWidget(header)
-        
-        # Group list
-        list_widget = QListWidget()
-        for group in sorted(groups, key=lambda g: g.name):
-            list_widget.addItem(group.name)
+        if auto_group:
+            # Group devices by type
+            device_types = {}
+            for device in devices:
+                device_type = get_device_type(device)
+                if device_type not in device_types:
+                    device_types[device_type] = []
+                device_types[device_type].append(device)
             
-        layout.addWidget(list_widget)
-        
-        # Buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-        
-        # Show dialog
-        if dialog.exec() == QDialog.Accepted:
-            # Get selected group
-            selected_item = list_widget.currentItem()
-            if selected_item:
-                group_name = selected_item.text()
-                group = self.device_manager.get_group(group_name)
-                
-                if group:
-                    added_count = 0
-                    for device in devices:
-                        # Only add if not already in the group
-                        if device not in group.devices:
-                            self.device_manager.add_device_to_group(device, group)
-                            added_count += 1
-                            
-                    self.device_manager.save_devices()
+            # Process each type
+            for device_type, type_devices in device_types.items():
+                # Skip if no devices
+                if not type_devices:
+                    continue
                     
-                    # Show a message to the user with the result
-                    if added_count > 0:
-                        QMessageBox.information(
-                            self, 
-                            "Devices Added",
-                            f"Added {added_count} device{'s' if added_count != 1 else ''} to group '{group_name}'."
-                        )
-                    else:
-                        QMessageBox.information(
-                            self,
-                            "No Changes",
-                            f"The selected device{'s' if len(devices) > 1 else ''} {'were' if len(devices) > 1 else 'was'} already in group '{group_name}'."
-                        )
+                # Create a subgroup for this type if it doesn't exist
+                type_name = device_type.replace("_", " ").title()
+                type_group_name = f"{group.name}: {type_name}"
+                
+                # Check if the subgroup already exists
+                type_group = None
+                for subgroup in group.subgroups:
+                    if subgroup.name == type_group_name:
+                        type_group = subgroup
+                        break
+                        
+                # Create the subgroup if it doesn't exist
+                if not type_group:
+                    type_group = self.device_manager.create_group(
+                        type_group_name,
+                        f"Devices of type {type_name} in {group.name}",
+                        group
+                    )
+                    
+                # Add devices to the type group
+                for device in type_devices:
+                    if device not in type_group.devices:
+                        self.device_manager.add_device_to_group(device, type_group)
+                        added_count += 1
+        else:
+            # Add devices directly to the group
+            for device in devices:
+                if device not in group.devices:
+                    self.device_manager.add_device_to_group(device, group)
+                    added_count += 1
+        
+        # Save changes
+        self.device_manager.save_devices()
+        
+        # Show a message to the user with the result
+        if added_count > 0:
+            QMessageBox.information(
+                self, 
+                "Devices Added",
+                f"Added {added_count} device{'s' if added_count != 1 else ''} to group '{group.name}'."
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "No Changes",
+                f"The selected device{'s' if len(devices) > 1 else ''} {'were' if len(devices) > 1 else 'was'} already in group '{group.name}'."
+            )
 
     def _on_action_create_group(self, device_or_devices):
         """Create a new group with selected device(s)"""
@@ -1540,61 +1573,99 @@ class DeviceTableView(QTableView):
         parent_combo = QComboBox()
         for group in groups:
             parent_combo.addItem(group.name, group)
-            
         form.addRow("Parent Group:", parent_combo)
         
+        # Auto-group by device type
+        auto_group_checkbox = QCheckBox("Auto-group by device type")
+        auto_group_checkbox.setToolTip("Create subgroups based on device types")
         layout.addLayout(form)
+        layout.addWidget(auto_group_checkbox)
         
-        # Dialog buttons
+        # Add dialog buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
         
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         
+        # Show dialog
         if dialog.exec():
-            # Validate group name
+            # Get dialog values
             name = group_name.text().strip()
+            desc = group_desc.text().strip()
+            parent = parent_combo.currentData()
+            auto_group = auto_group_checkbox.isChecked()
+            
             if not name:
                 QMessageBox.warning(
                     self,
                     "Invalid Group Name",
-                    "Group name cannot be empty."
+                    "Please enter a valid group name."
                 )
                 return
                 
-            # Check if group already exists (this is redundant as create_group handles duplicates)
-            # but we'll keep it to inform the user
-            if self.device_manager.get_group(name):
-                result = QMessageBox.question(
-                    self,
-                    "Group Already Exists",
-                    f"A group named '{name}' already exists. Would you like to create it with a numbered suffix instead?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if result == QMessageBox.No:
-                    return
-                
             try:
-                # Get parent group from the combo box
-                parent_group = parent_combo.currentData()
+                # Create new group
+                group = self.device_manager.create_group(name, desc, parent)
                 
-                # Create the group
-                new_group = self.device_manager.create_group(
-                    name,
-                    description=group_desc.text().strip(),
-                    parent_group=parent_group
-                )
+                # Helper function to get the device type
+                def get_device_type(device):
+                    # Use device_type property if it exists
+                    device_type = device.get_property("device_type", "")
+                    if not device_type:
+                        # Try to determine from other properties
+                        if device.get_property("is_switch", False) or device.get_property("is_router", False):
+                            device_type = "network"
+                        elif device.get_property("is_server", False):
+                            device_type = "server"
+                        elif device.get_property("is_workstation", False):
+                            device_type = "workstation"
+                        elif device.get_property("is_printer", False):
+                            device_type = "printer"
+                        else:
+                            # Default fallback
+                            device_type = "unknown"
+                    return device_type
                 
-                # Add devices to the group
-                for device in devices:
-                    self.device_manager.add_device_to_group(device, new_group)
+                # Process each device
+                added_devices = 0
+                if auto_group:
+                    # Group devices by type
+                    device_types = {}
+                    for device in devices:
+                        device_type = get_device_type(device)
+                        if device_type not in device_types:
+                            device_types[device_type] = []
+                        device_types[device_type].append(device)
                     
+                    # Create subgroups for each type
+                    for device_type, type_devices in device_types.items():
+                        # Skip if no devices
+                        if not type_devices:
+                            continue
+                            
+                        # Create a subgroup for this type
+                        type_name = device_type.replace("_", " ").title()
+                        type_group_name = f"{name}: {type_name}"
+                        type_group = self.device_manager.create_group(type_group_name, f"{desc} - {type_name}", group)
+                        
+                        # Add devices to this type group
+                        for device in type_devices:
+                            self.device_manager.add_device_to_group(device, type_group)
+                            added_devices += 1
+                else:
+                    # Add all devices directly to the group
+                    for device in devices:
+                        self.device_manager.add_device_to_group(device, group)
+                        added_devices += 1
+                
+                # Show result message
                 QMessageBox.information(
                     self,
                     "Group Created",
-                    f"Group '{new_group.name}' created with {len(devices)} device(s)."
+                    f"Created group '{name}' with {added_devices} devices."
                 )
+                
             except Exception as e:
                 QMessageBox.critical(
                     self,
@@ -1670,13 +1741,16 @@ class DeviceTableView(QTableView):
             action.setEnabled(False)
             return
             
+        # Create a copy of the devices list to avoid reference issues in the lambda
+        devices_copy = devices.copy() if isinstance(devices, list) else [devices]
+            
         # Add actions for each group
         for group in sorted(groups, key=lambda g: g.name):
             # Create a closure that captures the current group
             action = menu.addAction(group.name)
             # When triggered, this will call _on_action_add_to_group with the tuple (devices, group)
             action.triggered.connect(
-                lambda checked=False, g=group: self._on_action_add_to_group((devices, g))
+                lambda checked=False, g=group, d=devices_copy: self._on_action_add_to_group((d, g))
             )
 
     def _populate_remove_from_group_menu(self, menu, devices):
@@ -1697,14 +1771,16 @@ class DeviceTableView(QTableView):
             action.setEnabled(False)
             return
             
+        # Create a copy of the devices list to avoid reference issues in the lambda
+        devices_copy = devices.copy() if isinstance(devices, list) else [devices]
+            
         # Add actions for each group
         for group in sorted(groups, key=lambda g: g.name):
             # Create a closure that captures the current group
             action = menu.addAction(group.name)
             # When triggered, this will call _on_action_remove_from_group with the tuple (devices, group)
-            # Use a proper lambda closure to capture both 'devices' and 'group'
             action.triggered.connect(
-                lambda checked=False, g=group, d=devices: self._on_action_remove_from_group((d, g))
+                lambda checked=False, g=group, d=devices_copy: self._on_action_remove_from_group((d, g))
             )
 
     def _on_action_remove_from_group(self, data):

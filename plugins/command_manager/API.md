@@ -1,0 +1,137 @@
+# Command Manager Plugin API
+
+The Command Manager plugin provides an interface for running commands on network devices and managing credentials.
+
+## Plugin Interface
+
+### Initialization
+
+```python
+def initialize(self, app, plugin_info)
+```
+Initializes the plugin with application context and plugin information.
+
+### Start/Stop
+
+```python
+def start(self)
+```
+Starts the plugin and connects signals.
+
+```python
+def stop(self)
+```
+Stops the plugin and disconnects signals.
+
+```python
+def cleanup(self)
+```
+Saves data and cleans up resources before plugin unload.
+
+## Command Sets API
+
+### Command Set Operations
+
+```python
+def get_device_types(self)
+```
+Returns a list of available device types.
+
+```python
+def get_firmware_versions(self, device_type)
+```
+Returns a list of available firmware versions for a specific device type.
+
+```python
+def get_command_set(self, device_type, firmware)
+```
+Returns a `CommandSet` object for the specified device type and firmware.
+
+```python
+def add_command_set(self, command_set)
+```
+Adds or updates a command set in the plugin.
+
+```python
+def delete_command_set(self, device_type, firmware)
+```
+Deletes a command set.
+
+## Credential Management API
+
+```python
+def get_device_credentials(self, device_id)
+```
+Returns the credentials for a specific device.
+
+```python
+def set_device_credentials(self, device_id, credentials)
+```
+Sets credentials for a device. Credentials are a dictionary with keys:
+- `username`: Username for authentication
+- `password`: Password for authentication
+- `enable_password`: Enable mode password (optional)
+- `connection_type`: "ssh" or "telnet"
+
+```python
+def delete_device_credentials(self, device_id)
+```
+Deletes credentials for a device.
+
+## Command Execution API
+
+```python
+def run_command(self, device, command_text, credentials=None)
+```
+Runs a command on a device. Returns a dictionary with:
+- `success`: Boolean indicating if the command succeeded
+- `output`: Command output text
+- `error`: Error message if command failed
+
+## Command Output Management API
+
+```python
+def add_command_output(self, device_id, command_id, output, command_text=None)
+```
+Adds a command output to the history for a device.
+
+```python
+def get_command_outputs(self, device_id, command_id=None)
+```
+Gets command outputs for a device, optionally filtered by command ID.
+
+```python
+def delete_command_output(self, device_id, command_id, timestamp=None)
+```
+Deletes command output(s) for a device.
+
+## UI Components
+
+The plugin provides the following UI components:
+
+### CommandDialog
+Dialog for running commands on devices.
+
+### CredentialManager
+Dialog for managing device credentials.
+
+### CommandOutputPanel
+Panel for viewing command outputs.
+
+### CommandSetEditor
+Dialog for editing command sets.
+
+## Data Model Classes
+
+### CommandSet
+Represents a set of commands for a device type and firmware version.
+
+### Command
+Represents a single command within a command set.
+
+## Integration
+
+The plugin integrates with the NetWORKS application by:
+1. Adding a toolbar action for opening the Command Manager
+2. Adding context menu items to device entries
+3. Adding a "Command Outputs" tab to device details 

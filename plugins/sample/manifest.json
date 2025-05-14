@@ -1,29 +1,117 @@
 {
   "id": "sample",
   "name": "Sample Plugin",
-  "version": "1.0.0",
+  "version": "1.0.9",
   "description": "A comprehensive sample plugin that demonstrates the plugin system and provides testing capabilities",
   "author": "NetWORKS Team",
   "entry_point": "sample_plugin.py",
   "min_app_version": "0.8.16",
+  "requirements": {
+    "python": [
+      "colorama>=0.4.4",
+      "pytz>=2023.3",
+      "QtAwesome>=1.2.0"
+    ],
+    "system": [
+      "Python 3.8+",
+      "Qt 6.5+"
+    ]
+  },
+  "dependencies": [],
   "changelog": [
     {
-      "version": "1.0.0",
-      "date": "2025-05-19",
+      "version": "1.0.9",
+      "date": "2025-05-12",
       "changes": [
-        "Added comprehensive application testing capabilities",
-        "Updated to comply with new documentation standards",
-        "Enhanced UI with testing dashboard",
-        "Added signal testing and monitoring functionality"
+        "Added proper integration with device manager's create_device API",
+        "Replaced custom context menu with standard context menu registration",
+        "Updated all action handlers to properly handle both single device and lists",
+        "Fixed group context menu integration to follow app standards"
       ]
     },
     {
-      "version": "0.1.0",
-      "date": "2023-11-14",
+      "version": "1.0.8",
+      "date": "2025-05-12",
       "changes": [
-        "Initial sample plugin",
-        "Demonstrates basic plugin functionality",
-        "Shows how to register with the application"
+        "Added safe_action_wrapper decorator to all action handlers to prevent crashes",
+        "Completely redesigned signal disconnection logic to prevent errors during cleanup",
+        "Added comprehensive protection against PySide6 signal disconnection errors",
+        "Improved context menu handlers to prevent crashes from invalid device references"
+      ]
+    },
+    {
+      "version": "1.0.7",
+      "date": "2025-05-12",
+      "changes": [
+        "Fixed \"No module named 'src.core.device'\" error in test_device_manager",
+        "Replaced direct module import with device_manager API calls",
+        "Added error handling to Sample Action to prevent crashes",
+        "Improved plugin cleanup to avoid disconnection errors"
+      ]
+    },
+    {
+      "version": "1.0.6",
+      "date": "2025-05-12",
+      "changes": [
+        "Fixed signal disconnection warnings by improving signal connection tracking",
+        "Implemented robust error handling for signal connections and disconnections",
+        "Added tracking for all connected signals to ensure proper cleanup",
+        "Enhanced context menu setup to gracefully handle connection errors"
+      ]
+    },
+    {
+      "version": "1.0.5",
+      "date": "2025-05-11",
+      "changes": [
+        "Added comprehensive device testing capabilities",
+        "Implemented signal monitoring for debugging",
+        "Added support for plugin configuration via settings",
+        "Enhanced device property display and management"
+      ]
+    },
+    {
+      "version": "1.0.4",
+      "date": "2025-05-09",
+      "changes": [
+        "Added device details panel",
+        "Implemented device and group context menu actions",
+        "Enhanced logging and monitoring capabilities"
+      ]
+    },
+    {
+      "version": "1.0.3",
+      "date": "2025-05-05",
+      "changes": [
+        "Added custom table columns for sample data",
+        "Implemented toolbar and menu integration",
+        "Added device property editing capabilities"
+      ]
+    },
+    {
+      "version": "1.0.2",
+      "date": "2025-05-03",
+      "changes": [
+        "Improved error handling for device operations",
+        "Added support for device groups",
+        "Enhanced cleanup process for better plugin lifecycle"
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "date": "2025-05-01",
+      "changes": [
+        "Added basic device property management",
+        "Implemented device event monitoring",
+        "Added logger integration for debugging"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2025-04-29",
+      "changes": [
+        "Initial release of the sample plugin",
+        "Basic plugin structure and examples",
+        "Documentation of plugin API usage"
       ]
     }
   ]

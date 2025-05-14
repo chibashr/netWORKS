@@ -274,6 +274,68 @@ class DeviceManager(QObject):
             self.refresh_timer.timeout.connect(self.refresh_devices)
             self.refresh_timer.start(refresh_interval * 1000)
     
+    def create_device(self, device_type="generic", **properties):
+        """
+        Create a new device with the specified properties
+        
+        This is the preferred way for plugins to create devices.
+        
+        Args:
+            device_type (str): The type of device to create (default: "generic")
+            **properties: Additional properties to set on the device
+            
+        Returns:
+            Device: The newly created device (not yet added to the manager)
+        """
+        logger.debug(f"Creating new {device_type} device")
+        
+        # Generate a unique ID if not provided
+        if "id" not in properties:
+            device_id = str(uuid.uuid4())
+            properties["id"] = device_id
+        else:
+            device_id = properties["id"]
+            
+        # Set default properties if not specified
+        if "type" not in properties:
+            properties["type"] = device_type
+            
+        if "name" not in properties:
+            properties["name"] = f"New {device_type.capitalize()} Device"
+            
+        if "status" not in properties:
+            properties["status"] = "unknown"
+            
+        if "created" not in properties:
+            properties["created"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Create the device
+        device = Device(device_id=device_id, **properties)
+        
+        logger.debug(f"Created device: {device}")
+        return device
+        
+    def add_new_device(self, device_type="generic", **properties):
+        """
+        Create a new device and add it to the device manager
+        
+        This is a convenience method that creates a device and adds it in one step.
+        
+        Args:
+            device_type (str): The type of device to create
+            **properties: Additional properties to set on the device
+            
+        Returns:
+            Device: The newly created and added device
+        """
+        # Create the device
+        device = self.create_device(device_type, **properties)
+        
+        # Add it to the manager
+        self.add_device(device)
+        
+        return device
+    
     def add_device(self, device):
         """Add a device to the system"""
         logger.debug(f"Adding device: {device}")
