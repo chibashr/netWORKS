@@ -156,17 +156,26 @@ class ScannerWorker(QObject):
                 elif self.scan_type == "service":
                     arguments = "-sV -p 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080 -T4"
             
-            # Add OS detection if requested
+            # Only add OS detection if requested AND not already in arguments
             if self.os_detection and "-O" not in arguments:
                 arguments += " -O"
                 
-            # Add port scan if requested
+            # Only add port scan if requested AND not already in arguments
             if self.port_scan and not any(x in arguments for x in ["-p", "-sS", "-sT", "-sV"]):
                 arguments += " -p 22,23,80,443,8080"
                 
             # Add custom arguments if provided
             if self.custom_scan_args:
                 arguments += f" {self.custom_scan_args}"
+                
+            # Make sure we don't have duplicate arguments by splitting and rejoining
+            # This prevents issues like having "-sn -T4 -sn -T4"
+            arg_parts = arguments.split()
+            unique_args = []
+            for arg in arg_parts:
+                if arg not in unique_args or arg.startswith("-p"):
+                    unique_args.append(arg)
+            arguments = " ".join(unique_args)
                 
             # Log the scan command
             logger.info(f"Starting network scan of {self.network_range} with arguments: {arguments}")
@@ -186,9 +195,11 @@ class ScannerWorker(QObject):
                 try:
                     # Use a reasonable timeout value
                     timeout_val = max(60, min(self.timeout, 900))  # Between 60 and 900 seconds
-                    # Add a -T4 timing template if not already specified to speed up the scan
+                    
+                    # Only add a -T4 timing template if not already specified to speed up the scan
                     if not any(arg in arguments for arg in ["-T1", "-T2", "-T3", "-T4", "-T5"]):
                         arguments += " -T4"
+                        
                     logger.debug(f"Starting nmap scan with timeout {timeout_val}s and arguments: {arguments}")
                     self.scanner.scan(hosts=self.network_range, arguments=arguments, 
                                      timeout=timeout_val, sudo=self.use_sudo)
@@ -368,7 +379,7 @@ class NetworkScannerPlugin(PluginInterface):
         """Initialize the plugin"""
         super().__init__()
         self.name = "Network Scanner"
-        self.version = "1.2.0"
+        self.version = "1.2.1"
         self.description = "Scan network segments for devices and add them to NetWORKS"
         self.author = "NetWORKS Team"
         

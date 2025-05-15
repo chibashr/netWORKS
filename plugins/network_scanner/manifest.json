@@ -1,7 +1,7 @@
 {
   "id": "network_scanner",
   "name": "Network Scanner",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "A plugin that scans the network for devices and adds them to NetWORKS",
   "author": "NetWORKS Team",
   "entry_point": "network_scanner.py",
@@ -19,6 +19,14 @@
   },
   "dependencies": [],
   "changelog": [
+    {
+      "version": "1.2.1",
+      "date": "2025-05-26",
+      "changes": [
+        "Fixed critical bug causing nmap to time out due to duplicate scan arguments",
+        "Improved argument handling to prevent duplicated command-line options"
+      ]
+    },
     {
       "version": "1.2.0",
       "date": "2025-05-25",

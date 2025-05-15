@@ -105,6 +105,10 @@ See the [API.md](API.md) file for information on programmatically integrating wi
 
 ## Changelog
 
+### Version 1.2.1 (2025-05-26)
+- Fixed critical bug causing nmap to time out due to duplicate scan arguments
+- Improved argument handling to prevent duplicated command-line options
+
 ### Version 1.2.0 (2025-05-25)
 - Modified scan button to directly run scan with current panel settings
 - Added new 'Advanced...' button to open the full scan dialog
