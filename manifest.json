@@ -1,6 +1,6 @@
 {
   "name": "NetWORKS",
-  "version": "0.8.46",
+  "version": "0.8.48",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -9,16 +9,16 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-  "version_string": "0.8.46",
+  "version_string": "0.8.48",
   "version_info": {
     "major": 0,
     "minor": 8,
-    "patch": 46,
+    "patch": 48,
     "build": 0,
     "release_type": "alpha"
   },
-  "build_date": "2025-05-15",
-  "release_notes": "Fixed critical crash in Command Manager plugin when right-clicking on devices and using plugin context menu actions. Improved device object handling for better stability.",
+  "build_date": "2025-05-22",
+  "release_notes": "Completely redesigned device properties panel with modern table view, filtering, export functionality (CSV/JSON), and improved selection capabilities. Better visualization of different data types and responsive design.",
   "release_type": "alpha",
   "api_version": "0.8",
   "feature_flags": {
@@ -49,6 +49,16 @@
     "qt": ">=6.5.0"
   },
   "version_history": [
+    {
+      "version": "0.8.48",
+      "date": "2025-05-22",
+      "changes": "Completely redesigned device properties panel with modern table view, filtering, export functionality (CSV/JSON), and improved selection capabilities. Better visualization of different data types and responsive design."
+    },
+    {
+      "version": "0.8.47",
+      "date": "2025-05-20",
+      "changes": "Enhanced device properties display in the right panel with improved formatting for dates, numbers, lists, and long text. Added interactive features for structured data and links."
+    },
     {
       "version": "0.8.46",
       "date": "2025-05-15",

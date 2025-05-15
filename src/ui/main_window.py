@@ -11,10 +11,11 @@ from PySide6.QtWidgets import (
     QMainWindow, QDockWidget, QToolBar, QStatusBar, QMenuBar, QMenu, 
     QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTreeView, QFrame, QLabel, QToolButton, QPushButton, QTableView,
-    QHeaderView, QAbstractItemView, QSizePolicy, QInputDialog, QLineEdit, QMessageBox, QDialog, QListWidget, QTableWidget, QTableWidgetItem
+    QHeaderView, QAbstractItemView, QSizePolicy, QInputDialog, QLineEdit, QMessageBox, QDialog, QListWidget, QTableWidget, QTableWidgetItem, QTextBrowser,
+    QApplication
 )
-from PySide6.QtGui import QIcon, QAction, QFont, QKeySequence
-from PySide6.QtCore import Qt, QSize, Signal, Slot, QModelIndex, QSettings, QTimer, QByteArray
+from PySide6.QtGui import QIcon, QAction, QFont, QKeySequence, QBrush, QColor
+from PySide6.QtCore import Qt, QSize, Signal, Slot, QModelIndex, QSettings, QTimer, QByteArray, QPoint
 from PySide6.QtWidgets import QStyle
 
 from .device_table import DeviceTableModel, DeviceTableView, QAbstractItemView
@@ -299,37 +300,65 @@ class MainWindow(QMainWindow):
         # Details tab
         self.details_tab = QWidget()
         self.details_layout = QVBoxLayout(self.details_tab)
+        self.details_layout.setContentsMargins(4, 4, 4, 4)
         
-        # Create a form layout for properties
-        from PySide6.QtWidgets import QFormLayout, QScrollArea
+        # Create a table for properties instead of a form layout
+        from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QMenu
         
-        self.properties_scroll = QScrollArea()
-        self.properties_scroll.setWidgetResizable(True)
-        self.properties_form_widget = QWidget()
-        self.properties_form_widget.setStyleSheet("background-color: white;")
-        self.properties_form = QFormLayout(self.properties_form_widget)
+        # Property table
+        self.properties_table = QTableWidget()
+        self.properties_table.setColumnCount(2)
+        self.properties_table.setHorizontalHeaderLabels(["Property", "Value"])
+        self.properties_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.properties_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.properties_table.setAlternatingRowColors(True)
+        self.properties_table.verticalHeader().setVisible(False)
+        self.properties_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.properties_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.properties_table.customContextMenuRequested.connect(self._show_property_context_menu)
         
-        self.property_labels = {}
-        for prop in ["alias", "hostname", "ip_address", "mac_address", "status"]:
-            self.property_labels[prop] = QLabel("--")
-            self.properties_form.addRow(f"{prop.replace('_', ' ').title()}:", self.property_labels[prop])
-            
-        # Add notes field
-        self.notes_label = QLabel("--")
-        self.notes_label.setWordWrap(True)
-        self.properties_form.addRow("Notes:", self.notes_label)
+        # Apply modern styling
+        self.properties_table.setStyleSheet("""
+            QTableWidget {
+                border: none;
+                background-color: white;
+                gridline-color: #E0E0E0;
+            }
+            QTableWidget::item {
+                padding: 4px;
+                border-bottom: 1px solid #F0F0F0;
+            }
+            QHeaderView::section {
+                background-color: #F5F5F5;
+                padding: 6px;
+                border: none;
+                border-bottom: 1px solid #D0D0D0;
+                font-weight: bold;
+            }
+            QTableWidget::item:selected {
+                background-color: #E0F0FF;
+                color: #000000;
+            }
+        """)
         
-        # Custom properties section
-        self.custom_props_label = QLabel("Custom Properties")
-        self.custom_props_label.setFont(QFont("", 10, QFont.Bold))
-        self.properties_form.addRow(self.custom_props_label)
+        # Toolbar for property actions
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.setContentsMargins(0, 0, 0, 4)
         
-        # Space for custom properties (will be filled dynamically)
-        self.custom_props_layout = QFormLayout()
-        self.properties_form.addRow(self.custom_props_layout)
+        export_btn = QPushButton("Export")
+        export_btn.setToolTip("Export properties to clipboard or file")
+        export_btn.clicked.connect(self._export_properties)
         
-        self.properties_scroll.setWidget(self.properties_form_widget)
-        self.details_layout.addWidget(self.properties_scroll)
+        filter_edit = QLineEdit()
+        filter_edit.setPlaceholderText("Filter properties...")
+        filter_edit.textChanged.connect(self._filter_properties)
+        filter_edit.setClearButtonEnabled(True)
+        
+        toolbar_layout.addWidget(filter_edit)
+        toolbar_layout.addWidget(export_btn)
+        
+        self.details_layout.addLayout(toolbar_layout)
+        self.details_layout.addWidget(self.properties_table)
         
         self.properties_widget.addTab(self.details_tab, "Details")
         
@@ -485,50 +514,55 @@ class MainWindow(QMainWindow):
         Args:
             devices: A list of selected devices or None if no selection
         """
-        # Clear custom properties
-        while self.custom_props_layout.count():
-            item = self.custom_props_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        # Clear table
+        self.properties_table.setRowCount(0)
                 
         # Convert single device to list for consistent handling
         if devices and not isinstance(devices, list):
             devices = [devices]
                 
-        # Hide custom properties section if no devices selected
+        # Early return if no devices selected
         no_selection = not devices or len(devices) == 0
-        self.custom_props_label.setVisible(not no_selection)
-        
         if no_selection:
-            # Reset all fields when no devices are selected
-            for label in self.property_labels.values():
-                label.setText("--")
-            self.notes_label.setText("--")
+            # Show placeholder text
+            self.properties_table.setRowCount(1)
+            item = QTableWidgetItem("No devices selected")
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            item.setTextAlignment(Qt.AlignCenter)
+            self.properties_table.setSpan(0, 0, 1, 2)
+            self.properties_table.setItem(0, 0, item)
             logger.debug("No devices selected, cleared property panel")
             return
+            
+        # Store all properties for filtering
+        self.current_properties = {}
             
         if len(devices) == 1:
             # Single device selection - show all properties
             device = devices[0]
             logger.debug(f"Showing properties for single device: {device.get_property('alias', 'Unnamed')}")
             
-            # Update core properties
-            for prop, label in self.property_labels.items():
-                label.setText(str(device.get_property(prop, "--")))
-                
-            # Update notes
-            self.notes_label.setText(device.get_property("notes", "--"))
+            # Get all properties
+            device_props = device.get_properties()
             
-            # Add custom properties
+            # Add core properties first (in a specific order)
             core_props = ["id", "alias", "hostname", "ip_address", "mac_address", "status", "notes", "tags"]
-            for key, value in device.get_properties().items():
-                if key not in core_props:
-                    # Add custom property to the form
-                    if isinstance(value, (list, dict)):
-                        value = str(value)
-                    label = QLabel(str(value))
-                    label.setWordWrap(True)
-                    self.custom_props_layout.addRow(f"{key.replace('_', ' ').title()}:", label)
+            for prop in core_props:
+                if prop in device_props:
+                    value = device_props[prop]
+                    formatted_value = self._format_property_value(value)
+                    self._add_property_row(prop, value, formatted_value)
+                    
+            # Add a separator row
+            self._add_separator_row("Custom Properties")
+                    
+            # Add custom properties
+            custom_props = sorted([k for k in device_props.keys() if k not in core_props])
+            for key in custom_props:
+                value = device_props[key]
+                formatted_value = self._format_property_value(value)
+                self._add_property_row(key, value, formatted_value)
+                
         else:
             # Multiple device selection - show common properties
             logger.debug(f"Showing properties for {len(devices)} devices")
@@ -540,7 +574,6 @@ class MainWindow(QMainWindow):
             
             # Collect all properties from all devices
             all_properties = {}
-            common_properties = {}
             core_props = ["id", "alias", "hostname", "ip_address", "mac_address", "status", "notes", "tags"]
             
             # First, gather all properties and their values
@@ -549,44 +582,364 @@ class MainWindow(QMainWindow):
                     if key not in all_properties:
                         all_properties[key] = []
                     
-                    # Convert complex types to string for comparison
-                    if isinstance(value, (list, dict)):
-                        value = str(value)
-                        
                     all_properties[key].append(value)
             
-            # Update core properties - show common value or "Multiple values"
-            for prop, label in self.property_labels.items():
+            # Add a header row with device count
+            self._add_separator_row(f"{len(devices)} Devices Selected")
+            
+            # Add core properties first
+            for prop in core_props:
                 if prop in all_properties:
                     values = all_properties[prop]
-                    if len(set(values)) == 1:  # All values are the same
-                        label.setText(str(values[0]))
+                    # Check if all values are the same
+                    if len(set(str(v) for v in values)) == 1:
+                        formatted_value = self._format_property_value(values[0])
+                        self._add_property_row(prop, values[0], formatted_value)
                     else:
-                        label.setText("<Multiple values>")
-                else:
-                    label.setText("--")
+                        self._add_property_row(prop, values, "<Multiple values>")
             
-            # Update notes - show if they're all the same, otherwise indicate multiple values
-            if "notes" in all_properties:
-                notes_values = all_properties["notes"]
-                if len(set(notes_values)) == 1:
-                    self.notes_label.setText(notes_values[0])
-                else:
-                    self.notes_label.setText("<Multiple values>")
-            else:
-                self.notes_label.setText("--")
+            # Add a separator for custom properties
+            self._add_separator_row("Custom Properties")
             
             # Add custom properties (excluding core properties)
-            for key, values in all_properties.items():
-                if key not in core_props:
-                    if len(set(values)) == 1:  # All values are the same
-                        label = QLabel(str(values[0]))
-                    else:
-                        label = QLabel("<Multiple values>")
-                        
-                    label.setWordWrap(True)
-                    self.custom_props_layout.addRow(f"{key.replace('_', ' ').title()}:", label)
+            custom_props = sorted([k for k in all_properties.keys() if k not in core_props])
+            for key in custom_props:
+                values = all_properties[key]
+                if len(set(str(v) for v in values)) == 1:
+                    formatted_value = self._format_property_value(values[0])
+                    self._add_property_row(key, values[0], formatted_value)
+                else:
+                    self._add_property_row(key, values, "<Multiple values>")
+                    
+        # Resize rows to contents
+        self.properties_table.resizeRowsToContents()
+    
+    def _add_property_row(self, key, raw_value, formatted_value):
+        """Add a property row to the table
         
+        Args:
+            key: Property name
+            raw_value: The raw value (stored for context menu)
+            formatted_value: The formatted display value
+        """
+        row = self.properties_table.rowCount()
+        self.properties_table.insertRow(row)
+        
+        # Property name (with title case formatting)
+        name_item = QTableWidgetItem(key.replace('_', ' ').title())
+        name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+        name_item.setToolTip(key)
+        self.properties_table.setItem(row, 0, name_item)
+        
+        # Property value
+        value_item = QTableWidgetItem(formatted_value)
+        value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+        value_item.setData(Qt.UserRole, raw_value)  # Store raw value for context menu
+        
+        # If it's a URL, make it look like a link
+        if isinstance(raw_value, str) and (raw_value.startswith('http://') or raw_value.startswith('https://')):
+            value_item.setForeground(QBrush(QColor("blue")))
+            font = value_item.font()
+            font.setUnderline(True)
+            value_item.setFont(font)
+            value_item.setToolTip("Click to open in browser")
+        else:
+            value_item.setToolTip(formatted_value)
+            
+        self.properties_table.setItem(row, 1, value_item)
+        
+        # Store for filtering
+        self.current_properties[key] = {
+            'raw': raw_value,
+            'formatted': formatted_value,
+            'row': row
+        }
+    
+    def _add_separator_row(self, text):
+        """Add a separator/header row to the table
+        
+        Args:
+            text: Text to display in the separator
+        """
+        row = self.properties_table.rowCount()
+        self.properties_table.insertRow(row)
+        
+        # Create a header-style item spanning both columns
+        separator_item = QTableWidgetItem(text)
+        separator_item.setFlags(separator_item.flags() & ~Qt.ItemIsEditable)
+        separator_item.setBackground(QBrush(QColor("#F0F0F0")))
+        font = separator_item.font()
+        font.setBold(True)
+        separator_item.setFont(font)
+        
+        self.properties_table.setSpan(row, 0, 1, 2)
+        self.properties_table.setItem(row, 0, separator_item)
+    
+    def _filter_properties(self, filter_text):
+        """Filter properties based on user input
+        
+        Args:
+            filter_text: Text to filter by
+        """
+        filter_text = filter_text.lower()
+        
+        # Show/hide rows based on filter
+        for key, prop_data in self.current_properties.items():
+            row = prop_data['row']
+            matches = (
+                filter_text in key.lower() or
+                filter_text in str(prop_data['formatted']).lower()
+            )
+            self.properties_table.setRowHidden(row, not matches)
+    
+    def _show_property_context_menu(self, position):
+        """Show context menu for property table
+        
+        Args:
+            position: Position where the menu should be shown
+        """
+        menu = QMenu()
+        
+        copy_action = menu.addAction("Copy Value")
+        copy_name_action = menu.addAction("Copy Property Name")
+        copy_both_action = menu.addAction("Copy Name and Value")
+        menu.addSeparator()
+        copy_all_action = menu.addAction("Copy All Properties")
+        
+        # Get selected items
+        selected_indexes = self.properties_table.selectedIndexes()
+        if not selected_indexes:
+            return
+            
+        # If a URL is selected, add open link action
+        for index in selected_indexes:
+            if index.column() == 1:  # Value column
+                item = self.properties_table.item(index.row(), index.column())
+                raw_value = item.data(Qt.UserRole)
+                if isinstance(raw_value, str) and (raw_value.startswith('http://') or raw_value.startswith('https://')):
+                    menu.addSeparator()
+                    open_url_action = menu.addAction("Open URL")
+                    break
+                    
+        # If complex data is selected, add view details action
+        for index in selected_indexes:
+            if index.column() == 1:  # Value column
+                item = self.properties_table.item(index.row(), index.column())
+                raw_value = item.data(Qt.UserRole)
+                if isinstance(raw_value, (dict, list)) or (isinstance(raw_value, str) and len(raw_value) > 100):
+                    menu.addSeparator()
+                    view_details_action = menu.addAction("View Details")
+                    break
+        
+        # Show the menu and get the selected action
+        action = menu.exec_(self.properties_table.mapToGlobal(position))
+        
+        if not action:
+            return
+            
+        # Handle actions
+        if action == copy_action:
+            self._copy_selected_values()
+        elif action == copy_name_action:
+            self._copy_selected_names()
+        elif action == copy_both_action:
+            self._copy_selected_pairs()
+        elif action == copy_all_action:
+            self._copy_all_properties()
+        elif 'open_url_action' in locals() and action == open_url_action:
+            self._open_selected_url()
+        elif 'view_details_action' in locals() and action == view_details_action:
+            self._view_selected_details()
+    
+    def _copy_selected_values(self):
+        """Copy selected property values to clipboard"""
+        values = []
+        for index in self.properties_table.selectedIndexes():
+            if index.column() == 1:  # Value column
+                values.append(self.properties_table.item(index.row(), index.column()).text())
+                
+        if values:
+            clipboard = QApplication.clipboard()
+            clipboard.setText("\n".join(values))
+            self.status_bar.showMessage("Values copied to clipboard", 2000)
+    
+    def _copy_selected_names(self):
+        """Copy selected property names to clipboard"""
+        names = []
+        for index in self.properties_table.selectedIndexes():
+            if index.column() == 0:  # Name column
+                names.append(self.properties_table.item(index.row(), index.column()).text())
+                
+        if names:
+            clipboard = QApplication.clipboard()
+            clipboard.setText("\n".join(names))
+            self.status_bar.showMessage("Property names copied to clipboard", 2000)
+    
+    def _copy_selected_pairs(self):
+        """Copy selected property name-value pairs to clipboard"""
+        pairs = []
+        selected_rows = set()
+        
+        # Get all selected rows
+        for index in self.properties_table.selectedIndexes():
+            selected_rows.add(index.row())
+            
+        # For each row, get the name and value
+        for row in selected_rows:
+            name_item = self.properties_table.item(row, 0)
+            value_item = self.properties_table.item(row, 1)
+            
+            if name_item and value_item:
+                name = name_item.text()
+                value = value_item.text()
+                pairs.append(f"{name}: {value}")
+                
+        if pairs:
+            clipboard = QApplication.clipboard()
+            clipboard.setText("\n".join(pairs))
+            self.status_bar.showMessage("Properties copied to clipboard", 2000)
+    
+    def _copy_all_properties(self):
+        """Copy all properties to clipboard"""
+        pairs = []
+        
+        # Get all rows except separators
+        for row in range(self.properties_table.rowCount()):
+            # Skip rows that span columns (separators)
+            if self.properties_table.columnSpan(row, 0) > 1:
+                continue
+                
+            name_item = self.properties_table.item(row, 0)
+            value_item = self.properties_table.item(row, 1)
+            
+            if name_item and value_item:
+                name = name_item.text()
+                value = value_item.text()
+                pairs.append(f"{name}: {value}")
+                
+        if pairs:
+            clipboard = QApplication.clipboard()
+            clipboard.setText("\n".join(pairs))
+            self.status_bar.showMessage("All properties copied to clipboard", 2000)
+    
+    def _open_selected_url(self):
+        """Open the selected URL in the default browser"""
+        for index in self.properties_table.selectedIndexes():
+            if index.column() == 1:  # Value column
+                item = self.properties_table.item(index.row(), index.column())
+                raw_value = item.data(Qt.UserRole)
+                if isinstance(raw_value, str) and (raw_value.startswith('http://') or raw_value.startswith('https://')):
+                    import webbrowser
+                    webbrowser.open(raw_value)
+                    break
+    
+    def _view_selected_details(self):
+        """Show details for complex data types"""
+        for index in self.properties_table.selectedIndexes():
+            if index.column() == 1:  # Value column
+                item = self.properties_table.item(index.row(), index.column())
+                raw_value = item.data(Qt.UserRole)
+                name_item = self.properties_table.item(index.row(), 0)
+                key = name_item.text() if name_item else "Property"
+                self._show_detailed_property(key, raw_value)
+                break
+    
+    def _export_properties(self):
+        """Export properties to clipboard or file"""
+        menu = QMenu()
+        copy_clipboard = menu.addAction("Copy to Clipboard")
+        menu.addSeparator()
+        export_csv = menu.addAction("Export as CSV")
+        export_json = menu.addAction("Export as JSON")
+        
+        # Get position to show menu
+        button = self.sender()
+        action = menu.exec_(button.mapToGlobal(QPoint(0, button.height())))
+        
+        if action == copy_clipboard:
+            self._copy_all_properties()
+        elif action == export_csv:
+            self._export_as_csv()
+        elif action == export_json:
+            self._export_as_json()
+    
+    def _export_as_csv(self):
+        """Export properties as CSV file"""
+        from PySide6.QtWidgets import QFileDialog
+        import csv
+        
+        # Get filename from user
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Properties", "", "CSV Files (*.csv)"
+        )
+        
+        if not filename:
+            return
+            
+        try:
+            with open(filename, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(["Property", "Value"])
+                
+                # Write all rows except separators
+                for row in range(self.properties_table.rowCount()):
+                    # Skip rows that span columns (separators)
+                    if self.properties_table.columnSpan(row, 0) > 1:
+                        continue
+                        
+                    name_item = self.properties_table.item(row, 0)
+                    value_item = self.properties_table.item(row, 1)
+                    
+                    if name_item and value_item:
+                        writer.writerow([name_item.text(), value_item.text()])
+                        
+            self.status_bar.showMessage(f"Properties exported to {filename}", 3000)
+        except Exception as e:
+            logger.error(f"Failed to export properties as CSV: {e}")
+            self.status_bar.showMessage("Failed to export properties", 3000)
+    
+    def _export_as_json(self):
+        """Export properties as JSON file"""
+        from PySide6.QtWidgets import QFileDialog
+        import json
+        
+        # Get filename from user
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Properties", "", "JSON Files (*.json)"
+        )
+        
+        if not filename:
+            return
+            
+        try:
+            properties = {}
+            
+            # Get all rows except separators
+            for row in range(self.properties_table.rowCount()):
+                # Skip rows that span columns (separators)
+                if self.properties_table.columnSpan(row, 0) > 1:
+                    continue
+                    
+                name_item = self.properties_table.item(row, 0)
+                value_item = self.properties_table.item(row, 1)
+                
+                if name_item and value_item:
+                    # Use original key format (not title case)
+                    name = name_item.toolTip() or name_item.text().lower().replace(' ', '_')
+                    # Use raw value if available
+                    value = value_item.data(Qt.UserRole)
+                    if value is None:
+                        value = value_item.text()
+                    properties[name] = value
+                    
+            with open(filename, 'w') as jsonfile:
+                json.dump(properties, jsonfile, indent=2)
+                        
+            self.status_bar.showMessage(f"Properties exported to {filename}", 3000)
+        except Exception as e:
+            logger.error(f"Failed to export properties as JSON: {e}")
+            self.status_bar.showMessage("Failed to export properties", 3000)
+    
     # Event handlers
     
     @Slot()
@@ -1514,3 +1867,130 @@ class MainWindow(QMainWindow):
         thread = threading.Thread(target=check_thread)
         thread.daemon = True
         thread.start() 
+
+    def _format_property_value(self, value):
+        """Format a property value for display based on type
+        
+        Args:
+            value: The value to format
+            
+        Returns:
+            str: Formatted value as a string
+        """
+        # Return placeholder for None values
+        if value is None:
+            return "--"
+            
+        # Handle different data types
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+            
+        elif isinstance(value, (int, float)):
+            # Format large numbers with commas
+            if isinstance(value, int) and abs(value) >= 10000:
+                return f"{value:,}"
+            # Format floats with appropriate decimal places
+            elif isinstance(value, float):
+                # Limit to 4 decimal places but trim trailing zeros
+                return f"{value:.4f}".rstrip('0').rstrip('.') if '.' in f"{value:.4f}" else f"{value:.0f}"
+            return str(value)
+            
+        elif isinstance(value, list):
+            # Format lists as comma-separated values
+            if not value:
+                return "Empty list"
+            return ", ".join(str(item) for item in value)
+            
+        elif isinstance(value, dict):
+            # For dictionaries, return a summary
+            if not value:
+                return "Empty dictionary"
+            return f"Dictionary with {len(value)} items"
+            
+        elif isinstance(value, str):
+            # Check if it's a date/time string (ISO format or common formats)
+            import re
+            date_patterns = [
+                # ISO date: 2023-10-15 or 2023-10-15T14:30:25
+                r'^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$',
+                # Common date: 10/15/2023 or 15/10/2023
+                r'^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})$',
+                # Date with time: 2023-10-15 14:30:25 or 10/15/2023 14:30:25
+                r'^(\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}) \d{1,2}:\d{2}(:\d{2})?$'
+            ]
+            
+            # If it matches a date pattern, try to parse and format it
+            for pattern in date_patterns:
+                if re.match(pattern, value):
+                    try:
+                        import datetime
+                        # Try different formats
+                        for fmt in [
+                            '%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', 
+                            '%m/%d/%Y', '%d/%m/%Y',
+                            '%Y-%m-%d %H:%M:%S', '%m/%d/%Y %H:%M:%S', '%d/%m/%Y %H:%M:%S'
+                        ]:
+                            try:
+                                date_obj = datetime.datetime.strptime(value, fmt)
+                                # Format with a nice human-readable format
+                                return date_obj.strftime('%b %d, %Y %I:%M %p').replace(' 12:00 AM', '')
+                            except ValueError:
+                                continue
+                    except (ValueError, ImportError):
+                        pass  # If parsing fails, just use the original string
+            
+            # For long text, truncate with ellipsis
+            if len(value) > 100:
+                return value[:97] + "..."
+                
+        # Default: just convert to string
+        return str(value)
+
+    def _show_detailed_property(self, key, value):
+        """Show a property value in detail in a dialog
+        
+        Args:
+            key: The property key
+            value: The property value
+        """
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Property: {key}")
+        dialog.resize(500, 400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Create a text browser for displaying detailed content
+        text_browser = QTextBrowser()
+        
+        # Format the content based on the type
+        if isinstance(value, dict):
+            import json
+            try:
+                formatted_json = json.dumps(value, indent=2)
+                text_browser.setPlainText(formatted_json)
+            except Exception:
+                text_browser.setPlainText(str(value))
+        elif isinstance(value, list):
+            # Format lists nicely, one item per line
+            if all(isinstance(item, dict) for item in value):
+                # If list of dictionaries, format as JSON
+                import json
+                try:
+                    formatted_json = json.dumps(value, indent=2)
+                    text_browser.setPlainText(formatted_json)
+                except Exception:
+                    text_browser.setPlainText("\n".join([f"- {item}" for item in value]))
+            else:
+                # Simple list formatting
+                text_browser.setPlainText("\n".join([f"- {item}" for item in value]))
+        else:
+            text_browser.setPlainText(str(value))
+            
+        layout.addWidget(text_browser)
+        
+        # Add a close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        
+        dialog.exec() 
