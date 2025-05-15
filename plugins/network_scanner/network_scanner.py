@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
     QGridLayout, QFormLayout, QGroupBox, QCheckBox, QComboBox,
     QSplitter, QProgressBar, QMessageBox, QLineEdit, QTableWidget, 
     QTableWidgetItem, QDialog, QDialogButtonBox, QMenu, QFileDialog,
-    QRadioButton, QInputDialog
+    QRadioButton, QInputDialog, QHeaderView
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer, QThread, QObject
 from PySide6.QtGui import QIcon, QAction, QFont, QColor, QIntValidator
@@ -608,6 +608,17 @@ class NetworkScannerPlugin(PluginInterface):
             # Update network interfaces
             self._update_interface_choices()
             
+            # Update the interface dropdown if it exists already
+            if hasattr(self, "interface_combo") and self.interface_combo is not None:
+                self.interface_combo.clear()
+                self.interface_combo.addItems(self.settings["preferred_interface"]["choices"])
+                if self.settings["preferred_interface"]["value"] in self.settings["preferred_interface"]["choices"]:
+                    self.interface_combo.setCurrentText(self.settings["preferred_interface"]["value"])
+                # Set a default network range based on the selected interface
+                selected_if_text = self.interface_combo.currentText()
+                if selected_if_text and selected_if_text != "Any (default)" and hasattr(self, "network_range_edit"):
+                    self._update_network_range_from_interface(0)  # 0 is dummy index
+            
             # Initialize threading system
             self._initialize_scanner()
             
@@ -727,53 +738,146 @@ class NetworkScannerPlugin(PluginInterface):
         self.scan_selected_action = QAction("Scan from Selected Device")
         self.scan_selected_action.triggered.connect(self.on_scan_selected_action)
         
+        # Add a scan type manager action for toolbar
+        self.scan_type_manager_action = QAction("Scan Type Manager")
+        self.scan_type_manager_action.setToolTip("Manage scan profiles and types")
+        self.scan_type_manager_action.triggered.connect(self.on_scan_type_manager_action)
+        
     def _create_widgets(self):
         """Create plugin widgets"""
         # Main widget
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
+        self.main_layout.setContentsMargins(8, 8, 8, 8)  # Add proper margins
+        self.main_layout.setSpacing(10)  # Increase spacing between main sections
+        
+        # Create a top section for controls
+        top_section = QWidget()
+        top_layout = QVBoxLayout(top_section)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(8)
         
         # Input and controls
         self.control_group = QGroupBox("Network Scan Controls")
         self.control_layout = QFormLayout(self.control_group)
+        self.control_layout.setSpacing(8)  # Increase spacing between form rows
+        self.control_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # Allow fields to expand
         
-        # Network range input
-        self.network_range_layout = QHBoxLayout()
+        # Interface selection
+        self.interface_layout = QHBoxLayout()
+        self.interface_layout.setSpacing(8)
+        self.interface_combo = QComboBox()
+        
+        # First make sure we have interface choices
+        if not self.settings["preferred_interface"]["choices"]:
+            self._update_interface_choices()
+            
+        self.interface_combo.addItems(self.settings["preferred_interface"]["choices"])
+        current_interface = self.settings["preferred_interface"]["value"]
+        if current_interface and current_interface in self.settings["preferred_interface"]["choices"]:
+            self.interface_combo.setCurrentText(current_interface)
+            
+        self.refresh_interfaces_button = QPushButton("Refresh")
+        self.refresh_interfaces_button.setToolTip("Refresh network interface list")
+        self.refresh_interfaces_button.clicked.connect(self._update_interface_choices_and_refresh_ui)
+        self.interface_layout.addWidget(self.interface_combo, 1)
+        self.interface_layout.addWidget(self.refresh_interfaces_button)
+        self.control_layout.addRow("Network Interface:", self.interface_layout)
+        
+        # Network range input - now in its own section with more space
+        self.network_range_label = QLabel("Network Range:")
         self.network_range_edit = QLineEdit()
         self.network_range_edit.setPlaceholderText("e.g., 192.168.1.0/24 or 10.0.0.1-10.0.0.254")
-        self.network_range_layout.addWidget(self.network_range_edit)
+        self.control_layout.addRow(self.network_range_label, self.network_range_edit)
+        
+        # Connect interface change to update network range
+        self.interface_combo.currentIndexChanged.connect(self._update_network_range_from_interface)
+        
+        # Initialize network range from currently selected interface
+        self._update_network_range_from_interface(self.interface_combo.currentIndex())
+        
+        # Scan type with manager button
+        scan_type_layout = QHBoxLayout()
+        scan_type_layout.setSpacing(8)
+        
+        self.scan_type_combo = QComboBox()
+        self.scan_type_combo.addItems(self.settings["scan_type"]["choices"])
+        self.scan_type_combo.setCurrentText(self.settings["scan_type"]["value"])
+        
+        self.scan_type_manager_button = QPushButton("Manage")
+        self.scan_type_manager_button.setToolTip("Manage scan profiles and types")
+        self.scan_type_manager_button.clicked.connect(self.on_scan_type_manager_action)
+        
+        scan_type_layout.addWidget(self.scan_type_combo, 1)
+        scan_type_layout.addWidget(self.scan_type_manager_button)
+        
+        self.control_layout.addRow("Scan Type:", scan_type_layout)
+        
+        # Scan controls in separate section with buttons side by side
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)  # Add more space between buttons
         
         # Scan button
         self.scan_button = QPushButton("Start Scan")
+        self.scan_button.setMinimumWidth(100)  # Set minimum width for buttons
         self.scan_button.clicked.connect(self.on_scan_button_clicked)
-        self.network_range_layout.addWidget(self.scan_button)
+        button_layout.addWidget(self.scan_button)
         
         # Stop button
         self.stop_button = QPushButton("Stop")
+        self.stop_button.setMinimumWidth(100)
         self.stop_button.clicked.connect(self.on_stop_button_clicked)
         self.stop_button.setEnabled(False)
-        self.network_range_layout.addWidget(self.stop_button)
+        button_layout.addWidget(self.stop_button)
         
-        self.control_layout.addRow("Network Range:", self.network_range_layout)
+        # Add stretch to push buttons to the left
+        button_layout.addStretch(1)
         
-        # Scan type
-        self.scan_type_combo = QComboBox()
-        self.scan_type_combo.addItems(["quick", "standard", "comprehensive", "stealth", "service"])
-        self.scan_type_combo.setCurrentText(self.settings["scan_type"]["value"])
-        self.control_layout.addRow("Scan Type:", self.scan_type_combo)
+        # Add button layout to form with empty label to align properly
+        self.control_layout.addRow("", button_layout)
+        
+        # Create a horizontal layout for checkboxes to save space
+        checkbox_layout = QHBoxLayout()
+        checkbox_layout.setSpacing(20)  # Add spacing between checkboxes
         
         # OS Detection
+        os_detection_widget = QWidget()
+        os_detection_layout = QHBoxLayout(os_detection_widget)
+        os_detection_layout.setContentsMargins(0, 0, 0, 0)
+        os_detection_label = QLabel("OS Detection:")
         self.os_detection_check = QCheckBox()
         self.os_detection_check.setChecked(self.settings["os_detection"]["value"])
-        self.control_layout.addRow("OS Detection:", self.os_detection_check)
+        os_detection_layout.addWidget(os_detection_label)
+        os_detection_layout.addWidget(self.os_detection_check)
+        checkbox_layout.addWidget(os_detection_widget)
         
         # Port Scanning
+        port_scan_widget = QWidget()
+        port_scan_layout = QHBoxLayout(port_scan_widget)
+        port_scan_layout.setContentsMargins(0, 0, 0, 0)
+        port_scan_label = QLabel("Port Scanning:")
         self.port_scan_check = QCheckBox()
         self.port_scan_check.setChecked(self.settings["port_scan"]["value"])
-        self.control_layout.addRow("Port Scanning:", self.port_scan_check)
+        port_scan_layout.addWidget(port_scan_label)
+        port_scan_layout.addWidget(self.port_scan_check)
+        checkbox_layout.addWidget(port_scan_widget)
+        
+        # Add spacer to push checkboxes to the left
+        checkbox_layout.addStretch(1)
+        
+        # Add the checkbox layout to the control layout
+        control_widget = QWidget()
+        control_widget.setLayout(checkbox_layout)
+        self.control_layout.addRow("", control_widget)
+        
+        # Add the control group to the top section
+        top_layout.addWidget(self.control_group)
         
         # Progress section
-        self.progress_layout = QVBoxLayout()
+        progress_widget = QWidget()
+        self.progress_layout = QVBoxLayout(progress_widget)
+        self.progress_layout.setContentsMargins(4, 4, 4, 4)
+        self.progress_layout.setSpacing(4)
         
         # Status label
         self.status_label = QLabel("Ready")
@@ -785,19 +889,29 @@ class NetworkScannerPlugin(PluginInterface):
         self.progress_bar.setValue(0)
         self.progress_layout.addWidget(self.progress_bar)
         
+        # Add progress widget to top section
+        top_layout.addWidget(progress_widget)
+        
         # Results section
         self.results_group = QGroupBox("Scan Results")
         self.results_layout = QVBoxLayout(self.results_group)
+        self.results_layout.setContentsMargins(8, 12, 8, 8)  # Add internal margins for better readability
         
         # Results list
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
         self.results_layout.addWidget(self.results_text)
         
-        # Add all sections to main layout
-        self.main_layout.addWidget(self.control_group)
-        self.main_layout.addLayout(self.progress_layout)
-        self.main_layout.addWidget(self.results_group)
+        # Create a splitter to allow resizing between controls and results
+        self.main_splitter = QSplitter(Qt.Vertical)
+        self.main_splitter.addWidget(top_section)
+        self.main_splitter.addWidget(self.results_group)
+        self.main_splitter.setStretchFactor(0, 0)  # Don't stretch the top section
+        self.main_splitter.setStretchFactor(1, 1)  # Let the results section take extra space
+        self.main_splitter.setSizes([200, 400])  # Set initial sizes
+        
+        # Add the splitter to the main layout
+        self.main_layout.addWidget(self.main_splitter)
         
     def _initialize_scanner(self):
         """Initialize the scanner thread and worker"""
@@ -879,13 +993,20 @@ class NetworkScannerPlugin(PluginInterface):
         dock.setObjectName("NetworkScannerDock")
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         
+        # Set minimum width to prevent controls from being too cramped
+        self.main_widget.setMinimumWidth(300)
+        
         # Return a list of tuples: (widget_name, widget, area)
         return [("Network Scanner", dock, Qt.RightDockWidgetArea)]
         
+    def get_toolbar_actions(self):
+        """Get actions for the toolbar"""
+        return [self.scan_action, self.scan_type_manager_action]
+        
     def get_menu_actions(self):
         """Get plugin menu actions"""
-        return {"Network": [self.scan_action, self.scan_selected_action]}
-
+        return {"Network": [self.scan_action, self.scan_selected_action, self.scan_type_manager_action]}
+        
     def scan_network(self, network_range, scan_type="quick"):
         """
         Start a network scan of the specified range
@@ -1367,9 +1488,12 @@ class NetworkScannerPlugin(PluginInterface):
         """Show a dialog to get scan parameters"""
         dialog = QDialog(self.main_window)
         dialog.setWindowTitle("Network Scan")
-        dialog.setMinimumWidth(500)
+        dialog.setMinimumWidth(550)  # Slightly wider to accommodate content
+        dialog.setMinimumHeight(450)  # Set minimum height
         
         layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(10, 10, 10, 10)  # Add proper margins
+        layout.setSpacing(12)  # Increase spacing
         
         # Create tabs for basic and advanced settings
         tab_widget = QTabWidget()
@@ -1383,10 +1507,14 @@ class NetworkScannerPlugin(PluginInterface):
         
         # ==== Basic Tab ====
         basic_layout = QVBoxLayout(basic_tab)
+        basic_layout.setContentsMargins(10, 10, 10, 10)  # Add margins
+        basic_layout.setSpacing(12)  # Increase spacing
         
         # Network interface selection
         interface_group = QGroupBox("Network Interface")
         interface_layout = QVBoxLayout(interface_group)
+        interface_layout.setContentsMargins(10, 15, 10, 10)
+        interface_layout.setSpacing(8)
         
         interface_combo = QComboBox()
         # Add interfaces from settings
@@ -1401,13 +1529,21 @@ class NetworkScannerPlugin(PluginInterface):
         # Scan target options
         target_group = QGroupBox("Scan Target")
         target_layout = QVBoxLayout(target_group)
+        target_layout.setContentsMargins(10, 15, 10, 10)
+        target_layout.setSpacing(10)
         
         # Option to scan subnet of selected interface
         scan_subnet_radio = QRadioButton("Scan Interface Subnet")
         
         # Option for custom network range
         custom_range_radio = QRadioButton("Custom Network Range")
-        custom_range_layout = QHBoxLayout()
+        
+        # Custom range input with proper layout
+        custom_range_container = QWidget()
+        custom_range_layout = QHBoxLayout(custom_range_container)
+        custom_range_layout.setContentsMargins(20, 0, 0, 0)  # Indent for visual hierarchy
+        custom_range_layout.setSpacing(8)
+        
         network_range_edit = QLineEdit()
         network_range_edit.setPlaceholderText("e.g., 192.168.1.0/24 or 10.0.0.1-10.0.0.254")
         custom_range_layout.addWidget(network_range_edit)
@@ -1423,11 +1559,12 @@ class NetworkScannerPlugin(PluginInterface):
             
         target_layout.addWidget(scan_subnet_radio)
         target_layout.addWidget(custom_range_radio)
-        target_layout.addLayout(custom_range_layout)
+        target_layout.addWidget(custom_range_container)
         
         # Connect radio buttons to enable/disable related widgets
         def update_ui_state():
             network_range_edit.setEnabled(custom_range_radio.isChecked())
+            custom_range_container.setVisible(custom_range_radio.isChecked())
             
         scan_subnet_radio.toggled.connect(update_ui_state)
         custom_range_radio.toggled.connect(update_ui_state)
@@ -1437,21 +1574,29 @@ class NetworkScannerPlugin(PluginInterface):
         # Initial UI state
         update_ui_state()
         
-        target_group.setLayout(target_layout)
         basic_layout.addWidget(target_group)
         
         # Scan profile
         profile_group = QGroupBox("Scan Profile")
         profile_layout = QVBoxLayout(profile_group)
+        profile_layout.setContentsMargins(10, 15, 10, 10)
+        profile_layout.setSpacing(8)
         
-        # Scan type
+        # Scan type with label in layout
+        scan_type_layout = QHBoxLayout()
+        scan_type_layout.addWidget(QLabel("Scan Type:"))
         scan_type_combo = QComboBox()
         scan_type_combo.addItems(self.settings["scan_type"]["choices"])
         scan_type_combo.setCurrentText(self.settings["scan_type"]["value"])
+        scan_type_layout.addWidget(scan_type_combo, 1)  # Give combo box more space
         
-        # Create a label to show scan description
+        profile_layout.addLayout(scan_type_layout)
+        
+        # Create a label to show scan description with proper styling
         scan_description_label = QLabel()
         scan_description_label.setWordWrap(True)
+        scan_description_label.setStyleSheet("padding: 5px; background-color: rgba(240, 240, 240, 100); border-radius: 4px;")
+        scan_description_label.setMinimumHeight(60)  # Ensure enough height for multi-line descriptions
         
         # Function to update description when scan type changes
         def update_scan_description(index):
@@ -1470,18 +1615,22 @@ class NetworkScannerPlugin(PluginInterface):
         # Call initially to set the description
         update_scan_description(0)
         
-        profile_layout.addWidget(QLabel("Scan Type:"))
-        profile_layout.addWidget(scan_type_combo)
         profile_layout.addWidget(scan_description_label)
         
         basic_layout.addWidget(profile_group)
+        basic_layout.addStretch(1)  # Add stretch to keep widgets at the top
         
         # ==== Advanced Tab ====
         advanced_layout = QVBoxLayout(advanced_tab)
+        advanced_layout.setContentsMargins(10, 10, 10, 10)
+        advanced_layout.setSpacing(12)
         
         # Scan options
         options_group = QGroupBox("Scan Options")
         options_layout = QFormLayout(options_group)
+        options_layout.setContentsMargins(10, 15, 10, 10)
+        options_layout.setSpacing(10)
+        options_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # Allow fields to grow
         
         # OS Detection
         os_detection_check = QCheckBox()
@@ -1509,28 +1658,34 @@ class NetworkScannerPlugin(PluginInterface):
         options_layout.addRow("Custom nmap arguments:", custom_args_edit)
         
         advanced_layout.addWidget(options_group)
-        advanced_layout.addStretch()
+        advanced_layout.addStretch(1)  # Add stretch to keep widgets at the top
         
         # ==== Profiles Tab ====
         profiles_layout = QVBoxLayout(profiles_tab)
+        profiles_layout.setContentsMargins(10, 10, 10, 10)
+        profiles_layout.setSpacing(12)
         
         # Display the current scan profiles
         profiles_label = QLabel("Available Scan Profiles:")
+        profiles_label.setStyleSheet("font-weight: bold; font-size: 13px;")
         profiles_layout.addWidget(profiles_label)
         
         # Create a text display for the profiles
         profiles_text = QTextEdit()
         profiles_text.setReadOnly(True)
+        profiles_text.setStyleSheet("line-height: 1.4;")  # Improve line spacing
         
         # Format the profiles information
         profile_info = ""
         for scan_id, profile in self.settings["scan_profiles"]["value"].items():
-            profile_info += f"<b>{profile.get('name', scan_id)}</b><br>"
-            profile_info += f"Description: {profile.get('description', 'No description')}<br>"
-            profile_info += f"Arguments: <code>{profile.get('arguments', '')}</code><br>"
-            profile_info += f"OS Detection: {'Yes' if profile.get('os_detection', False) else 'No'}<br>"
-            profile_info += f"Port Scan: {'Yes' if profile.get('port_scan', False) else 'No'}<br>"
-            profile_info += f"Timeout: {profile.get('timeout', 300)} seconds<br><br>"
+            profile_info += f"<div style='margin-bottom: 12px; padding: 8px; background-color: rgba(240, 240, 240, 100); border-radius: 4px;'>"
+            profile_info += f"<div style='font-weight: bold; font-size: 14px; color: #444; margin-bottom: 5px;'>{profile.get('name', scan_id)}</div>"
+            profile_info += f"<div style='margin: 3px 0;'><b>Description:</b> {profile.get('description', 'No description')}</div>"
+            profile_info += f"<div style='margin: 3px 0;'><b>Arguments:</b> <code>{profile.get('arguments', '')}</code></div>"
+            profile_info += f"<div style='margin: 3px 0;'><b>OS Detection:</b> {'Yes' if profile.get('os_detection', False) else 'No'}</div>"
+            profile_info += f"<div style='margin: 3px 0;'><b>Port Scan:</b> {'Yes' if profile.get('port_scan', False) else 'No'}</div>"
+            profile_info += f"<div style='margin: 3px 0;'><b>Timeout:</b> {profile.get('timeout', 300)} seconds</div>"
+            profile_info += "</div>"
             
         profiles_text.setHtml(profile_info)
         profiles_layout.addWidget(profiles_text)
@@ -1538,6 +1693,7 @@ class NetworkScannerPlugin(PluginInterface):
         # Help text
         help_label = QLabel("Note: Scan profiles can be edited in the plugin settings.")
         help_label.setWordWrap(True)
+        help_label.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
         profiles_layout.addWidget(help_label)
         
         # Try to get a default value for network range based on the local network
@@ -1917,19 +2073,23 @@ class NetworkScannerPlugin(PluginInterface):
                             netmask = addr.get('netmask')
                             
                             if ip and not ip.startswith('127.'):
+                                # Try to get a friendly name/alias for the interface
+                                interface_alias = self._get_interface_friendly_name(iface)
+                                
                                 # Create interface info
                                 interface_info = {
                                     'name': iface,
+                                    'alias': interface_alias,
                                     'ip': ip,
                                     'netmask': netmask,
-                                    'display': f"{iface}: {ip}"
+                                    'display': f"{interface_alias} [{iface}]: {ip}"
                                 }
                                 
                                 # Try to get subnet in CIDR format
                                 try:
                                     network = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
                                     interface_info['network'] = str(network)
-                                    interface_info['display'] = f"{iface}: {ip} ({network})"
+                                    interface_info['display'] = f"{interface_alias} [{iface}]: {ip} ({network})"
                                 except Exception as e:
                                     logger.debug(f"Error calculating network for {iface}: {e}")
                                 
@@ -1941,6 +2101,50 @@ class NetworkScannerPlugin(PluginInterface):
             logger.error(f"Error getting network interfaces: {e}")
             
         return interfaces
+
+    def _get_interface_friendly_name(self, interface_name):
+        """Get a friendly name for the interface"""
+        # This is a platform-dependent function
+        try:
+            import platform
+            
+            if platform.system() == "Windows":
+                # On Windows, try to get friendly name using WMI
+                try:
+                    import wmi
+                    c = wmi.WMI()
+                    for adapter in c.Win32_NetworkAdapter():
+                        if adapter.NetConnectionID and interface_name.lower() in adapter.NetConnectionID.lower():
+                            return adapter.NetConnectionID
+                        # Sometimes we need to match on the GUID
+                        elif adapter.GUID and interface_name.lower() in adapter.GUID.lower():
+                            return adapter.NetConnectionID or adapter.Name
+                except Exception as e:
+                    logger.debug(f"Error getting Windows interface name: {e}")
+                    
+                # If we couldn't get it from WMI, try some heuristics
+                if "Local Area Connection" in interface_name:
+                    return "Ethernet"
+                elif "Wireless" in interface_name:
+                    return "Wi-Fi"
+                
+            elif platform.system() == "Linux":
+                # On Linux, try to get interface type
+                if interface_name.startswith("eth"):
+                    return "Ethernet"
+                elif interface_name.startswith("wlan") or interface_name.startswith("wifi"):
+                    return "Wi-Fi"
+                elif interface_name.startswith("en"):
+                    return "Ethernet"  # Modern naming scheme
+                elif interface_name.startswith("wl"):
+                    return "Wi-Fi"  # Modern naming scheme
+            
+            # If we got here, use the interface name as the alias
+            return interface_name
+            
+        except Exception as e:
+            logger.debug(f"Error getting interface friendly name: {e}")
+            return interface_name
         
     def _update_interface_choices(self):
         """Update the interface choices in settings"""
@@ -1966,13 +2170,42 @@ class NetworkScannerPlugin(PluginInterface):
             preferred = self.settings.get("preferred_interface", {}).get("value", "")
             if preferred and preferred != "Any (default)":
                 # Extract interface name from the display string
-                interface_name = preferred.split(":")[0].strip()
+                try:
+                    interface_name = preferred.split(":")[0].strip()
+                except Exception as e:
+                    logger.error(f"Error extracting interface name from {preferred}: {e}")
+                    return None
         
         # If we have an interface name, find its subnet
         if interface_name:
-            for iface in getattr(self, "_network_interfaces", []):
-                if iface['name'] == interface_name:
-                    return iface.get('network', None)
+            try:
+                # Make sure we have network interface data
+                if not hasattr(self, "_network_interfaces") or not self._network_interfaces:
+                    # Try to update interfaces
+                    logger.debug("Network interfaces not loaded, attempting to load them now")
+                    self._update_interface_choices()
+                
+                # Search for the interface in our stored data
+                for iface in getattr(self, "_network_interfaces", []):
+                    if iface['name'] == interface_name:
+                        network = iface.get('network', None)
+                        if network:
+                            logger.debug(f"Found subnet {network} for interface {interface_name}")
+                            return network
+                        else:
+                            logger.debug(f"Interface {interface_name} found but has no subnet information")
+                            # Try to calculate it if we have IP and netmask
+                            if 'ip' in iface and 'netmask' in iface:
+                                try:
+                                    network = ipaddress.IPv4Network(f"{iface['ip']}/{iface['netmask']}", strict=False)
+                                    logger.debug(f"Calculated subnet {network} for interface {interface_name}")
+                                    return str(network)
+                                except Exception as e:
+                                    logger.debug(f"Error calculating network for {interface_name}: {e}")
+                
+                logger.debug(f"No matching interface found for {interface_name}")
+            except Exception as e:
+                logger.error(f"Error getting subnet for interface {interface_name}: {e}")
         
         return None
 
@@ -1981,19 +2214,25 @@ class NetworkScannerPlugin(PluginInterface):
         # Create main settings page (General)
         main_settings = QWidget()
         main_layout = QVBoxLayout(main_settings)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(15)  # Increase spacing between widgets
         
         # General settings group
         general_group = QGroupBox("General Settings")
         general_layout = QFormLayout(general_group)
+        general_layout.setContentsMargins(12, 15, 12, 12)
+        general_layout.setSpacing(10)  # Increase spacing between form rows
+        general_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # Allow fields to expand
         
         # Refresh interfaces button
         refresh_interfaces_layout = QHBoxLayout()
+        refresh_interfaces_layout.setSpacing(8)  # Add spacing between elements
         interface_combo = QComboBox()
         interface_combo.addItems(self.settings["preferred_interface"]["choices"])
         interface_combo.setCurrentText(self.settings["preferred_interface"]["value"])
         refresh_interfaces_button = QPushButton("Refresh")
         refresh_interfaces_button.clicked.connect(self._update_interface_choices_and_refresh_ui)
-        refresh_interfaces_layout.addWidget(interface_combo)
+        refresh_interfaces_layout.addWidget(interface_combo, 1)  # Give the combo box more space
         refresh_interfaces_layout.addWidget(refresh_interfaces_button)
         general_layout.addRow("Preferred Interface:", refresh_interfaces_layout)
         
@@ -2016,6 +2255,9 @@ class NetworkScannerPlugin(PluginInterface):
         # Advanced settings group
         advanced_group = QGroupBox("Advanced Settings")
         advanced_layout = QFormLayout(advanced_group)
+        advanced_layout.setContentsMargins(12, 15, 12, 12)
+        advanced_layout.setSpacing(10)  # Increase spacing between form rows
+        advanced_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # Allow fields to expand
         
         # OS Detection
         os_detection_check = QCheckBox()
@@ -2059,13 +2301,15 @@ class NetworkScannerPlugin(PluginInterface):
         main_layout.addWidget(advanced_group)
         
         # Add a spacer at the bottom to push everything up
-        main_layout.addStretch()
+        main_layout.addStretch(1)
         
         # =======================================================
         # Create a separate profiles settings page
         # =======================================================
         profiles_page = QWidget()
         profiles_page_layout = QVBoxLayout(profiles_page)
+        profiles_page_layout.setContentsMargins(10, 10, 10, 10)
+        profiles_page_layout.setSpacing(15)  # Increase spacing between widgets
         
         # Function to refresh UI with updated interfaces
         def _update_interface_choices_and_refresh_ui():
@@ -2074,20 +2318,24 @@ class NetworkScannerPlugin(PluginInterface):
             interface_combo.addItems(self.settings["preferred_interface"]["choices"])
             interface_combo.setCurrentText(self.settings["preferred_interface"]["value"])
         
-        # Explanation label
+        # Explanation label with better styling
         explanation_label = QLabel(
             "Scan profiles define different scanning configurations. "
             "Select a profile to view or edit its settings, or create a new profile."
         )
         explanation_label.setWordWrap(True)
+        explanation_label.setStyleSheet("padding: 8px; background-color: #f0f0f0; border-radius: 4px;")
         profiles_page_layout.addWidget(explanation_label)
         
         # Profiles management section
         profiles_section = QWidget()
         profiles_section_layout = QVBoxLayout(profiles_section)
+        profiles_section_layout.setContentsMargins(0, 0, 0, 0)
+        profiles_section_layout.setSpacing(12)
         
         # Profiles list with Add New option
         profiles_list_layout = QHBoxLayout()
+        profiles_list_layout.setSpacing(10)
         profiles_list = QComboBox()
         
         # Add all profiles plus a special "Add New..." option
@@ -2102,6 +2350,9 @@ class NetworkScannerPlugin(PluginInterface):
         # Profile details form
         profile_details_group = QGroupBox("Profile Details")
         profile_form = QFormLayout(profile_details_group)
+        profile_form.setContentsMargins(12, 15, 12, 12)
+        profile_form.setSpacing(10)  # Increase spacing between form rows
+        profile_form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # Allow fields to expand
         
         profile_name = QLineEdit()
         profile_form.addRow("Display Name:", profile_name)
@@ -2344,6 +2595,391 @@ class NetworkScannerPlugin(PluginInterface):
         
         # Return both settings pages
         return [("General", main_settings), ("Scan Profiles", profiles_page)]
+
+    def _update_interface_choices_and_refresh_ui(self):
+        """Update interface choices and refresh the UI"""
+        try:
+            # Update the interface choices
+            interfaces = self._update_interface_choices()
+            
+            # Update the UI combobox if it exists
+            if hasattr(self, "interface_combo") and self.interface_combo is not None:
+                # Remember current selection to restore it if possible
+                current_selection = self.interface_combo.currentText()
+                
+                # Clear and repopulate
+                self.interface_combo.clear()
+                self.interface_combo.addItems(self.settings["preferred_interface"]["choices"])
+                
+                # Try to restore previous selection, otherwise use the default
+                if current_selection and current_selection in self.settings["preferred_interface"]["choices"]:
+                    self.interface_combo.setCurrentText(current_selection)
+                elif self.settings["preferred_interface"]["value"] in self.settings["preferred_interface"]["choices"]:
+                    self.interface_combo.setCurrentText(self.settings["preferred_interface"]["value"])
+                
+                # Log the update
+                logger.debug(f"Updated interface list, found {len(interfaces)} interfaces")
+                
+                # Update network range based on selected interface
+                self._update_network_range_from_interface(self.interface_combo.currentIndex())
+                
+            return True
+        except Exception as e:
+            logger.error(f"Error updating interface choices: {e}")
+            return False
+
+    def _update_network_range_from_interface(self, index):
+        """Update network range based on selected interface"""
+        try:
+            # Check if the UI elements exist
+            if not hasattr(self, "interface_combo") or not hasattr(self, "network_range_edit"):
+                logger.debug("UI elements not yet created, skipping network range update")
+                return
+            
+            selected_if_text = self.interface_combo.currentText()
+            
+            # Skip "Any (default)" option
+            if not selected_if_text or selected_if_text == "Any (default)":
+                logger.debug("No specific interface selected, not updating network range")
+                return
+                
+            # Split the interface text to get the interface name
+            # Format is typically "eth0: 192.168.1.100 (192.168.1.0/24)"
+            interface_parts = selected_if_text.split(":")
+            if len(interface_parts) < 1:
+                logger.warning(f"Invalid interface format: {selected_if_text}")
+                return
+                
+            # Get just the interface name
+            selected_if = interface_parts[0].strip()
+            
+            # Try to get the subnet for this interface
+            subnet = self._get_interface_subnet(selected_if)
+            
+            if subnet:
+                # Set the network range text field and log it
+                self.network_range_edit.setText(subnet)
+                logger.debug(f"Updated network range to {subnet} from interface {selected_if}")
+                return True
+            else:
+                logger.warning(f"Could not determine subnet for interface {selected_if}")
+        
+            # If no subnet was found from interface, try to get one from local IP
+            try:
+                import socket
+                hostname = socket.gethostname()
+                ip_address = socket.gethostbyname(hostname)
+                network = ipaddress.IPv4Network(f"{ip_address}/24", strict=False)
+                self.network_range_edit.setText(str(network))
+                logger.debug(f"Used default network {network} from local IP {ip_address}")
+                return True
+            except Exception as e:
+                logger.debug(f"Error determining default network range: {e}")
+        except Exception as e:
+            logger.error(f"Error updating network range from interface: {e}")
+            
+        return False
+
+    @safe_action_wrapper
+    def on_scan_type_manager_action(self):
+        """Handle scan type manager action"""
+        self._show_scan_type_manager_dialog()
+        
+    def _show_scan_type_manager_dialog(self):
+        """Show the scan type manager dialog"""
+        dialog = QDialog(self.main_window)
+        dialog.setWindowTitle("Scan Type Manager")
+        dialog.setMinimumWidth(600)
+        dialog.setMinimumHeight(500)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(12)
+        
+        # Add description
+        description_label = QLabel(
+            "Manage your scan profiles. You can create new profiles, edit existing ones, or delete custom profiles."
+        )
+        description_label.setWordWrap(True)
+        description_label.setStyleSheet("padding: 8px; background-color: #f0f0f0; border-radius: 4px;")
+        layout.addWidget(description_label)
+        
+        # Create a table to display profiles
+        profile_table = QTableWidget()
+        profile_table.setColumnCount(5)
+        profile_table.setHorizontalHeaderLabels(["Name", "Description", "Arguments", "OS Detection", "Port Scan"])
+        profile_table.horizontalHeader().setStretchLastSection(True)
+        profile_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        profile_table.setSelectionBehavior(QTableWidget.SelectRows)
+        profile_table.setSelectionMode(QTableWidget.SingleSelection)
+        layout.addWidget(profile_table)
+        
+        # Function to refresh the table
+        def refresh_table():
+            profile_table.setRowCount(0)
+            profiles = self.settings["scan_profiles"]["value"]
+            
+            for i, (profile_id, profile) in enumerate(profiles.items()):
+                is_builtin = profile_id in ["quick", "standard", "comprehensive", "stealth", "service"]
+                
+                profile_table.insertRow(i)
+                
+                # Name column
+                name_item = QTableWidgetItem(profile.get("name", profile_id))
+                if is_builtin:
+                    name_item.setToolTip("Built-in profile (can't be deleted)")
+                    # Set a background color for built-in profiles
+                    name_item.setBackground(QColor("#f0f0f0"))
+                name_item.setData(Qt.UserRole, profile_id)  # Store profile ID
+                profile_table.setItem(i, 0, name_item)
+                
+                # Description column
+                profile_table.setItem(i, 1, QTableWidgetItem(profile.get("description", "")))
+                
+                # Arguments column
+                profile_table.setItem(i, 2, QTableWidgetItem(profile.get("arguments", "")))
+                
+                # OS Detection column
+                os_detection_item = QTableWidgetItem("Yes" if profile.get("os_detection", False) else "No")
+                os_detection_item.setTextAlignment(Qt.AlignCenter)
+                profile_table.setItem(i, 3, os_detection_item)
+                
+                # Port Scan column
+                port_scan_item = QTableWidgetItem("Yes" if profile.get("port_scan", False) else "No")
+                port_scan_item.setTextAlignment(Qt.AlignCenter)
+                profile_table.setItem(i, 4, port_scan_item)
+                
+            profile_table.resizeColumnsToContents()
+            # Ensure description column gets some minimum width
+            if profile_table.columnWidth(1) < 150:
+                profile_table.setColumnWidth(1, 150)
+        
+        # First populate the table
+        refresh_table()
+        
+        # Button layout
+        button_layout = QHBoxLayout()
+        new_button = QPushButton("New Profile")
+        edit_button = QPushButton("Edit Profile")
+        delete_button = QPushButton("Delete Profile")
+        # Initially disable edit/delete until a row is selected
+        edit_button.setEnabled(False)
+        delete_button.setEnabled(False)
+        
+        button_layout.addWidget(new_button)
+        button_layout.addWidget(edit_button)
+        button_layout.addWidget(delete_button)
+        button_layout.addStretch(1)
+        
+        layout.addLayout(button_layout)
+        
+        # Add dialog buttons
+        dialog_buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        dialog_buttons.rejected.connect(dialog.reject)
+        layout.addWidget(dialog_buttons)
+        
+        # Handle selection change
+        def on_selection_changed():
+            selected_indexes = profile_table.selectedIndexes()
+            if selected_indexes:
+                row = selected_indexes[0].row()
+                profile_id = profile_table.item(row, 0).data(Qt.UserRole)
+                is_builtin = profile_id in ["quick", "standard", "comprehensive", "stealth", "service"]
+                
+                edit_button.setEnabled(True)
+                delete_button.setEnabled(not is_builtin)
+            else:
+                edit_button.setEnabled(False)
+                delete_button.setEnabled(False)
+        
+        profile_table.itemSelectionChanged.connect(on_selection_changed)
+        
+        # Show edit dialog for a profile
+        def edit_profile_dialog(profile_id=None, is_new=False):
+            edit_dialog = QDialog(dialog)
+            edit_dialog.setWindowTitle("New Scan Profile" if is_new else "Edit Scan Profile")
+            edit_dialog.setMinimumWidth(450)
+            
+            edit_layout = QVBoxLayout(edit_dialog)
+            
+            # Form layout
+            form_layout = QFormLayout()
+            form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+            
+            # Profile ID (for new profiles only)
+            profile_id_edit = QLineEdit()
+            if is_new:
+                form_layout.addRow("Profile ID:", profile_id_edit)
+                profile_id_edit.setPlaceholderText("e.g., custom_scan (no spaces, lowercase)")
+            
+            # Name
+            profile_name_edit = QLineEdit()
+            form_layout.addRow("Display Name:", profile_name_edit)
+            
+            # Description
+            profile_desc_edit = QLineEdit()
+            form_layout.addRow("Description:", profile_desc_edit)
+            
+            # Arguments
+            profile_args_edit = QLineEdit()
+            form_layout.addRow("Arguments:", profile_args_edit)
+            profile_args_edit.setPlaceholderText("e.g., -sn -F")
+            
+            # OS Detection
+            profile_os_check = QCheckBox()
+            form_layout.addRow("OS Detection:", profile_os_check)
+            
+            # Port Scanning
+            profile_port_check = QCheckBox()
+            form_layout.addRow("Port Scanning:", profile_port_check)
+            
+            # Timeout
+            profile_timeout_edit = QLineEdit()
+            profile_timeout_edit.setValidator(QIntValidator(30, 600))
+            form_layout.addRow("Timeout (seconds):", profile_timeout_edit)
+            
+            # If editing, populate with existing values
+            if not is_new and profile_id:
+                profile = self.settings["scan_profiles"]["value"].get(profile_id, {})
+                profile_name_edit.setText(profile.get("name", ""))
+                profile_desc_edit.setText(profile.get("description", ""))
+                profile_args_edit.setText(profile.get("arguments", ""))
+                profile_os_check.setChecked(profile.get("os_detection", False))
+                profile_port_check.setChecked(profile.get("port_scan", False))
+                profile_timeout_edit.setText(str(profile.get("timeout", 300)))
+            
+            edit_layout.addLayout(form_layout)
+            
+            # Add dialog buttons
+            button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            button_box.accepted.connect(edit_dialog.accept)
+            button_box.rejected.connect(edit_dialog.reject)
+            edit_layout.addWidget(button_box)
+            
+            # Show dialog and handle result
+            if edit_dialog.exec() == QDialog.Accepted:
+                # Get values from form
+                if is_new:
+                    new_id = profile_id_edit.text().strip().lower().replace(" ", "_")
+                    if not new_id:
+                        QMessageBox.warning(dialog, "Invalid ID", "Profile ID cannot be empty.")
+                        return
+                    
+                    # Check if ID exists
+                    if new_id in self.settings["scan_profiles"]["value"]:
+                        QMessageBox.warning(dialog, "Profile Exists", f"A profile with ID '{new_id}' already exists.")
+                        return
+                    
+                    profile_id = new_id
+                
+                # Create updated profile
+                updated_profile = {
+                    "name": profile_name_edit.text(),
+                    "description": profile_desc_edit.text(),
+                    "arguments": profile_args_edit.text(),
+                    "os_detection": profile_os_check.isChecked(),
+                    "port_scan": profile_port_check.isChecked(),
+                    "timeout": int(profile_timeout_edit.text() or "300")
+                }
+                
+                # Update settings
+                profiles = self.settings["scan_profiles"]["value"].copy()
+                profiles[profile_id] = updated_profile
+                self.settings["scan_profiles"]["value"] = profiles
+                
+                # Update scan type choices if needed
+                if profile_id not in self.settings["scan_type"]["choices"]:
+                    choices = list(self.settings["scan_type"]["choices"])
+                    choices.append(profile_id)
+                    self.settings["scan_type"]["choices"] = choices
+                    
+                    # Update the scan type combo box
+                    if hasattr(self, "scan_type_combo") and self.scan_type_combo is not None:
+                        self.scan_type_combo.clear()
+                        self.scan_type_combo.addItems(choices)
+                
+                # Refresh the table
+                refresh_table()
+                
+                return True
+            
+            return False
+            
+        # Handle new profile button
+        def on_new_profile():
+            edit_profile_dialog(is_new=True)
+            
+        # Handle edit profile button
+        def on_edit_profile():
+            selected_indexes = profile_table.selectedIndexes()
+            if not selected_indexes:
+                return
+                
+            row = selected_indexes[0].row()
+            profile_id = profile_table.item(row, 0).data(Qt.UserRole)
+            
+            edit_profile_dialog(profile_id, is_new=False)
+            
+        # Handle delete profile button
+        def on_delete_profile():
+            selected_indexes = profile_table.selectedIndexes()
+            if not selected_indexes:
+                return
+                
+            row = selected_indexes[0].row()
+            profile_id = profile_table.item(row, 0).data(Qt.UserRole)
+            
+            # Check if built-in
+            if profile_id in ["quick", "standard", "comprehensive", "stealth", "service"]:
+                QMessageBox.warning(dialog, "Cannot Delete", "Built-in profiles cannot be deleted.")
+                return
+                
+            # Confirm deletion
+            result = QMessageBox.question(
+                dialog, 
+                "Confirm Deletion",
+                f"Are you sure you want to delete the profile '{profile_id}'?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if result == QMessageBox.Yes:
+                # Delete the profile
+                profiles = self.settings["scan_profiles"]["value"].copy()
+                if profile_id in profiles:
+                    del profiles[profile_id]
+                
+                # Update settings
+                self.settings["scan_profiles"]["value"] = profiles
+                
+                # Remove from choices if present
+                if profile_id in self.settings["scan_type"]["choices"]:
+                    choices = list(self.settings["scan_type"]["choices"])
+                    choices.remove(profile_id)
+                    self.settings["scan_type"]["choices"] = choices
+                    
+                    # Update the scan type combo box
+                    if hasattr(self, "scan_type_combo") and self.scan_type_combo is not None:
+                        self.scan_type_combo.clear()
+                        self.scan_type_combo.addItems(choices)
+                
+                # Refresh the table
+                refresh_table()
+        
+        # Connect button signals
+        new_button.clicked.connect(on_new_profile)
+        edit_button.clicked.connect(on_edit_profile)
+        delete_button.clicked.connect(on_delete_profile)
+        
+        # Allow double-click to edit
+        def on_double_click(item):
+            row = item.row()
+            profile_id = profile_table.item(row, 0).data(Qt.UserRole)
+            edit_profile_dialog(profile_id, is_new=False)
+            
+        profile_table.itemDoubleClicked.connect(on_double_click)
+        
+        # Show the dialog
+        dialog.exec_()
 
 
 # Create plugin instance (will be loaded by the plugin manager)

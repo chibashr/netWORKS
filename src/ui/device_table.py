@@ -684,7 +684,7 @@ class DeviceTableView(QTableView):
         is_new = device is None
         dialog = QDialog()
         dialog.setWindowTitle(f"{'Add' if is_new else 'Edit'} Device Properties")
-        dialog.resize(600, 500)
+        dialog.resize(600, 400)  # Reduce initial height from 500 to 400
         
         layout = QVBoxLayout(dialog)
         
@@ -851,6 +851,14 @@ class DeviceTableView(QTableView):
         custom_props_layout = QFormLayout()
         custom_props = {}
         
+        # Create a scroll area for custom properties
+        custom_props_scroll = QScrollArea()
+        custom_props_scroll.setWidgetResizable(True)
+        custom_props_widget = QWidget()
+        custom_props_widget.setLayout(custom_props_layout)
+        custom_props_scroll.setWidget(custom_props_widget)
+        custom_props_scroll.setMaximumHeight(200)  # Limit maximum height
+        
         # Add existing custom properties if editing a device
         current_custom_props = []
         core_props = ["id", "alias", "hostname", "ip_address", "mac_address", "status", "notes", "tags"]
@@ -868,6 +876,7 @@ class DeviceTableView(QTableView):
                     
                     # Add to table button
                     show_in_table_btn = QPushButton("Show in Table")
+                    show_in_table_btn.setMaximumWidth(100)
                     show_in_table_btn.setToolTip("Add this property as a column in the device table")
                     prop_key = key  # Create a local copy of the key for the closure
                     
@@ -876,7 +885,7 @@ class DeviceTableView(QTableView):
                     
                     custom_props_layout.addRow(f"{key}:", prop_layout)
         
-        custom_layout.addLayout(custom_props_layout)
+        custom_layout.addWidget(custom_props_scroll)
         
         # Find common custom properties from other devices
         suggested_props = []
@@ -903,24 +912,71 @@ class DeviceTableView(QTableView):
                 suggestions_label.setWordWrap(True)
                 suggestions_layout.addWidget(suggestions_label)
                 
-                for prop_key, prop_value, source_device in suggested_props:
-                    # Create a row for each suggested property
-                    prop_widget = QWidget()
-                    prop_layout = QHBoxLayout(prop_widget)
-                    prop_layout.setContentsMargins(0, 0, 0, 0)
-                    
-                    # Add checkbox to select the property
-                    checkbox = QCheckBox(f"{prop_key} ({source_device.get_property('alias', 'Unknown')})")
+                # Create a scroll area for the suggested properties
+                scroll_area = QScrollArea()
+                scroll_area.setWidgetResizable(True)
+                scroll_area.setMaximumHeight(200)  # Limit maximum height
+                
+                # Create a table for suggested properties
+                props_table = QTableWidget()
+                props_table.setColumnCount(3)  # Checkbox, Property Name, Add Button
+                props_table.setHorizontalHeaderLabels(["Use", "Property", "Add"])
+                props_table.setRowCount(len(suggested_props))
+                props_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+                props_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+                props_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+                props_table.verticalHeader().setVisible(False)
+                props_table.setAlternatingRowColors(True)
+                props_table.setShowGrid(True)
+                props_table.setSelectionMode(QTableWidget.NoSelection)
+                props_table.setFocusPolicy(Qt.NoFocus)
+                props_table.setEditTriggers(QTableWidget.NoEditTriggers)
+                
+                # Set compact row height
+                props_table.verticalHeader().setDefaultSectionSize(28)
+                
+                # Add suggested properties to the table
+                checkbox_map = {}  # Map to store checkboxes by row
+                button_map = {}    # Map to store buttons by row
+                
+                for row, (prop_key, prop_value, source_device) in enumerate(suggested_props):
+                    # Checkbox column
+                    checkbox = QCheckBox()
                     checkbox.setToolTip(f"Value from {source_device.get_property('alias', 'Unknown')}: {prop_value}")
+                    checkbox_widget = QWidget()
+                    checkbox_layout = QHBoxLayout(checkbox_widget)
+                    checkbox_layout.addWidget(checkbox)
+                    checkbox_layout.setAlignment(Qt.AlignCenter)
+                    checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                    props_table.setCellWidget(row, 0, checkbox_widget)
+                    checkbox_map[row] = checkbox
                     
-                    # Add button to add this property
-                    add_button = QPushButton("Add")
+                    # Property name column
+                    name_item = QTableWidgetItem(f"{prop_key} ({source_device.get_property('alias', 'Unknown')})")
+                    name_item.setToolTip(f"Value: {prop_value}")
+                    name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+                    props_table.setItem(row, 1, name_item)
+                    
+                    # Add button column
+                    add_button = QPushButton("+")
+                    add_button.setMaximumWidth(30)
+                    add_button.setMaximumHeight(25)
                     add_button.setToolTip(f"Add this property with value: {prop_value}")
                     
+                    # Store data for the button
                     prop_key_copy = prop_key
                     prop_value_copy = prop_value
                     
-                    def make_add_handler(key, value, checkbox):
+                    # Create widget to center the button
+                    button_widget = QWidget()
+                    button_layout = QHBoxLayout(button_widget)
+                    button_layout.addWidget(add_button)
+                    button_layout.setAlignment(Qt.AlignCenter)
+                    button_layout.setContentsMargins(0, 0, 0, 0)
+                    props_table.setCellWidget(row, 2, button_widget)
+                    button_map[row] = add_button
+                    
+                    def make_add_handler(key, value, row):
                         def handle_add():
                             # Add the property if not already added
                             if key not in custom_props:
@@ -933,6 +989,7 @@ class DeviceTableView(QTableView):
                                 
                                 # Add to table button
                                 show_in_table_btn = QPushButton("Show in Table")
+                                show_in_table_btn.setMaximumWidth(100)
                                 show_in_table_btn.setToolTip("Add this property as a column in the device table")
                                 
                                 show_in_table_btn.clicked.connect(make_show_in_table_handler(key))
@@ -941,38 +998,35 @@ class DeviceTableView(QTableView):
                                 custom_props_layout.addRow(f"{key}:", prop_layout)
                                 
                                 # Disable the checkbox and button
-                                checkbox.setEnabled(False)
-                                checkbox.setText(f"{key} (Added)")
-                                add_button.setEnabled(False)
+                                checkbox_map[row].setEnabled(False)
+                                button_map[row].setEnabled(False)
+                                name_item = props_table.item(row, 1)
+                                old_text = name_item.text()
+                                name_item.setText(f"{key} (Added)")
                         return handle_add
                     
-                    add_button.clicked.connect(make_add_handler(prop_key_copy, prop_value_copy, checkbox))
-                    
-                    prop_layout.addWidget(checkbox)
-                    prop_layout.addWidget(add_button)
-                    prop_layout.addStretch()
-                    
-                    suggestions_layout.addWidget(prop_widget)
+                    add_button.clicked.connect(make_add_handler(prop_key_copy, prop_value_copy, row))
+                
+                # Set the table as the scroll area's widget
+                scroll_area.setWidget(props_table)
+                suggestions_layout.addWidget(scroll_area)
                 
                 # Add a button to add all selected properties
-                add_selected_button = QPushButton("Add Selected Properties")
+                add_selected_button = QPushButton("Add Selected")
+                add_selected_button.setToolTip("Add all checked properties at once")
+                add_selected_button.setMaximumWidth(120)
                 suggestions_layout.addWidget(add_selected_button)
                 
                 # Handler to add all selected properties
                 def add_selected_properties():
                     # Find all checked properties
-                    for i in range(suggestions_layout.count()):
-                        widget = suggestions_layout.itemAt(i).widget()
-                        if isinstance(widget, QWidget) and not isinstance(widget, (QLabel, QPushButton)):
-                            # Find the checkbox
-                            checkbox = None
-                            for child in widget.findChildren(QCheckBox):
-                                checkbox = child
-                                break
-                            
-                            if checkbox and checkbox.isChecked() and checkbox.isEnabled():
-                                # Extract the property key and value
-                                text = checkbox.text()
+                    for row in range(props_table.rowCount()):
+                        checkbox = checkbox_map.get(row)
+                        if checkbox and checkbox.isChecked() and checkbox.isEnabled():
+                            # Get the property key from the table
+                            name_item = props_table.item(row, 1)
+                            if name_item:
+                                text = name_item.text()
                                 key = text.split(" (")[0]
                                 
                                 # Find the matching suggested property
@@ -988,6 +1042,7 @@ class DeviceTableView(QTableView):
                                         
                                         # Add to table button
                                         show_in_table_btn = QPushButton("Show in Table")
+                                        show_in_table_btn.setMaximumWidth(100)
                                         show_in_table_btn.setToolTip("Add this property as a column in the device table")
                                         
                                         show_in_table_btn.clicked.connect(make_show_in_table_handler(key))
@@ -995,9 +1050,11 @@ class DeviceTableView(QTableView):
                                         
                                         custom_props_layout.addRow(f"{key}:", prop_layout)
                                         
-                                        # Disable the checkbox
+                                        # Disable the checkbox and button
                                         checkbox.setEnabled(False)
-                                        checkbox.setText(f"{key} (Added)")
+                                        if row in button_map:
+                                            button_map[row].setEnabled(False)
+                                        name_item.setText(f"{key} (Added)")
                                         break
                 
                 add_selected_button.clicked.connect(add_selected_properties)
@@ -1005,19 +1062,24 @@ class DeviceTableView(QTableView):
                 # Add the suggestions group to the custom tab
                 custom_layout.addWidget(suggestions_group)
         
-        # Add custom property controls
-        add_prop_layout = QHBoxLayout()
+        # Add custom property controls with a form layout for better alignment
+        add_prop_group = QGroupBox("Add New Property")
+        add_prop_layout = QHBoxLayout(add_prop_group)
+        add_prop_layout.setContentsMargins(10, 15, 10, 10)
+        
         new_prop_name = QLineEdit()
         new_prop_name.setPlaceholderText("Property Name")
         new_prop_value = QLineEdit()
         new_prop_value.setPlaceholderText("Property Value")
-        add_prop_button = QPushButton("Add Property")
+        add_prop_button = QPushButton("Add")
+        add_prop_button.setMaximumWidth(60)
+        add_prop_button.setToolTip("Add a new custom property")
         
         add_prop_layout.addWidget(new_prop_name)
         add_prop_layout.addWidget(new_prop_value)
         add_prop_layout.addWidget(add_prop_button)
         
-        custom_layout.addLayout(add_prop_layout)
+        custom_layout.addWidget(add_prop_group)
         
         # Help text for custom properties
         help_text = QLabel("Custom properties can be used to store additional information about a device.\n"
@@ -1061,6 +1123,7 @@ class DeviceTableView(QTableView):
             
             # Add to table button
             show_in_table_btn = QPushButton("Show in Table")
+            show_in_table_btn.setMaximumWidth(100)
             show_in_table_btn.setToolTip("Add this property as a column in the device table")
             
             show_in_table_btn.clicked.connect(make_show_in_table_handler(prop_name))
@@ -1247,17 +1310,30 @@ class DeviceTableView(QTableView):
             return
             
         if devices:
+            # Determine if the callback function is from a plugin 
+            # by checking if it comes from a module with 'plugins' in its path
+            is_plugin_callback = False
+            if hasattr(callback, '__module__'):
+                module_parts = callback.__module__.split('.')
+                is_plugin_callback = 'plugins' in module_parts
+                
             # Check if devices is a list or a single device
             if isinstance(devices, list):
-                if len(devices) == 1:
-                    # Single device from a list
+                if len(devices) == 1 and not is_plugin_callback:
+                    # Single device from a list - only for internal actions
+                    # Plugin actions should always receive a list even for a single device
                     callback(devices[0])
                 else:
-                    # Multiple devices
+                    # Multiple devices or plugin callback
                     callback(devices)
             else:
                 # Single device (not in a list)
-                callback(devices)
+                if is_plugin_callback:
+                    # For plugin callbacks, always convert to a list
+                    callback([devices])
+                else:
+                    # For internal callbacks, pass as is
+                    callback(devices)
         else:
             # No device selected
             callback(None)

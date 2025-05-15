@@ -437,7 +437,7 @@ class CommandManagerPlugin(PluginInterface):
         
     def _on_device_context_credentials(self, devices):
         """Handle manage credentials context menu item"""
-        # Fix: Check if devices is a single Device object or a list
+        # Fix: Ensure devices is a list
         if not isinstance(devices, list):
             # Convert to a list with a single device
             devices = [devices]
