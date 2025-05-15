@@ -1,7 +1,7 @@
 {
   "id": "network_scanner",
   "name": "Network Scanner",
-  "version": "1.2.1",
+  "version": "1.2.3",
   "description": "A plugin that scans the network for devices and adds them to NetWORKS",
   "author": "NetWORKS Team",
   "entry_point": "network_scanner.py",
@@ -19,6 +19,25 @@
   },
   "dependencies": [],
   "changelog": [
+    {
+      "version": "1.2.3",
+      "date": "2025-05-28",
+      "changes": [
+        "Fixed critical bug: Only add devices that actually return data during a scan",
+        "Improved filtering to exclude non-responsive hosts from scan results",
+        "Added verification of host status before adding to inventory"
+      ]
+    },
+    {
+      "version": "1.2.2",
+      "date": "2025-05-27",
+      "changes": [
+        "Fixed stop scan functionality to properly terminate nmap processes",
+        "Added real-time status updates during scanning for better feedback",
+        "Added new Quick Ping scan option that's faster than nmap for simple discovery",
+        "Improved progress feedback with detailed status messages during scans"
+      ]
+    },
     {
       "version": "1.2.1",
       "date": "2025-05-26",

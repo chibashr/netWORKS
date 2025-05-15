@@ -763,22 +763,18 @@ class DeviceTableView(QTableView):
         tags_tab = QWidget()
         tags_layout = QVBoxLayout(tags_tab)
         
-        # Search filter for tags
+        # Add a label for the tag list
+        tags_layout.addWidget(QLabel("Add these tags to all selected devices:"))
+
+        # Add a filter for tags
         tags_filter_layout = QHBoxLayout()
-        tags_filter_label = QLabel("Search Tags:")
+        tags_filter_label = QLabel("Filter:")
         tags_filter_edit = QLineEdit()
-        tags_filter_edit.setPlaceholderText("Filter tags...")
+        tags_filter_edit.setPlaceholderText("Type to filter tags...")
         tags_filter_layout.addWidget(tags_filter_label)
         tags_filter_layout.addWidget(tags_filter_edit)
         tags_layout.addLayout(tags_filter_layout)
-        
-        # Create a scroll area for tags to prevent infinite vertical stretching
-        tags_scroll = QScrollArea()
-        tags_scroll.setWidgetResizable(True)
-        tags_scroll.setMaximumHeight(300)  # Limit maximum height
-        tags_container = QWidget()
-        tags_container_layout = QVBoxLayout(tags_container)
-        
+
         # Tag list
         tags_list = QListWidget()
         tags_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -789,13 +785,8 @@ class DeviceTableView(QTableView):
             item = QListWidgetItem(tag)
             tags_list.addItem(item)
         
-        # Set a reasonable minimum size for the tags list
-        tags_list.setMinimumHeight(150)
-        
-        tags_container_layout.addWidget(tags_list)
-        tags_scroll.setWidget(tags_container)
-        tags_layout.addWidget(tags_scroll)
-        
+        tags_layout.addWidget(tags_list)
+
         # Tag controls
         tags_control_layout = QHBoxLayout()
         new_tag = QLineEdit()
@@ -1408,13 +1399,24 @@ class DeviceTableView(QTableView):
         tags_tab = QWidget()
         tags_layout = QVBoxLayout(tags_tab)
         
+        # Add a label for the tag list
+        tags_layout.addWidget(QLabel("Add these tags to all selected devices:"))
+
+        # Add a filter for tags
+        tags_filter_layout = QHBoxLayout()
+        tags_filter_label = QLabel("Filter:")
+        tags_filter_edit = QLineEdit()
+        tags_filter_edit.setPlaceholderText("Type to filter tags...")
+        tags_filter_layout.addWidget(tags_filter_label)
+        tags_filter_layout.addWidget(tags_filter_edit)
+        tags_layout.addLayout(tags_filter_layout)
+
         # Tag list
         tags_list = QListWidget()
         tags_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
             
-        tags_layout.addWidget(QLabel("Add these tags to all selected devices:"))
         tags_layout.addWidget(tags_list)
-        
+
         # Tag controls
         tags_control_layout = QHBoxLayout()
         new_tag = QLineEdit()

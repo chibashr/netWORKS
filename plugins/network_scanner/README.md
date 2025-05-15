@@ -10,6 +10,7 @@ The Network Scanner plugin allows NetWORKS to discover devices on your network u
 - **Subnet Scanning**: Quickly scan the subnet of your selected interface
 - **Device Rescanning**: Rescan specific devices to update their information
 - **Multiple Scan Types**: Choose from quick, standard, or comprehensive scan profiles
+- **Quick Ping Scan**: Ultra-fast host discovery without nmap for immediate results
 - **Granular Permissions**: Configure OS detection, port scanning, and other options
 - **Custom Arguments**: Advanced users can provide custom nmap arguments
 - **Elevated Permissions**: Optionally use sudo/administrator privileges for more accurate scans
@@ -53,7 +54,8 @@ The Network Scanner plugin allows NetWORKS to discover devices on your network u
    - Choose a scan type from the dropdown
    - Adjust OS detection and port scanning options as needed
 3. Click "Start Scan" to begin scanning using the current panel settings.
-4. For more advanced options, click "Advanced..." to open the full scan dialog.
+4. For faster discovery without nmap, click "Quick Ping" to perform a basic ping scan.
+5. For more advanced options, click "Advanced..." to open the full scan dialog.
 
 ### Scanning from the Context Menu
 
@@ -104,6 +106,17 @@ Discovered devices are automatically added to the NetWORKS device inventory with
 See the [API.md](API.md) file for information on programmatically integrating with the Network Scanner plugin.
 
 ## Changelog
+
+### Version 1.2.3 (2025-05-28)
+- Fixed critical bug: Only add devices that actually return data during a scan
+- Improved filtering to exclude non-responsive hosts from scan results
+- Added verification of host status before adding to inventory
+
+### Version 1.2.2 (2025-05-27)
+- Fixed stop scan functionality to properly terminate nmap processes
+- Added real-time status updates during scanning for better feedback
+- Added new Quick Ping scan option that's faster than nmap for simple discovery
+- Improved progress feedback with detailed status messages during scans
 
 ### Version 1.2.1 (2025-05-26)
 - Fixed critical bug causing nmap to time out due to duplicate scan arguments

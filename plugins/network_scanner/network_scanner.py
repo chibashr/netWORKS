@@ -180,9 +180,15 @@ class ScannerWorker(QObject):
             # Log the scan command
             logger.info(f"Starting network scan of {self.network_range} with arguments: {arguments}")
             
+            # Add verbose output if not already specified to provide more feedback
+            if "-v" not in arguments:
+                arguments += " -v"
+                
             # Tracking variables
             scan_start_time = time.time()
             devices_found = 0
+            last_progress_update = time.time()
+            last_status_message = ""
             
             try:
                 # Check if we should stop before even starting
@@ -191,6 +197,26 @@ class ScannerWorker(QObject):
                     self.is_running = False
                     return
                     
+                # Provide initial progress feedback
+                self.progress.emit(0, 100)  # We don't know total yet, use 100 as placeholder
+                
+                # Emit a message to show scan is starting
+                self.device_found.emit({"status_update": "Initializing nmap scan..."})
+                
+                # Extract network range info to estimate host count
+                host_count_estimate = 256
+                try:
+                    import ipaddress
+                    if "/" in self.network_range:  # CIDR notation
+                        try:
+                            network = ipaddress.IPv4Network(self.network_range, strict=False)
+                            host_count_estimate = network.num_addresses
+                            self.device_found.emit({"status_update": f"Preparing to scan {host_count_estimate} potential addresses..."})
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                
                 # Start the scan within a try/except block
                 try:
                     # Use a reasonable timeout value
@@ -201,8 +227,53 @@ class ScannerWorker(QObject):
                         arguments += " -T4"
                         
                     logger.debug(f"Starting nmap scan with timeout {timeout_val}s and arguments: {arguments}")
+                    
+                    # Let the user know we're starting
+                    self.device_found.emit({"status_update": f"Starting nmap scan with timeout {timeout_val}s..."})
+                    
+                    # Create a timer to provide updates during the scan
+                    import threading
+                    update_timer = None
+                    
+                    def provide_status_update():
+                        if not self.is_running or self.should_stop:
+                            return
+                            
+                        # Calculate elapsed time
+                        elapsed = time.time() - scan_start_time
+                        # Generate a status message
+                        status = f"Scanning in progress... ({int(elapsed)}s elapsed)"
+                        
+                        # Emit a progress update based on time
+                        progress_percent = min(95, int((elapsed / timeout_val) * 100))
+                        self.progress.emit(progress_percent, 100)
+                        
+                        # Only emit a new status message if it's different
+                        nonlocal last_status_message
+                        if status != last_status_message:
+                            self.device_found.emit({"status_update": status})
+                            last_status_message = status
+                        
+                        # Schedule the next update
+                        nonlocal update_timer
+                        if self.is_running and not self.should_stop:
+                            update_timer = threading.Timer(1.0, provide_status_update)
+                            update_timer.daemon = True
+                            update_timer.start()
+                    
+                    # Start the timer for updates
+                    update_timer = threading.Timer(1.0, provide_status_update)
+                    update_timer.daemon = True
+                    update_timer.start()
+                    
+                    # Execute nmap scan
                     self.scanner.scan(hosts=self.network_range, arguments=arguments, 
                                      timeout=timeout_val, sudo=self.use_sudo)
+                    
+                    # Stop the update timer
+                    if update_timer:
+                        update_timer.cancel()
+                        
                 except Exception as scan_error:
                     logger.error(f"Error during nmap scan: {scan_error}")
                     
@@ -226,6 +297,11 @@ class ScannerWorker(QObject):
                     all_hosts = self.scanner.all_hosts()
                     total_hosts = len(all_hosts)
                     
+                    if total_hosts == 0:
+                        self.device_found.emit({"status_update": "Scan complete - no hosts found"})
+                    else:
+                        self.device_found.emit({"status_update": f"Scan complete - processing {total_hosts} discovered hosts..."})
+                    
                     # Emit initial progress
                     self.progress.emit(0, total_hosts)
                     
@@ -238,69 +314,254 @@ class ScannerWorker(QObject):
                         # Emit progress
                         self.progress.emit(i+1, total_hosts)
                         
+                        # Update status message periodically
+                        current_time = time.time()
+                        if current_time - last_progress_update > 0.5:  # Update every half second
+                            self.device_found.emit({"status_update": f"Processing host {i+1} of {total_hosts}: {host}"})
+                            last_progress_update = current_time
+                        
                         # Get host data (with proper error handling to avoid memory corruption)
                         try:
+                            # Verify the host is actually up before processing
+                            if 'status' not in self.scanner[host] or not self.scanner[host]['status'] or self.scanner[host]['status'].get('state') != 'up':
+                                logger.debug(f"Host {host} is not up, skipping")
+                                continue
+                                
                             host_data = {}
                             host_data["ip_address"] = host
                             host_data["scan_source"] = "nmap"
                             
-                            # Get hostname (if available)
+                            # Store the scan type used to find the device
+                            host_data["scan_type"] = self.scan_type
+                            
+                            # Store the exact state of the host
+                            if 'status' in self.scanner[host] and self.scanner[host]['status']:
+                                host_data["status"] = self.scanner[host]['status'].get('state', 'unknown')
+                                host_data["status_reason"] = self.scanner[host]['status'].get('reason', '')
+                            
+                            # Get all available hostnames (if available)
                             try:
                                 if 'hostnames' in self.scanner[host] and self.scanner[host]['hostnames']:
                                     hostnames = self.scanner[host]['hostnames']
                                     if isinstance(hostnames, list) and hostnames:
+                                        # Primary hostname
                                         for hostname_entry in hostnames:
                                             if 'name' in hostname_entry and hostname_entry['name']:
                                                 host_data["hostname"] = hostname_entry['name']
                                                 break
+                                        
+                                        # Store all hostnames as a list if there are multiple
+                                        all_hostnames = []
+                                        for hostname_entry in hostnames:
+                                            if 'name' in hostname_entry and hostname_entry['name']:
+                                                all_hostnames.append(hostname_entry['name'])
+                                        
+                                        if len(all_hostnames) > 1:
+                                            host_data["all_hostnames"] = all_hostnames
                             except Exception as e:
                                 logger.warning(f"Error getting hostname for {host}: {e}")
                             
-                            # Get MAC address and vendor (if available)
+                            # Get all address information (IPv4, IPv6, MAC)
                             try:
                                 if 'addresses' in self.scanner[host]:
-                                    if 'mac' in self.scanner[host]['addresses']:
-                                        host_data["mac_address"] = self.scanner[host]['addresses']['mac']
+                                    addresses = self.scanner[host]['addresses']
+                                    
+                                    # IPv4 address (already captured in ip_address)
+                                    if 'ipv4' in addresses:
+                                        host_data["ipv4_address"] = addresses['ipv4']
+                                    
+                                    # IPv6 address if available
+                                    if 'ipv6' in addresses:
+                                        host_data["ipv6_address"] = addresses['ipv6']
+                                    
+                                    # MAC address
+                                    if 'mac' in addresses:
+                                        host_data["mac_address"] = addresses['mac']
                                 
                                 # Get vendor information
                                 if 'vendor' in self.scanner[host] and self.scanner[host]['vendor']:
                                     vendors = self.scanner[host]['vendor']
                                     if isinstance(vendors, dict) and host_data.get("mac_address") in vendors:
                                         host_data["mac_vendor"] = vendors[host_data["mac_address"]]
+                                        
+                                        # Also store the raw vendor data
+                                        host_data["vendor_info"] = vendors
                             except Exception as e:
-                                logger.warning(f"Error getting MAC/vendor for {host}: {e}")
+                                logger.warning(f"Error getting address info for {host}: {e}")
                             
-                            # Get OS detection results
+                            # Get detailed OS detection results
                             try:
                                 if 'osmatch' in self.scanner[host] and self.scanner[host]['osmatch']:
                                     os_matches = self.scanner[host]['osmatch']
                                     if isinstance(os_matches, list) and os_matches:
-                                        # Get the highest accuracy match
+                                        # Get the highest accuracy match for the primary OS field
                                         best_match = max(os_matches, key=lambda x: int(x.get('accuracy', 0)) if x.get('accuracy') else 0)
                                         if 'name' in best_match:
                                             host_data["os"] = best_match['name']
+                                            host_data["os_accuracy"] = best_match.get('accuracy', '')
+                                            
+                                        # Store all OS matches with details
+                                        all_os_matches = []
+                                        for os_match in os_matches:
+                                            if 'name' in os_match:
+                                                os_info = {
+                                                    'name': os_match['name'],
+                                                    'accuracy': os_match.get('accuracy', ''),
+                                                    'type': os_match.get('osclass', {}).get('type', '') if isinstance(os_match.get('osclass', {}), dict) else '',
+                                                    'vendor': os_match.get('osclass', {}).get('vendor', '') if isinstance(os_match.get('osclass', {}), dict) else '',
+                                                    'family': os_match.get('osclass', {}).get('osfamily', '') if isinstance(os_match.get('osclass', {}), dict) else ''
+                                                }
+                                                all_os_matches.append(os_info)
+                                                
+                                        if all_os_matches:
+                                            host_data["os_matches"] = all_os_matches
+                                            
+                                # Also check for osclass data directly
+                                if 'osclass' in self.scanner[host] and self.scanner[host]['osclass']:
+                                    os_classes = self.scanner[host]['osclass']
+                                    if isinstance(os_classes, list) and os_classes:
+                                        # Store OS classification data
+                                        os_classes_data = []
+                                        for os_class in os_classes:
+                                            if isinstance(os_class, dict):
+                                                os_classes_data.append(os_class)
+                                                
+                                        if os_classes_data:
+                                            host_data["os_classes"] = os_classes_data
                             except Exception as e:
                                 logger.warning(f"Error getting OS info for {host}: {e}")
                             
-                            # Get open ports and services
+                            # Get all port and service information
                             try:
+                                # Process TCP ports
                                 if 'tcp' in self.scanner[host]:
-                                    open_ports = []
-                                    services = {}
+                                    tcp_ports = []
+                                    tcp_services = {}
+                                    tcp_details = {}
                                     
                                     for port, port_data in self.scanner[host]['tcp'].items():
-                                        if port_data['state'] == 'open':
-                                            open_ports.append(port)
-                                            if 'name' in port_data and port_data['name']:
-                                                services[port] = port_data['name']
-                                                
-                                    if open_ports:
-                                        host_data["open_ports"] = open_ports
+                                        # Create a detailed port information dictionary
+                                        port_details = {
+                                            'port': port,
+                                            'state': port_data.get('state', 'unknown'),
+                                            'reason': port_data.get('reason', ''),
+                                            'name': port_data.get('name', ''),
+                                            'product': port_data.get('product', ''),
+                                            'version': port_data.get('version', ''),
+                                            'extrainfo': port_data.get('extrainfo', ''),
+                                            'conf': port_data.get('conf', ''),
+                                            'cpe': port_data.get('cpe', '')
+                                        }
                                         
-                                    if services:
-                                        host_data["services"] = services
+                                        # For simplicity in UI, also maintain simple lists of open ports and services
+                                        if port_data['state'] == 'open':
+                                            tcp_ports.append(int(port))
+                                            
+                                            if 'name' in port_data and port_data['name']:
+                                                service_name = port_data['name']
+                                                # Enhance with version if available
+                                                if port_data.get('product'):
+                                                    service_name += f" ({port_data['product']}"
+                                                    if port_data.get('version'):
+                                                        service_name += f" {port_data['version']}"
+                                                    service_name += ")"
+                                                tcp_services[int(port)] = service_name
+                                                
+                                        # Store all port details regardless of state
+                                        tcp_details[int(port)] = port_details
+                                        
+                                    # Store all TCP port information
+                                    if tcp_ports:
+                                        host_data["open_tcp_ports"] = sorted(tcp_ports)
+                                        
+                                    if tcp_services:
+                                        host_data["tcp_services"] = tcp_services
+                                        
+                                    if tcp_details:
+                                        host_data["tcp_port_details"] = tcp_details
+                                
+                                # Process UDP ports
+                                if 'udp' in self.scanner[host]:
+                                    udp_ports = []
+                                    udp_services = {}
+                                    udp_details = {}
+                                    
+                                    for port, port_data in self.scanner[host]['udp'].items():
+                                        # Create detailed port information
+                                        port_details = {
+                                            'port': port,
+                                            'state': port_data.get('state', 'unknown'),
+                                            'reason': port_data.get('reason', ''),
+                                            'name': port_data.get('name', ''),
+                                            'product': port_data.get('product', ''),
+                                            'version': port_data.get('version', ''),
+                                            'extrainfo': port_data.get('extrainfo', ''),
+                                            'conf': port_data.get('conf', ''),
+                                            'cpe': port_data.get('cpe', '')
+                                        }
+                                        
+                                        # For UI, maintain simple lists
+                                        if port_data['state'] == 'open':
+                                            udp_ports.append(int(port))
+                                            
+                                            if 'name' in port_data and port_data['name']:
+                                                service_name = port_data['name']
+                                                # Enhance with version if available
+                                                if port_data.get('product'):
+                                                    service_name += f" ({port_data['product']}"
+                                                    if port_data.get('version'):
+                                                        service_name += f" {port_data['version']}"
+                                                    service_name += ")"
+                                                udp_services[int(port)] = service_name
+                                                
+                                        # Store details
+                                        udp_details[int(port)] = port_details
+                                        
+                                    # Store UDP port information
+                                    if udp_ports:
+                                        host_data["open_udp_ports"] = sorted(udp_ports)
+                                        
+                                    if udp_services:
+                                        host_data["udp_services"] = udp_services
+                                        
+                                    if udp_details:
+                                        host_data["udp_port_details"] = udp_details
+                                        
+                                # For backward compatibility, maintain the original open_ports and services fields
+                                open_ports = host_data.get("open_tcp_ports", []) + host_data.get("open_udp_ports", [])
+                                if open_ports:
+                                    host_data["open_ports"] = sorted(open_ports)
+                                    
+                                services = {}
+                                # Combine TCP and UDP services
+                                services.update(host_data.get("tcp_services", {}))
+                                services.update(host_data.get("udp_services", {}))
+                                if services:
+                                    host_data["services"] = services
+                                    
                             except Exception as e:
                                 logger.warning(f"Error getting port/service info for {host}: {e}")
+                                
+                            # Get script output if available
+                            try:
+                                if 'scripts' in self.scanner[host]:
+                                    host_data["script_output"] = self.scanner[host]['scripts']
+                            except Exception as e:
+                                logger.warning(f"Error getting script output for {host}: {e}")
+                            
+                            # Store raw scan data for debugging or advanced use
+                            try:
+                                # Create a simplified version of the raw data to avoid memory issues
+                                raw_data = {}
+                                for key, value in self.scanner[host].items():
+                                    if key not in ['scripts', 'osmatch', 'osclass', 'tcp', 'udp']:
+                                        raw_data[key] = value
+                                host_data["nmap_raw_data"] = raw_data
+                            except Exception as e:
+                                logger.warning(f"Error storing raw scan data for {host}: {e}")
+                            
+                            # Store scan timestamp
+                            host_data["last_scan_time"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             
                             # Add tags
                             host_data["tags"] = ["scanned", "nmap"]
@@ -313,9 +574,14 @@ class ScannerWorker(QObject):
                             else:
                                 host_data["alias"] = f"Device at {host}"
                             
-                            # Emit the device found signal
-                            self.device_found.emit(host_data)
-                            devices_found += 1
+                            # Only emit device found if we have the basic information
+                            # This ensures we don't add empty or non-existent devices
+                            if host_data.get("ip_address"):
+                                # Emit the device found signal
+                                self.device_found.emit(host_data)
+                                devices_found += 1
+                            else:
+                                logger.debug(f"Host {host} has no IP address, skipping")
                         except Exception as e:
                             logger.error(f"Error processing host {host}: {e}", exc_info=True)
                     
@@ -379,7 +645,7 @@ class NetworkScannerPlugin(PluginInterface):
         """Initialize the plugin"""
         super().__init__()
         self.name = "Network Scanner"
-        self.version = "1.2.1"
+        self.version = "1.2.3"
         self.description = "Scan network segments for devices and add them to NetWORKS"
         self.author = "NetWORKS Team"
         
@@ -836,27 +1102,46 @@ class NetworkScannerPlugin(PluginInterface):
         
         # Scan controls in separate section with buttons side by side
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)  # Add more space between buttons
+        button_layout.setSpacing(10)  # Increase spacing between buttons
+        
+        # Create a button grid with 2x2 layout for better organization
+        button_grid = QGridLayout()
+        button_grid.setSpacing(8)
+        button_grid.setHorizontalSpacing(10)
+        button_grid.setVerticalSpacing(8)
+        
+        # Set a fixed minimum width for all buttons to prevent overlapping
+        button_width = 100
         
         # Scan button
         self.scan_button = QPushButton("Start Scan")
-        self.scan_button.setMinimumWidth(100)  # Set minimum width for buttons
+        self.scan_button.setMinimumWidth(button_width)
         self.scan_button.clicked.connect(self.on_scan_button_clicked)
-        button_layout.addWidget(self.scan_button)
+        button_grid.addWidget(self.scan_button, 0, 0)
+        
+        # Quick Ping Scan button
+        self.quick_ping_button = QPushButton("Quick Ping")
+        self.quick_ping_button.setMinimumWidth(button_width)
+        self.quick_ping_button.clicked.connect(self.on_quick_ping_button_clicked)
+        self.quick_ping_button.setToolTip("Fast ping scan without using nmap")
+        button_grid.addWidget(self.quick_ping_button, 0, 1)
         
         # Advanced Scan button
         self.advanced_scan_button = QPushButton("Advanced...")
-        self.advanced_scan_button.setMinimumWidth(100)
+        self.advanced_scan_button.setMinimumWidth(button_width)
         self.advanced_scan_button.clicked.connect(self.on_advanced_scan_button_clicked)
         self.advanced_scan_button.setToolTip("Open the advanced scan configuration dialog")
-        button_layout.addWidget(self.advanced_scan_button)
+        button_grid.addWidget(self.advanced_scan_button, 1, 0)
         
         # Stop button
         self.stop_button = QPushButton("Stop")
-        self.stop_button.setMinimumWidth(100)
+        self.stop_button.setMinimumWidth(button_width)
         self.stop_button.clicked.connect(self.on_stop_button_clicked)
         self.stop_button.setEnabled(False)
-        button_layout.addWidget(self.stop_button)
+        button_grid.addWidget(self.stop_button, 1, 1)
+        
+        # Add the grid to the layout
+        button_layout.addLayout(button_grid)
         
         # Add stretch to push buttons to the left
         button_layout.addStretch(1)
@@ -1215,11 +1500,39 @@ class NetworkScannerPlugin(PluginInterface):
             self.stop_button.setEnabled(False)
             self.status_label.setText("Stopping scan...")
             
+        # Try to stop ping scan if it's running
+        stopped_ping = self.stop_ping_scan()
+        
         # Signal the worker to stop
         try:
             if self._scanner_worker:
                 self._scanner_worker.stop()
                 logger.debug("Worker stop signal sent")
+                
+                # Force nmap to terminate if possible
+                try:
+                    # The python-nmap library sometimes doesn't properly terminate the nmap process
+                    # We attempt to directly terminate it by accessing the internal scanner object
+                    if hasattr(self._scanner_worker, 'scanner') and self._scanner_worker.scanner:
+                        # Try to terminate the nmap process directly
+                        if hasattr(self._scanner_worker.scanner, '_nmap_last_proc') and self._scanner_worker.scanner._nmap_last_proc:
+                            try:
+                                process = self._scanner_worker.scanner._nmap_last_proc
+                                if process.poll() is None:  # Check if still running
+                                    logger.info("Forcibly terminating nmap process")
+                                    process.terminate()
+                                    # Wait briefly for termination
+                                    import time
+                                    time.sleep(0.5)
+                                    # If still running, kill it
+                                    if process.poll() is None:
+                                        process.kill()
+                                        logger.info("Killed nmap process")
+                            except Exception as e:
+                                logger.error(f"Error terminating nmap process: {e}")
+                except Exception as e:
+                    logger.error(f"Error accessing nmap process: {e}")
+                
         except Exception as e:
             logger.error(f"Error signaling worker to stop: {e}")
         
@@ -1292,8 +1605,38 @@ class NetworkScannerPlugin(PluginInterface):
         It creates a new device or updates an existing one.
         """
         try:
+            # Check if this is a status update rather than a device
+            if "status_update" in host_data:
+                # Update the status label with the status message
+                if hasattr(self, "status_label"):
+                    self.status_label.setText(host_data["status_update"])
+                
+                # Log the status update
+                self.log_message(host_data["status_update"])
+                return None
+                
             # Use a local copy of host_data to avoid memory corruption
             device_data = host_data.copy()
+            
+            # Verify we have an IP address at minimum - if not, this isn't a valid device
+            if not device_data.get("ip_address"):
+                logger.debug("Received device data without IP address, ignoring")
+                return None
+                
+            # For non-ping scans, ensure the device has some meaningful data
+            if device_data.get("scan_source") != "ping":
+                # Check if this device has any meaningful properties to add
+                has_meaningful_data = False
+                # Look for properties that would make this device worth adding
+                for key in ["hostname", "mac_address", "open_ports", "services", "os"]:
+                    if key in device_data and device_data[key]:
+                        has_meaningful_data = True
+                        break
+                        
+                # If a device is up but has no additional data, it's still worth adding
+                # But we should log this situation for debugging
+                if not has_meaningful_data:
+                    logger.debug(f"Device at {device_data['ip_address']} is up but has no additional data")
             
             # Check if this device already exists based on IP or MAC
             existing_device = None
@@ -1785,11 +2128,11 @@ class NetworkScannerPlugin(PluginInterface):
             if scan_subnet_radio.isChecked():
                 selected_if_text = interface_combo.currentText()
                 if selected_if_text and selected_if_text != "Any (default)":
-                    selected_if = selected_if_text.split(":")[0].strip()
-                    subnet = self._get_interface_subnet(selected_if)
+                    # Get subnet directly from the interface text
+                    subnet = self._get_interface_subnet(selected_if_text)
                     if subnet:
                         network_range_edit.setText(subnet)
-                
+                        
         interface_combo.currentIndexChanged.connect(update_network_range)
             
         # Add tabs to layout
@@ -2145,14 +2488,14 @@ class NetworkScannerPlugin(PluginInterface):
                                     'alias': interface_alias,
                                     'ip': ip,
                                     'netmask': netmask,
-                                    'display': f"{interface_alias} [{iface}]: {ip}"
+                                    'display': f"{interface_alias}: {ip}"
                                 }
                                 
                                 # Try to get subnet in CIDR format
                                 try:
                                     network = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
                                     interface_info['network'] = str(network)
-                                    interface_info['display'] = f"{interface_alias} [{iface}]: {ip} ({network})"
+                                    interface_info['display'] = f"{interface_alias}: {ip} ({network})"
                                 except Exception as e:
                                     logger.debug(f"Error calculating network for {iface}: {e}")
                                 
@@ -2232,9 +2575,35 @@ class NetworkScannerPlugin(PluginInterface):
         if not interface_name:
             preferred = self.settings.get("preferred_interface", {}).get("value", "")
             if preferred and preferred != "Any (default)":
-                # Extract interface name from the display string
+                # Extract interface info from the display string format: "Alias: IP (Network)"
                 try:
-                    interface_name = preferred.split(":")[0].strip()
+                    # First check if we have stored interface data
+                    if hasattr(self, "_network_interfaces") and self._network_interfaces:
+                        # Find the interface with matching display string
+                        for iface in self._network_interfaces:
+                            if iface["display"] == preferred:
+                                interface_name = iface["name"]
+                                # If we found a match, we can return the network directly
+                                if "network" in iface:
+                                    return iface["network"]
+                                break
+                    
+                    # If we didn't find it, try to extract from the display string
+                    if not interface_name:
+                        # Parse the interface name from the display string
+                        parts = preferred.split(": ")
+                        if len(parts) >= 2:
+                            # Extract IP address from second part
+                            ip_part = parts[1].split(" ")[0]
+                            # Look for interface with this IP
+                            if hasattr(self, "_network_interfaces") and self._network_interfaces:
+                                for iface in self._network_interfaces:
+                                    if iface["ip"] == ip_part:
+                                        interface_name = iface["name"]
+                                        # If we found a match, we can return the network directly
+                                        if "network" in iface:
+                                            return iface["network"]
+                                        break
                 except Exception as e:
                     logger.error(f"Error extracting interface name from {preferred}: {e}")
                     return None
@@ -2705,27 +3074,41 @@ class NetworkScannerPlugin(PluginInterface):
             if not selected_if_text or selected_if_text == "Any (default)":
                 logger.debug("No specific interface selected, not updating network range")
                 return
-                
-            # Split the interface text to get the interface name
-            # Format is typically "eth0: 192.168.1.100 (192.168.1.0/24)"
-            interface_parts = selected_if_text.split(":")
-            if len(interface_parts) < 1:
-                logger.warning(f"Invalid interface format: {selected_if_text}")
-                return
-                
-            # Get just the interface name
-            selected_if = interface_parts[0].strip()
             
-            # Try to get the subnet for this interface
-            subnet = self._get_interface_subnet(selected_if)
+            # Log the selected interface for debugging
+            logger.debug(f"Updating network range from selected interface: {selected_if_text}")
+                
+            # Try to directly find the network from stored interface data
+            if hasattr(self, "_network_interfaces") and self._network_interfaces:
+                for iface in self._network_interfaces:
+                    if iface["display"] == selected_if_text:
+                        # Check if network information is available
+                        if "network" in iface:
+                            network = iface["network"]
+                            self.network_range_edit.setText(network)
+                            logger.debug(f"Updated network range to {network} from interface {iface['alias']}")
+                            return True
+                        # Try IP with netmask
+                        elif "ip" in iface and "netmask" in iface:
+                            try:
+                                network = ipaddress.IPv4Network(f"{iface['ip']}/{iface['netmask']}", strict=False)
+                                network_str = str(network)
+                                self.network_range_edit.setText(network_str)
+                                logger.debug(f"Updated network range to {network_str} from interface {iface['alias']}")
+                                return True
+                            except Exception as e:
+                                logger.debug(f"Error calculating network for {iface['alias']}: {e}")
+
+            # If we get here, try getting the subnet using the standard method as fallback
+            subnet = self._get_interface_subnet(selected_if_text)
             
             if subnet:
                 # Set the network range text field and log it
                 self.network_range_edit.setText(subnet)
-                logger.debug(f"Updated network range to {subnet} from interface {selected_if}")
+                logger.debug(f"Updated network range to {subnet} from interface")
                 return True
             else:
-                logger.warning(f"Could not determine subnet for interface {selected_if}")
+                logger.warning(f"Could not determine subnet for interface {selected_if_text}")
         
             # If no subnet was found from interface, try to get one from local IP
             try:
@@ -3043,6 +3426,282 @@ class NetworkScannerPlugin(PluginInterface):
         
         # Show the dialog
         dialog.exec_()
+
+    def quick_ping_scan(self, network_range):
+        """
+        Perform a quick ping scan using system commands
+        
+        This provides an alternative to nmap for fast scanning, especially
+        when just checking if hosts are alive.
+        
+        Args:
+            network_range: Network range to scan (e.g., 192.168.1.0/24)
+            
+        Returns:
+            bool: True if scan started successfully, False otherwise
+        """
+        # Check if already scanning
+        if self._is_scanning:
+            logger.warning("Scan already in progress")
+            return False
+            
+        # Clean up any previous scan
+        self._cleanup_previous_scan()
+        
+        # Convert network range to list of IPs to ping
+        try:
+            import ipaddress
+            import subprocess
+            import threading
+            import platform
+            
+            # Set scanning flag
+            self._is_scanning = True
+            
+            # Update scanner widget status if available
+            if hasattr(self, "scan_button") and self.scan_button:
+                self.scan_button.setEnabled(False)
+            if hasattr(self, "stop_button") and self.stop_button:
+                self.stop_button.setEnabled(True)
+            if hasattr(self, "progress_bar") and self.progress_bar:
+                self.progress_bar.setValue(0)
+                self.progress_bar.setVisible(True)
+            
+            # Clear the scan log and reset progress
+            self._scan_log = []
+            self.log_message(f"Starting quick ping scan of {network_range}")
+            self._scan_results = {}
+            
+            # Extract IP addresses from network range
+            ip_list = []
+            try:
+                # For CIDR notation like 192.168.1.0/24
+                if '/' in network_range:
+                    net = ipaddress.ip_network(network_range, strict=False)
+                    ip_list = list(net.hosts())
+                    
+                # For range notation like 192.168.1.1-10
+                elif '-' in network_range:
+                    parts = network_range.split('-')
+                    if len(parts) == 2:
+                        start_ip = parts[0].strip()
+                        
+                        # Check if the second part is a full IP or just the last octet
+                        if '.' in parts[1]:
+                            end_ip = parts[1].strip()
+                        else:
+                            # Assume it's just the last octet
+                            start_parts = start_ip.split('.')
+                            end_ip = f"{start_parts[0]}.{start_parts[1]}.{start_parts[2]}.{parts[1].strip()}"
+                            
+                        # Generate IP range
+                        start = int(ipaddress.IPv4Address(start_ip))
+                        end = int(ipaddress.IPv4Address(end_ip))
+                        
+                        for i in range(start, end + 1):
+                            ip_list.append(ipaddress.IPv4Address(i))
+                
+                # Single IP address
+                else:
+                    ip_list = [ipaddress.ip_address(network_range)]
+            except Exception as e:
+                self.log_message(f"Error parsing network range: {e}")
+                self._is_scanning = False
+                return False
+                
+            if not ip_list:
+                self.log_message("No valid IP addresses to scan")
+                self._is_scanning = False
+                return False
+                
+            self.log_message(f"Scanning {len(ip_list)} addresses...")
+            
+            # Update progress bar
+            if hasattr(self, "progress_bar") and self.progress_bar:
+                self.progress_bar.setRange(0, len(ip_list))
+                self.progress_bar.setValue(0)
+                
+            # Track alive hosts
+            alive_hosts = []
+            self._ping_scan_should_stop = False
+            
+            # Determine ping command based on OS
+            system = platform.system().lower()
+            if system == "windows":
+                ping_cmd = lambda ip: ["ping", "-n", "1", "-w", "500", str(ip)]
+                ping_success = lambda proc: proc.returncode == 0
+            else:  # Linux and macOS
+                ping_cmd = lambda ip: ["ping", "-c", "1", "-W", "1", str(ip)]
+                ping_success = lambda proc: proc.returncode == 0
+                
+            # Function to ping a host
+            def ping_host(ip, index):
+                if self._ping_scan_should_stop:
+                    return
+                    
+                try:
+                    # Execute ping command
+                    cmd = ping_cmd(ip)
+                    proc = subprocess.run(
+                        cmd, 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE,
+                        timeout=1
+                    )
+                    
+                    # Check result
+                    if ping_success(proc):
+                        alive_hosts.append(str(ip))
+                        # Log success
+                        self.log_message(f"Host {ip} is up")
+                        
+                        # Create device data
+                        host_data = {
+                            "ip_address": str(ip),
+                            "scan_source": "ping",
+                            "alias": f"Device at {ip}",
+                            "tags": ["scanned", "ping"]
+                        }
+                        
+                        # Try to get hostname
+                        try:
+                            import socket
+                            hostname = socket.getfqdn(str(ip))
+                            if hostname and hostname != str(ip):
+                                host_data["hostname"] = hostname
+                                host_data["alias"] = hostname
+                        except Exception:
+                            pass
+                            
+                        # Send to device handler
+                        self._on_device_found(host_data)
+                    else:
+                        # Host is not up, don't add it
+                        logger.debug(f"Host {ip} did not respond to ping")
+                        
+                except Exception as e:
+                    logger.debug(f"Error pinging {ip}: {e}")
+                    
+                finally:
+                    # Update progress
+                    if not self._ping_scan_should_stop and hasattr(self, "progress_bar") and self.progress_bar:
+                        self.progress_bar.setValue(index + 1)
+                        if hasattr(self, "status_label") and self.status_label:
+                            self.status_label.setText(f"Scanning: {index + 1}/{len(ip_list)} ({int(((index + 1) / len(ip_list)) * 100)}%)")
+                            
+            # Function to run the scan in a thread
+            def run_scan():
+                start_time = time.time()
+                threads = []
+                max_concurrent = min(50, len(ip_list))  # Limit concurrent threads
+                
+                try:
+                    for i, ip in enumerate(ip_list):
+                        if self._ping_scan_should_stop:
+                            break
+                            
+                        # Create and start thread
+                        t = threading.Thread(target=ping_host, args=(ip, i))
+                        t.daemon = True
+                        threads.append(t)
+                        t.start()
+                        
+                        # Limit concurrent threads
+                        while len([t for t in threads if t.is_alive()]) >= max_concurrent:
+                            time.sleep(0.01)
+                            
+                        # Update status periodically
+                        if i % 10 == 0:
+                            self.log_message(f"Scanned {i} of {len(ip_list)} addresses...")
+                            
+                    # Wait for all threads to complete
+                    for t in threads:
+                        t.join(timeout=0.5)
+                        
+                    # Scan complete
+                    scan_time = time.time() - start_time
+                    self.log_message(f"Scan complete: Found {len(alive_hosts)} devices in {round(scan_time, 1)} seconds")
+                    
+                    # Update UI
+                    if hasattr(self, "scan_button"):
+                        self.scan_button.setEnabled(True)
+                        self.stop_button.setEnabled(False)
+                        
+                    if hasattr(self, "status_label"):
+                        self.status_label.setText(f"Scan complete: Found {len(alive_hosts)} devices")
+                        
+                    if hasattr(self, "progress_bar"):
+                        self.progress_bar.setValue(len(ip_list))
+                        
+                    # Store results
+                    self._scan_results = {
+                        "network_range": network_range,
+                        "scan_type": "quick_ping",
+                        "total_hosts": len(ip_list),
+                        "devices_found": len(alive_hosts),
+                        "scan_time": scan_time,
+                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    
+                    # Emit scan complete signal
+                    self.scan_completed.emit(self._scan_results)
+                    
+                except Exception as e:
+                    logger.error(f"Error during ping scan: {e}")
+                    self.log_message(f"Error during scan: {e}")
+                    
+                finally:
+                    # Set scanning flag
+                    self._is_scanning = False
+                    
+            # Start scan thread
+            scan_thread = threading.Thread(target=run_scan)
+            scan_thread.daemon = True
+            scan_thread.start()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error starting ping scan: {e}")
+            self._is_scanning = False
+            self.log_message(f"Error starting scan: {e}")
+            return False
+            
+    def stop_ping_scan(self):
+        """Stop the ping scan if it's running"""
+        if hasattr(self, "_ping_scan_should_stop"):
+            self._ping_scan_should_stop = True
+            self.log_message("Stopping ping scan...")
+            return True
+        return False
+
+    @safe_action_wrapper
+    def on_quick_ping_button_clicked(self):
+        """Handle quick ping button click"""
+        # Check if scan already in progress
+        if self._is_scanning:
+            QMessageBox.information(
+                self.main_window,
+                "Scan in Progress",
+                "A scan is already in progress. Please wait for it to complete or click Stop to cancel it."
+            )
+            return
+            
+        # Get network range from the UI
+        network_range = self.network_range_edit.text()
+        if not network_range:
+            # If no network range is specified, get it from the selected interface
+            network_range = self._get_interface_subnet(self.interface_combo.currentText())
+            if not network_range:
+                QMessageBox.warning(
+                    self.main_window,
+                    "Missing Network Range",
+                    "Please enter a network range or select a valid interface."
+                )
+                return
+        
+        # Start the quick ping scan
+        self.quick_ping_scan(network_range)
 
 
 # Create plugin instance (will be loaded by the plugin manager)
