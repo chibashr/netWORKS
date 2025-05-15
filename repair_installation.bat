@@ -146,16 +146,16 @@ pip install loguru==0.7.3 --force-reinstall --no-cache-dir
 pip install chardet==5.2.0 --force-reinstall --no-cache-dir
 
 echo [INFO] Installing numpy first (pandas dependency)...
-pip install numpy==2.2.0 --force-reinstall --no-cache-dir
+pip install numpy==1.24.3 --force-reinstall --no-cache-dir
 if %ERRORLEVEL% neq 0 (
     echo [WARNING] Failed to install numpy. Will try to continue with pandas installation anyway...
 )
 
 echo [INFO] Installing pandas with dependencies...
-pip install python-dateutil pytz pandas==2.0.3 --force-reinstall --no-cache-dir
+pip install python-dateutil pytz pandas==1.5.3 --force-reinstall --no-cache-dir
 if %ERRORLEVEL% neq 0 (
     echo [WARNING] Failed to install pandas using standard method. Trying alternative approach...
-    pip install pandas==2.0.3 --force-reinstall --no-cache-dir --no-deps
+    pip install pandas==1.5.3 --force-reinstall --no-cache-dir --no-deps
     pip install numpy python-dateutil pytz
     echo [INFO] Completed alternative installation attempt.
 ) else (
@@ -174,8 +174,16 @@ python -c "import importlib.util; packages=['pandas', 'openpyxl', 'docx', 'xlrd'
 :: Try direct imports for most problematic packages
 echo.
 echo [INFO] Testing critical imports directly...
-python -c "try: import PySide6; print('PySide6 imported successfully'); except ImportError as e: print(f'Failed to import PySide6: {e}')"
-python -c "try: import pandas; print('pandas imported successfully'); except ImportError as e: print(f'Failed to import pandas: {e}')"
+python -c "try:
+    import PySide6
+    print('PySide6 imported successfully')
+except ImportError as e:
+    print(f'Failed to import PySide6: {e}')"
+python -c "try:
+    import pandas
+    print('pandas imported successfully')
+except ImportError as e:
+    print(f'Failed to import pandas: {e}')"
 
 :: Deactivate virtual environment
 call venv\Scripts\deactivate.bat
