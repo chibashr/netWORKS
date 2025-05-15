@@ -1,5 +1,6 @@
 {
   "name": "NetWORKS",
+
   "version": "0.8.48",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
@@ -9,14 +10,16 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
+
   "version_string": "0.8.48",
   "version_info": {
     "major": 0,
     "minor": 8,
     "patch": 48,
     "build": 0,
-    "release_type": "alpha"
+    "release_type": "stable"
   },
+
   "build_date": "2025-05-22",
   "release_notes": "Completely redesigned device properties panel with modern table view, filtering, export functionality (CSV/JSON), and improved selection capabilities. Better visualization of different data types and responsive design.",
   "release_type": "alpha",
@@ -50,6 +53,7 @@
   },
   "version_history": [
     {
+
       "version": "0.8.48",
       "date": "2025-05-22",
       "changes": "Completely redesigned device properties panel with modern table view, filtering, export functionality (CSV/JSON), and improved selection capabilities. Better visualization of different data types and responsive design."
