@@ -428,64 +428,76 @@ class PluginManager(QObject):
             return False
         
     def discover_plugins(self):
-        """Discover available plugins"""
-        logger.info("Discovering plugins")
+        """Discover plugins in the configured directories"""
+        logger.info("Discovering plugins...")
         
-        # Discover plugins in both internal and external directories
-        internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
-        logger.debug(f"Discovered {len(internal_plugins)} internal plugins")
+        # Clear existing plugins
+        self.plugins = {}
         
-        external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
-        logger.debug(f"Discovered {len(external_plugins)} external plugins")
-        
-        # Merge plugins, external plugins take precedence over internal plugins with the same ID
-        discovered_plugins = {**internal_plugins, **external_plugins}
-        logger.info(f"Discovered {len(discovered_plugins)} total plugins")
-        
-        # Load registry to check for enabled/disabled state
+        # Load previously discovered plugins from registry
         registry = self._load_registry()
-        logger.debug(f"Loaded registry with {len(registry)} entries")
         
-        # For plugins that were previously loaded but no longer exist, we'll keep them in the registry
-        # but remove them from the in-memory list
-        missing_plugins = {id: info for id, info in registry.items() if id not in discovered_plugins}
-        if missing_plugins:
-            logger.warning(f"Found {len(missing_plugins)} plugins in registry that are no longer available: {', '.join(missing_plugins.keys())}")
+        # Discover plugins in directories
+        discovered_plugins = {}
         
-        # Update plugins with registry information
+        # Check the internal plugins directory
+        if hasattr(self.app, 'config'):
+            self.internal_plugins_dir = self.app.config.get_value("application.plugins_directory")
+            logger.debug(f"Looking for plugins in internal directory: {self.internal_plugins_dir}")
+            internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
+            discovered_plugins.update(internal_plugins)
+        
+        # Check the external plugins directory
+        if hasattr(self.app, 'config'):
+            self.external_plugins_dir = self.app.config.get_value("application.external_plugins_directory")
+            logger.debug(f"Looking for plugins in external directory: {self.external_plugins_dir}")
+            external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
+            discovered_plugins.update(external_plugins)
+            
+        # Process discovered plugins
         for plugin_id, plugin_info in discovered_plugins.items():
+            # Check if plugin is in registry
             if plugin_id in registry:
-                # Get state from registry if available
-                if "state" in registry[plugin_id] and registry[plugin_id]["state"] in PluginState.__members__:
-                    previous_state = plugin_info.state
-                    new_state = PluginState[registry[plugin_id]["state"]]
-                    
-                    # Don't preserve LOADED state from registry - it must be explicitly loaded at runtime
-                    if new_state == PluginState.LOADED:
-                        new_state = PluginState.ENABLED
-                    
-                    plugin_info.state = new_state
-                    logger.debug(f"Plugin {plugin_id} state loaded from registry: {previous_state} -> {new_state}")
+                # Use registry information to determine plugin state
+                registry_data = registry[plugin_id]
+                
+                # Check if registry uses new state system or old enabled/loaded flags
+                if "state" in registry_data:
+                    state_name = registry_data["state"]
+                    try:
+                        state = PluginState[state_name]
+                        plugin_info.state = state
+                    except (KeyError, ValueError):
+                        logger.warning(f"Invalid plugin state in registry for {plugin_id}: {state_name}")
+                        # Default to DISCOVERED state
+                        plugin_info.state = PluginState.DISCOVERED
                 else:
-                    # Legacy format - convert from enabled/loaded flags
-                    previous_state = plugin_info.state
-                    enabled = registry[plugin_id].get("enabled", True)
-                    # Force loaded to false on startup regardless of registry
-                    plugin_info.state = PluginState.from_enabled_loaded(enabled, False)
-                    logger.debug(f"Plugin {plugin_id} state loaded from legacy registry format: {previous_state} -> {plugin_info.state}")
+                    # Legacy registry format - convert to new state system
+                    enabled = registry_data.get("enabled", False)
+                    loaded = registry_data.get("loaded", False)
+                    plugin_info.state = PluginState.from_enabled_loaded(enabled, loaded)
             else:
-                # New plugins default to ENABLED state
-                plugin_info.state = PluginState.ENABLED
-                logger.debug(f"New plugin {plugin_id} not found in registry, set to {PluginState.ENABLED}")
-        
-        # Store the discovered plugins
-        self.plugins = discovered_plugins
-        
-        # Synchronize registry with discovered plugins
-        self._registry_dirty = True
+                # New plugin, set to DISCOVERED state
+                plugin_info.state = PluginState.DISCOVERED
+                
+            # Store the plugin
+            self.plugins[plugin_id] = plugin_info
+            
+            # Check if plugin has requirements and install them if it's already enabled
+            if plugin_info.state.is_enabled and plugin_info.requirements.get("python"):
+                logger.info(f"Plugin {plugin_id} has Python requirements, installing for enabled plugin")
+                self._install_plugin_requirements(plugin_info)
+            
+            # Install plugin requirements if auto-install is enabled regardless of plugin state
+            if hasattr(self.app, 'config') and self.app.config.get_value("application.auto_install_plugin_requirements", False):
+                if plugin_info.requirements.get("python"):
+                    logger.info(f"Auto-installing Python requirements for plugin {plugin_id}")
+                    self._install_plugin_requirements(plugin_info)
+            
+        # Save registry with discovered plugins
         self._sync_registry()
         
-        logger.info(f"Plugin discovery complete. Found {len(self.plugins)} plugins.")
+        logger.info(f"Discovered {len(self.plugins)} plugins")
         return self.plugins
         
     def _discover_plugins_in_directory(self, directory):
@@ -811,6 +823,12 @@ class PluginManager(QObject):
             logger.warning(f"Cannot load plugin: Plugin is not enabled: {plugin_id}")
             self.plugin_status_changed.emit(plugin_info, f"Cannot load: Plugin is not enabled")
             return None
+            
+        # Check and install plugin requirements if needed
+        if plugin_info.requirements["python"]:
+            logger.info(f"Checking Python requirements for plugin {plugin_id}")
+            self.plugin_status_changed.emit(plugin_info, f"Checking requirements...")
+            self._install_plugin_requirements(plugin_info)
             
         # Check if the plugin's dependencies are satisfied
         if not self._check_plugin_dependencies(plugin_info):
@@ -1425,6 +1443,15 @@ class PluginManager(QObject):
         """Load all enabled plugins"""
         logger.info("Loading all enabled plugins")
         
+        # Auto-enable newly discovered plugins if configured to do so
+        if hasattr(self.app, 'config') and self.app.config.get_value("application.auto_enable_discovered_plugins", True):
+            discovered_plugins = [p for p in self.plugins.values() if p.state == PluginState.DISCOVERED]
+            if discovered_plugins:
+                logger.info(f"Auto-enabling {len(discovered_plugins)} newly discovered plugins")
+                for plugin_info in discovered_plugins:
+                    logger.info(f"Auto-enabling plugin: {plugin_info.id}")
+                    self.enable_plugin(plugin_info.id)
+        
         # Get all enabled plugins
         enabled_plugins = [p for p in self.plugins.values() if p.state.is_enabled and not p.state.is_loaded]
         total_enabled = len(enabled_plugins)
@@ -1635,169 +1662,6 @@ class PluginManager(QObject):
             self.plugin_status_changed.emit(plugin_info, f"Error uninstalling requirements: {str(e)}")
             return False
             
-    def _check_plugin_dependencies(self, plugin_info):
-        """Check if plugin dependencies are satisfied"""
-        if not plugin_info.dependencies:
-            return True
-            
-        # Emit status signal
-        self.plugin_status_changed.emit(plugin_info, f"Checking dependencies...")
-            
-        for dependency in plugin_info.dependencies:
-            dep_id = dependency["id"]
-            dep_version_req = dependency.get("version", "")
-            
-            # Check if the dependency plugin is installed
-            if dep_id not in self.plugins:
-                error_msg = f"Dependency plugin '{dep_id}' not found"
-                logger.error(f"Cannot load plugin {plugin_info.id}: {error_msg}")
-                self.plugin_status_changed.emit(plugin_info, f"Error: {error_msg}")
-                return False
-                
-            # Check if the dependency plugin is enabled
-            dep_plugin = self.plugins[dep_id]
-            if not dep_plugin.state.is_enabled:
-                error_msg = f"Dependency plugin '{dep_id}' is not enabled"
-                logger.error(f"Cannot load plugin {plugin_info.id}: {error_msg}")
-                self.plugin_status_changed.emit(plugin_info, f"Error: {error_msg}")
-                return False
-                
-            # If version requirement specified, check version compatibility
-            if dep_version_req:
-                # Basic version check (can be expanded for more complex requirements)
-                if dep_version_req.startswith(">="):
-                    min_version = dep_version_req[2:]
-                    if dep_plugin.version < min_version:
-                        error_msg = f"Dependency '{dep_id}' version too low. Required: {dep_version_req}, Found: {dep_plugin.version}"
-                        logger.error(f"Cannot load plugin {plugin_info.id}: {error_msg}")
-                        self.plugin_status_changed.emit(plugin_info, f"Error: {error_msg}")
-                        return False
-                # Add other version check types as needed
-                
-        # All dependencies satisfied
-        self.plugin_status_changed.emit(plugin_info, f"All dependencies satisfied")
-        return True
-        
-    def load_plugin(self, plugin_id):
-        """Load a plugin by ID"""
-        logger.info(f"Attempting to load plugin: {plugin_id}")
-        
-        plugin_info = self.get_plugin(plugin_id)
-        if not plugin_info:
-            logger.warning(f"Cannot load plugin: Plugin not found with ID: {plugin_id}")
-            return None
-            
-        # Skip if already loaded
-        if plugin_info.state.is_loaded:
-            logger.debug(f"Plugin {plugin_id} already loaded, skipping")
-            return plugin_info.instance
-            
-        # Check if plugin is enabled first
-        if not plugin_info.state.is_enabled:
-            logger.warning(f"Cannot load plugin: Plugin is not enabled: {plugin_id}")
-            self.plugin_status_changed.emit(plugin_info, f"Cannot load: Plugin is not enabled")
-            return None
-            
-        # Check if the plugin's dependencies are satisfied
-        if not self._check_plugin_dependencies(plugin_info):
-            logger.warning(f"Cannot load plugin {plugin_id}: Dependencies not satisfied")
-            return None
-            
-        try:
-            # Emit status signal that we're starting to load
-            self.plugin_status_changed.emit(plugin_info, f"Loading plugin...")
-            
-            # Import the plugin entry point
-            import importlib.util
-            import sys
-            import os
-            
-            # Prepare the path to the plugin's entry point
-            plugin_file = os.path.join(plugin_info.path, plugin_info.entry_point)
-            
-            # Check if the file exists
-            if not os.path.exists(plugin_file):
-                logger.error(f"Cannot load plugin: Entry point file not found: {plugin_file}")
-                self.plugin_status_changed.emit(plugin_info, f"Error: Entry point file not found")
-                return None
-                
-            # Add the plugin directory to sys.path if not already there
-            if plugin_info.path not in sys.path:
-                sys.path.insert(0, plugin_info.path)
-                
-            # Load the module
-            self.plugin_status_changed.emit(plugin_info, f"Importing plugin module...")
-            
-            # First, try to find the module if it's already loaded
-            module_name = os.path.splitext(plugin_info.entry_point)[0]
-            spec = importlib.util.find_spec(module_name)
-            
-            if spec is None:
-                # Module not found in sys.path, try to load from file
-                spec = importlib.util.spec_from_file_location(module_name, plugin_file)
-                
-            if spec is None:
-                logger.error(f"Cannot load plugin: Failed to create module spec for {module_name}")
-                self.plugin_status_changed.emit(plugin_info, f"Error: Failed to create module spec")
-                return None
-                
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            
-            # Execute the module
-            spec.loader.exec_module(module)
-            
-            # Find the plugin class
-            plugin_class = None
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
-                if isinstance(attr, type) and attr.__module__ == module.__name__ and hasattr(attr, 'initialize'):
-                    # Found a class with initialize method defined in this module
-                    plugin_class = attr
-                    break
-                    
-            if not plugin_class:
-                logger.error(f"Cannot load plugin: No plugin class found in {plugin_file}")
-                self.plugin_status_changed.emit(plugin_info, f"Error: No plugin class found")
-                return None
-                
-            # Create an instance of the plugin
-            self.plugin_status_changed.emit(plugin_info, f"Creating plugin instance...")
-            instance = plugin_class()
-            
-            # Initialize the plugin
-            self.plugin_status_changed.emit(plugin_info, f"Initializing plugin...")
-            try:
-                success = instance.initialize(self.app, plugin_info)
-                if not success:
-                    logger.error(f"Plugin {plugin_id} initialization returned False")
-                    self.plugin_status_changed.emit(plugin_info, f"Error: Plugin initialization failed")
-                    return None
-            except Exception as e:
-                logger.error(f"Error during plugin initialization: {str(e)}")
-                self.plugin_status_changed.emit(plugin_info, f"Error during initialization: {str(e)}")
-                return None
-                
-            # Store the instance in the plugin info
-            plugin_info.instance = instance
-            
-            # Update plugin state to LOADED
-            self._set_plugin_state(plugin_info, PluginState.LOADED)
-            
-            # Emit plugin loaded signal
-            self.plugin_loaded.emit(plugin_info)
-            
-            # Success status
-            self.plugin_status_changed.emit(plugin_info, f"Plugin loaded successfully")
-            logger.info(f"Plugin loaded successfully: {plugin_id}")
-            
-            return instance
-            
-        except Exception as e:
-            logger.error(f"Error loading plugin {plugin_id}: {str(e)}")
-            self.plugin_status_changed.emit(plugin_info, f"Error: {str(e)}")
-            return None
-
     def _set_plugin_state(self, plugin_info, state):
         """Set the state of a plugin"""
         if not isinstance(state, PluginState):

@@ -45,7 +45,9 @@ class Config(QObject):
                 "plugins_enabled": True,
                 "logs_level": "INFO",
                 "plugins_directory": os.path.abspath(os.path.join(os.path.dirname(__file__), "plugins")),
-                "external_plugins_directory": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "plugins"))
+                "external_plugins_directory": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "plugins")),
+                "auto_install_plugin_requirements": True,
+                "auto_enable_discovered_plugins": True
             },
             "ui": {
                 "font_size": 10,
