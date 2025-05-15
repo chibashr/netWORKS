@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, 
     QSplitter, QTextEdit, QMenu, QFileDialog, QMessageBox,
-    QTreeWidget, QTreeWidgetItem, QDialog
+    QTreeWidget, QTreeWidgetItem, QDialog, QFormLayout, QLineEdit, QGroupBox, QCheckBox
 )
 from PySide6.QtGui import QAction, QIcon, QFont
 
@@ -220,17 +220,138 @@ class CommandOutputPanel(QWidget):
         command_text = output_data.get("command", command_id)
         output_text = output_data.get("output", "")
         
-        # Format timestamp
-        try:
-            dt = datetime.datetime.fromisoformat(timestamp)
-            friendly_time = dt.strftime("%Y%m%d_%H%M%S")
-        except:
-            friendly_time = timestamp.replace(":", "_").replace(".", "_")
+        # Create a dialog to customize the export filename
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QFormLayout, QLineEdit, QComboBox, 
+            QGroupBox, QLabel, QHBoxLayout, QTextEdit, QPushButton, QCheckBox
+        )
         
-        # Create suggested filename
-        device_name = self.device.get_property("alias", "device")
-        filename = f"{device_name}_{command_text.replace(' ', '_')}_{friendly_time}.txt"
-        filename = ''.join(c for c in filename if c.isalnum() or c in ['_', '-', '.'])
+        template_dialog = QDialog(self)
+        template_dialog.setWindowTitle(f"Export: {command_text}")
+        template_dialog.resize(500, 400)
+        
+        layout = QVBoxLayout(template_dialog)
+        
+        # Filename template settings
+        template_group = QGroupBox("Filename Template")
+        template_layout = QFormLayout(template_group)
+        
+        # Template edit
+        template_edit = QLineEdit(self.plugin.settings["export_filename_template"]["value"])
+        template_layout.addRow("Template:", template_edit)
+        
+        # Template help
+        template_help = QLabel(
+            "Available variables: {hostname}, {ip}, {command}, {date}, {status}, plus any device property"
+        )
+        template_help.setWordWrap(True)
+        template_layout.addRow("", template_help)
+        
+        # Date format
+        date_format_edit = QLineEdit(self.plugin.settings["export_date_format"]["value"])
+        template_layout.addRow("Date Format:", date_format_edit)
+        
+        # Command format
+        command_format_combo = QComboBox()
+        command_format_combo.addItems(["truncated", "full", "sanitized"])
+        index = command_format_combo.findText(self.plugin.settings["export_command_format"]["value"])
+        if index >= 0:
+            command_format_combo.setCurrentIndex(index)
+        template_layout.addRow("Command Format:", command_format_combo)
+        
+        # Add preview section
+        preview_group = QGroupBox("Preview")
+        preview_layout = QVBoxLayout(preview_group)
+        
+        # Preview button
+        preview_button = QPushButton("Update Preview")
+        preview_layout.addWidget(preview_button)
+        
+        # Preview label
+        preview_text = QTextEdit()
+        preview_text.setReadOnly(True)
+        preview_text.setMaximumHeight(60)
+        preview_layout.addWidget(preview_text)
+        
+        # Function to update the preview
+        def update_preview():
+            # Create a temporary handler with the current settings
+            class TempPlugin:
+                def __init__(self):
+                    self.settings = {
+                        "export_filename_template": {"value": template_edit.text()},
+                        "export_date_format": {"value": date_format_edit.text()},
+                        "export_command_format": {"value": command_format_combo.currentText()}
+                    }
+            
+            temp_plugin = TempPlugin()
+            from plugins.command_manager.core.output_handler import OutputHandler
+            temp_handler = OutputHandler(temp_plugin)
+            
+            # Generate filename
+            filename = temp_handler.generate_export_filename(self.device, command_id, command_text)
+            if not filename.lower().endswith('.txt'):
+                filename += ".txt"
+                
+            preview_text.setPlainText(f"Preview:\n{filename}")
+            
+            return filename
+            
+        # Connect preview button
+        preview_button.clicked.connect(update_preview)
+        
+        # Add checkbox to save settings
+        save_settings_cb = QCheckBox("Save these settings as default")
+        preview_layout.addWidget(save_settings_cb)
+        
+        # Add groups to layout
+        layout.addWidget(template_group)
+        layout.addWidget(preview_group)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        export_btn = QPushButton("Export")
+        cancel_btn = QPushButton("Cancel")
+        
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(export_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect buttons
+        cancel_btn.clicked.connect(template_dialog.reject)
+        export_btn.clicked.connect(template_dialog.accept)
+        
+        # Generate initial preview
+        filename = update_preview()
+        
+        # Show dialog
+        if not template_dialog.exec():
+            return
+            
+        # Save settings if requested
+        if save_settings_cb.isChecked():
+            self.plugin.settings["export_filename_template"]["value"] = template_edit.text()
+            self.plugin.settings["export_date_format"]["value"] = date_format_edit.text()
+            self.plugin.settings["export_command_format"]["value"] = command_format_combo.currentText()
+        
+        # Create a temporary handler with the current dialog settings
+        class TempPlugin:
+            def __init__(self):
+                self.settings = {
+                    "export_filename_template": {"value": template_edit.text()},
+                    "export_date_format": {"value": date_format_edit.text()},
+                    "export_command_format": {"value": command_format_combo.currentText()}
+                }
+                
+        temp_plugin = TempPlugin()
+        from plugins.command_manager.core.output_handler import OutputHandler
+        temp_handler = OutputHandler(temp_plugin)
+        
+        # Generate filename
+        filename = temp_handler.generate_export_filename(self.device, command_id, command_text)
+        if not filename.lower().endswith('.txt'):
+            filename += ".txt"
         
         # Show save dialog
         file_path, _ = QFileDialog.getSaveFileName(
@@ -248,7 +369,7 @@ class CommandOutputPanel(QWidget):
             with open(file_path, "w") as f:
                 f.write(f"Command: {command_text}\n")
                 f.write(f"Timestamp: {timestamp}\n")
-                f.write(f"Device: {device_name}\n")
+                f.write(f"Device: {self.device.get_property('alias', 'device')}\n")
                 f.write("-" * 80 + "\n\n")
                 f.write(output_text)
                 
@@ -266,6 +387,16 @@ class CommandOutputPanel(QWidget):
             
     def _on_export_all(self):
         """Export all command outputs for the device"""
+        # Use the plugin's output_handler to export all device commands
+        # This will use the template-based filenames and support multi-command export
+        if hasattr(self.plugin, 'output_handler') and self.plugin.output_handler:
+            self.plugin.output_handler._export_device_commands(self.device)
+        else:
+            # Fallback to legacy export method
+            self._legacy_export_all()
+            
+    def _legacy_export_all(self):
+        """Export all command outputs for the device using legacy method"""
         if not self.device:
             return
             

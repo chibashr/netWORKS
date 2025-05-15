@@ -80,3 +80,5 @@ htmlcov/
 .coverage.*
 coverage.xml
 *,cover 
+
+workspaces/

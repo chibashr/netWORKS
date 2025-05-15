@@ -190,7 +190,14 @@ class CommandDialog(QDialog):
         self.manage_credentials_btn = QPushButton("👤 Manage Credentials")
         self.manage_credentials_btn.setToolTip("Configure device credentials")
         self.manage_credentials_btn.clicked.connect(self._on_manage_credentials)
+        
+        # Add Batch Export button
+        self.batch_export_btn = QPushButton("📊 Batch Export")
+        self.batch_export_btn.setToolTip("Export commands from multiple devices")
+        self.batch_export_btn.clicked.connect(self._on_batch_export)
+        
         device_cred_layout.addWidget(self.manage_credentials_btn)
+        device_cred_layout.addWidget(self.batch_export_btn)
         device_cred_layout.addStretch()
         
         device_layout.addWidget(device_label)
@@ -796,4 +803,29 @@ class CommandDialog(QDialog):
         cred_manager = CredentialManager(self.plugin, selected_devices, self)
         cred_manager.setWindowTitle("Device Credential Manager")
         cred_manager.resize(700, 550)
-        cred_manager.exec() 
+        cred_manager.exec()
+
+    def _on_batch_export(self):
+        """Handle batch export button"""
+        from plugins.command_manager.reports.command_batch_export import CommandBatchExport
+        
+        try:
+            # Create and display the batch export dialog
+            dialog = CommandBatchExport(self.plugin, self)
+            
+            # Set window title to be more descriptive
+            dialog.setWindowTitle("Export Commands from Multiple Devices")
+            
+            # Execute the dialog
+            dialog.exec()
+            
+        except Exception as e:
+            from loguru import logger
+            logger.error(f"Error opening Command Batch Export: {e}")
+            logger.exception("Exception details:")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Error Opening Command Batch Export",
+                f"An error occurred while opening the Command Batch Export: {str(e)}"
+            ) 

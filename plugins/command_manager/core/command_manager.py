@@ -11,7 +11,7 @@ from pathlib import Path
 from loguru import logger
 
 from PySide6.QtCore import Qt, Signal, Slot, QObject
-from PySide6.QtWidgets import QMessageBox, QMenu, QDialog
+from PySide6.QtWidgets import QMessageBox, QMenu, QDialog, QToolBar
 from PySide6.QtGui import QIcon, QAction
 
 # Import interfaces from the main application
@@ -22,6 +22,7 @@ from plugins.command_manager.ui.command_dialog import CommandDialog
 from plugins.command_manager.ui.credential_manager import CredentialManager
 from plugins.command_manager.ui.command_output_panel import CommandOutputPanel
 from plugins.command_manager.ui.command_set_editor import CommandSetEditor
+from plugins.command_manager.ui.settings_dialog import SettingsDialog
 
 # Import from core components
 from .plugin_setup import register_ui, register_context_menu
@@ -44,6 +45,32 @@ class CommandManagerPlugin(PluginInterface):
         self.data_dir = None
         self.commands_dir = None
         self.output_dir = None
+        
+        # Plugin settings
+        self.settings = {
+            "export_filename_template": {
+                "name": "Export Filename Template",
+                "description": "Template for exported command filenames. Available variables: {hostname}, {ip}, {command}, {date}, and any device property.",
+                "type": "string",
+                "default": "{hostname}_{command}_{date}",
+                "value": "{hostname}_{command}_{date}"
+            },
+            "export_date_format": {
+                "name": "Export Date Format",
+                "description": "Date format for exported filenames (using Python strftime format)",
+                "type": "string",
+                "default": "%Y%m%d",
+                "value": "%Y%m%d"
+            },
+            "export_command_format": {
+                "name": "Export Command Format",
+                "description": "How to format command names in exported filenames (truncated, full, etc.)",
+                "type": "choice",
+                "choices": ["truncated", "full", "sanitized"],
+                "default": "truncated",
+                "value": "truncated"
+            }
+        }
         
         # UI components
         self.command_dialog = None
@@ -121,6 +148,19 @@ class CommandManagerPlugin(PluginInterface):
                 try:
                     self.main_window.addToolBar(self.toolbar)
                     logger.debug("Toolbar added to main window")
+                    
+                    # Apply style to reduce vertical margins on main toolbar buttons
+                    main_toolbar = self.main_window.findChild(QToolBar)
+                    if main_toolbar:
+                        main_toolbar.setStyleSheet("""
+                            QToolButton {
+                                padding-top: 2px;
+                                padding-bottom: 2px;
+                                margin-top: 1px;
+                                margin-bottom: 1px;
+                            }
+                        """)
+                        logger.debug("Applied style to main toolbar")
                 except Exception as e:
                     logger.error(f"Error adding toolbar to main window: {e}")
                     logger.exception("Exception details:")
@@ -343,7 +383,7 @@ class CommandManagerPlugin(PluginInterface):
     
     def get_toolbar_actions(self):
         """Get actions to be added to the toolbar"""
-        return [self.toolbar_action, self.credential_manager_action]
+        return [self.toolbar_action, self.batch_export_action, self.credential_manager_action]
         
     def find_existing_menu(self, menu_name):
         """Find an existing menu by name (case-insensitive)
@@ -381,14 +421,48 @@ class CommandManagerPlugin(PluginInterface):
         return menu_name
         
     def get_menu_actions(self):
-        """Get actions to be added to the menu
+        """Get actions to be added to the main menu
         
-        Returns a dictionary mapping menu names to lists of actions.
-        Uses find_existing_menu to ensure we add to existing menus instead
-        of creating duplicates.
+        Returns:
+            dict: Dictionary of menu name -> list of actions
         """
-        # Return an empty dictionary to avoid creating a Tools menu entry
-        return {}
+        logger.debug("Getting menu actions")
+        
+        # Create actions
+        actions = {}
+        
+        # Tools menu
+        tools_menu = []
+        
+        # Run Commands action
+        run_commands_action = QAction("Run Commands", self.main_window)
+        run_commands_action.triggered.connect(self._on_run_commands)
+        tools_menu.append(run_commands_action)
+        
+        # Manage Credentials action
+        credentials_action = QAction("Manage Credentials", self.main_window)
+        credentials_action.triggered.connect(self._on_manage_credentials)
+        tools_menu.append(credentials_action)
+        
+        # Edit Command Sets action
+        edit_commands_action = QAction("Edit Command Sets", self.main_window)
+        edit_commands_action.triggered.connect(self._on_edit_command_sets)
+        tools_menu.append(edit_commands_action)
+        
+        # Batch Export action
+        batch_export_action = QAction("Batch Command Export", self.main_window)
+        batch_export_action.triggered.connect(self._on_batch_export)
+        tools_menu.append(batch_export_action)
+        
+        # Settings action
+        settings_action = QAction("Command Manager Settings", self.main_window)
+        settings_action.triggered.connect(self._on_open_settings)
+        tools_menu.append(settings_action)
+        
+        actions["Tools"] = tools_menu
+        
+        logger.debug(f"Returning {len(actions)} menu actions")
+        return actions
         
     def get_device_context_menu_actions(self):
         """Get actions to be added to the device context menu"""
@@ -545,4 +619,77 @@ class CommandManagerPlugin(PluginInterface):
         """Get command set for a device type and firmware version"""
         if hasattr(self, 'command_handler') and self.command_handler:
             return self.command_handler.get_command_set(device_type, firmware_version)
-        return None 
+        return None
+    
+    def get_command_outputs(self, device_id):
+        """Get command outputs for a device
+        
+        Args:
+            device_id (str): The device ID
+            
+        Returns:
+            dict: Dictionary of command_id -> {timestamp: output}
+        """
+        logger.debug(f"Getting command outputs for device {device_id}")
+        
+        # First try using the output handler if available
+        if hasattr(self, 'output_handler') and self.output_handler:
+            try:
+                # Use the correct method name in OutputHandler
+                device_outputs = self.output_handler.get_command_outputs(device_id)
+                if device_outputs:
+                    return device_outputs
+            except Exception as e:
+                logger.debug(f"Error getting outputs through handler: {e}")
+                # Continue with direct access if handler fails
+        
+        # Fall back to direct access
+        if hasattr(self, 'outputs') and device_id in self.outputs:
+            return self.outputs.get(device_id, {})
+            
+        # Return empty dict if no outputs found
+        return {}
+    
+    def _on_run_commands(self):
+        """Handle run commands menu item"""
+        # Implement the logic to open the command dialog
+        pass
+    
+    def _on_manage_credentials(self):
+        """Handle manage credentials menu item"""
+        # Implement the logic to open the credential manager
+        pass
+    
+    def _on_edit_command_sets(self):
+        """Handle edit command sets menu item"""
+        # Implement the logic to open the command set editor
+        pass
+    
+    def _on_batch_export(self):
+        """Open batch export dialog"""
+        try:
+            # Ensure the import is done properly with explicit import
+            from PySide6.QtWidgets import QWidget
+            from plugins.command_manager.reports.command_batch_export import CommandBatchExport
+            
+            dialog = CommandBatchExport(self, self.main_window)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening Command Batch Export: {e}")
+            logger.exception("Exception details:")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self.main_window,
+                "Error Opening Command Batch Export",
+                f"An error occurred while opening the Command Batch Export: {str(e)}"
+            )
+    
+    def _on_open_settings(self):
+        """Open settings dialog"""
+        dialog = SettingsDialog(self, self.main_window)
+        result = dialog.exec()
+        
+        # If settings were changed, update UI components
+        if result:
+            logger.debug("Settings updated")
+            # Refresh any UI components that depend on settings 

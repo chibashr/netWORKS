@@ -6,11 +6,13 @@ Plugin UI setup and registration functions
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QToolBar
+from PySide6.QtWidgets import QToolBar, QWidget
 from PySide6.QtGui import QIcon, QAction
 
 from plugins.command_manager.ui.command_dialog import CommandDialog
 from plugins.command_manager.ui.command_set_editor import CommandSetEditor
+from plugins.command_manager.ui.settings_dialog import SettingsDialog
+from plugins.command_manager.reports.command_batch_export import CommandBatchExport
 
 def register_ui(plugin):
     """Create and register UI components for the plugin
@@ -32,6 +34,20 @@ def register_ui(plugin):
     plugin.credential_manager_action.triggered.connect(lambda: on_manage_credentials(plugin))
     plugin.credential_manager_action.setObjectName("CredentialManagerAction")
     logger.debug(f"Created credential_manager_action: {plugin.credential_manager_action}")
+    
+    # Create a batch export action for the main toolbar
+    plugin.batch_export_action = QAction("Batch Export", plugin.main_window)
+    plugin.batch_export_action.setToolTip("Export command outputs from multiple devices")
+    plugin.batch_export_action.triggered.connect(lambda: on_batch_export(plugin))
+    plugin.batch_export_action.setObjectName("BatchExportAction")
+    logger.debug(f"Created batch_export_action: {plugin.batch_export_action}")
+    
+    # Create settings action
+    plugin.settings_action = QAction("Settings", plugin.main_window)
+    plugin.settings_action.setToolTip("Configure Command Manager settings")
+    plugin.settings_action.triggered.connect(lambda: on_open_settings(plugin))
+    plugin.settings_action.setObjectName("SettingsAction")
+    logger.debug(f"Created settings_action: {plugin.settings_action}")
     
     # Create toolbar
     plugin.toolbar = create_toolbar(plugin)
@@ -65,6 +81,20 @@ def create_toolbar(plugin):
     toolbar = QToolBar("Command Manager")
     toolbar.setObjectName("CommandManagerToolbar")
     
+    # Reduce vertical margins on toolbar buttons
+    toolbar.setStyleSheet("""
+        QToolBar {
+            spacing: 2px;
+            padding: 1px;
+        }
+        QToolButton {
+            padding-top: 2px;
+            padding-bottom: 2px;
+            margin-top: 1px;
+            margin-bottom: 1px;
+        }
+    """)
+    
     try:
         # Action to run commands
         run_action = QAction("Run Commands", plugin.main_window)
@@ -79,6 +109,13 @@ def create_toolbar(plugin):
         sets_action.triggered.connect(lambda: on_manage_sets(plugin))
         logger.debug(f"Created sets_action: {sets_action}")
         toolbar.addAction(sets_action)
+        
+        # Action to batch export commands
+        batch_export_action = QAction("Export Multiple Devices", plugin.main_window)
+        batch_export_action.setToolTip("Export command outputs from multiple devices")
+        batch_export_action.triggered.connect(lambda: on_batch_export(plugin))
+        logger.debug(f"Created batch_export_action: {batch_export_action}")
+        toolbar.addAction(batch_export_action)
         
         # Add a separator before the credential management button to make it stand out
         toolbar.addSeparator()
@@ -95,6 +132,9 @@ def create_toolbar(plugin):
         report_action.triggered.connect(lambda: on_generate_report(plugin))
         logger.debug(f"Created report_action: {report_action}")
         toolbar.addAction(report_action)
+        
+        # Settings action
+        toolbar.addAction(plugin.settings_action)
         
     except Exception as e:
         logger.error(f"Error creating toolbar actions: {e}")
@@ -258,4 +298,55 @@ def on_manage_credentials(plugin):
             plugin.main_window,
             "Error Opening Credential Manager",
             f"An error occurred while opening the Credential Manager: {str(e)}"
+        )
+
+def on_batch_export(plugin):
+    """Handle batch export action"""
+    logger.info("Opening Command Batch Export")
+    
+    try:
+        # Explicitly import required components to ensure they're available
+        from PySide6.QtWidgets import QWidget, QMessageBox
+        from plugins.command_manager.reports.command_batch_export import CommandBatchExport
+        
+        # Create and display the batch export dialog
+        dialog = CommandBatchExport(plugin, plugin.main_window)
+        
+        # Set window title to be more descriptive
+        dialog.setWindowTitle("Export Commands from Multiple Devices")
+        
+        # Execute the dialog
+        dialog.exec()
+        
+    except Exception as e:
+        logger.error(f"Error opening Command Batch Export: {e}")
+        logger.exception("Exception details:")
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.critical(
+            plugin.main_window,
+            "Error Opening Command Batch Export",
+            f"An error occurred while opening the Command Batch Export: {str(e)}"
+        )
+
+def on_open_settings(plugin):
+    """Handle open settings action"""
+    from plugins.command_manager.ui.settings_dialog import SettingsDialog
+    
+    try:
+        # Create and display the settings dialog
+        dialog = SettingsDialog(plugin, plugin.main_window)
+        
+        # Execute the dialog
+        result = dialog.exec()
+        
+        if result:
+            logger.info("Settings updated")
+            # Could refresh UI components if needed
+    except Exception as e:
+        logger.error(f"Error opening settings dialog: {e}")
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.critical(
+            plugin.main_window,
+            "Error Opening Settings",
+            f"An error occurred while opening the Settings dialog: {str(e)}"
         ) 

@@ -15,7 +15,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QFileDialog, QSplitter, QTabWidget, QTextEdit, QStackedWidget
+    QFileDialog, QSplitter, QTabWidget, QTextEdit, QStackedWidget,
+    QDialog, QListWidget, QAbstractItemView, QCheckBox, QGroupBox, QFormLayout, QLineEdit, QComboBox
 )
 from PySide6.QtGui import QFont, QColor
 
@@ -604,33 +605,303 @@ class OutputHandler:
             
         device = devices[0]
         
-        # Ask for file to save to
-        file_path, _ = QFileDialog.getSaveFileName(
-            self.plugin.main_window,
-            "Export Command Outputs",
-            "",
-            "Text Files (*.txt);;HTML Files (*.html);;All Files (*.*)"
-        )
+        # Get command outputs for device
+        all_outputs = self.get_command_outputs(device.id)
+        if not all_outputs:
+            QMessageBox.information(
+                self.plugin.main_window,
+                "No Outputs",
+                f"No command outputs found for {device.get_property('alias', 'Device')}"
+            )
+            return
         
-        if not file_path:
+        # Create a dialog to select which commands to export
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QAbstractItemView, 
+            QCheckBox, QGroupBox, QFormLayout, QLineEdit, QPushButton
+        )
+        select_dialog = QDialog(self.plugin.main_window)
+        select_dialog.setWindowTitle("Export Commands")
+        select_dialog.resize(600, 500)
+        
+        layout = QVBoxLayout(select_dialog)
+        
+        # Command selection section
+        command_group = QGroupBox("Select Commands to Export")
+        command_layout = QVBoxLayout(command_group)
+        
+        # Create a list widget for commands
+        command_list = QListWidget()
+        command_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        command_layout.addWidget(command_list)
+        
+        # Add command entries to the list
+        for cmd_id, timestamps in all_outputs.items():
+            # Get the most recent output
+            latest_timestamp = max(timestamps.keys())
+            cmd_data = timestamps[latest_timestamp]
+            cmd_text = cmd_data.get("command", cmd_id)
+            
+            # Add to list
+            command_list.addItem(cmd_text)
+            # Store the command_id and timestamp as data
+            item = command_list.item(command_list.count() - 1)
+            item.setData(Qt.UserRole, {"command_id": cmd_id, "timestamp": latest_timestamp})
+        
+        # Select all items by default
+        for i in range(command_list.count()):
+            command_list.item(i).setSelected(True)
+            
+        command_layout.addWidget(command_list)
+        
+        # Output format options
+        export_options_group = QGroupBox("Export Options")
+        export_options_layout = QVBoxLayout(export_options_group)
+        
+        # Add a checkbox for "Export to individual files"
+        individual_files_cb = QCheckBox("Export each command to a separate file")
+        individual_files_cb.setChecked(True)
+        export_options_layout.addWidget(individual_files_cb)
+        
+        # Filename template settings
+        template_group = QGroupBox("Filename Template")
+        template_layout = QFormLayout(template_group)
+        
+        # Template edit
+        template_edit = QLineEdit(self.plugin.settings["export_filename_template"]["value"])
+        template_layout.addRow("Template:", template_edit)
+        
+        # Template help
+        template_help = QLabel(
+            "Available variables: {hostname}, {ip}, {command}, {date}, {status}, plus any device property"
+        )
+        template_help.setWordWrap(True)
+        template_layout.addRow("", template_help)
+        
+        # Date format
+        date_format_edit = QLineEdit(self.plugin.settings["export_date_format"]["value"])
+        template_layout.addRow("Date Format:", date_format_edit)
+        
+        # Command format
+        command_format_combo = QComboBox()
+        command_format_combo.addItems(["truncated", "full", "sanitized"])
+        index = command_format_combo.findText(self.plugin.settings["export_command_format"]["value"])
+        if index >= 0:
+            command_format_combo.setCurrentIndex(index)
+        template_layout.addRow("Command Format:", command_format_combo)
+        
+        # Add preview section
+        preview_group = QGroupBox("Export Preview")
+        preview_layout = QVBoxLayout(preview_group)
+        
+        # Preview button
+        preview_button = QPushButton("Generate Preview")
+        preview_layout.addWidget(preview_button)
+        
+        # Preview text
+        preview_text = QTextEdit()
+        preview_text.setReadOnly(True)
+        preview_text.setMaximumHeight(100)
+        preview_layout.addWidget(preview_text)
+        
+        # Function to update the preview
+        def update_preview():
+            selected_items = command_list.selectedItems()
+            if not selected_items:
+                preview_text.setPlainText("No commands selected")
+                return
+                
+            # Create a temporary handler with the current settings
+            class TempPlugin:
+                def __init__(self):
+                    self.settings = {
+                        "export_filename_template": {"value": template_edit.text()},
+                        "export_date_format": {"value": date_format_edit.text()},
+                        "export_command_format": {"value": command_format_combo.currentText()}
+                    }
+                    
+            temp_plugin = TempPlugin()
+            temp_handler = OutputHandler(temp_plugin)
+            
+            # Generate preview
+            preview_content = "Filename preview:\n\n"
+            
+            for i, item in enumerate(selected_items):
+                if i >= 5:  # Limit preview to 5 items
+                    preview_content += f"... and {len(selected_items) - 5} more\n"
+                    break
+                    
+                data = item.data(Qt.UserRole)
+                cmd_id = data["command_id"]
+                cmd_text = item.text()
+                
+                filename = temp_handler.generate_export_filename(device, cmd_id, cmd_text)
+                if not filename.lower().endswith('.txt'):
+                    filename += ".txt"
+                    
+                preview_content += f"{cmd_text} → {filename}\n"
+                
+            preview_text.setPlainText(preview_content)
+        
+        # Connect preview button
+        preview_button.clicked.connect(update_preview)
+        
+        # Add checkbox to save settings
+        save_settings_cb = QCheckBox("Save these settings as default")
+        preview_layout.addWidget(save_settings_cb)
+        
+        # Add all option groups to the layout
+        layout.addWidget(command_group)
+        layout.addWidget(export_options_group)
+        layout.addWidget(template_group)
+        layout.addWidget(preview_group)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        from PySide6.QtWidgets import QPushButton
+        
+        export_btn = QPushButton("Export")
+        cancel_btn = QPushButton("Cancel")
+        
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(export_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect buttons
+        cancel_btn.clicked.connect(select_dialog.reject)
+        export_btn.clicked.connect(select_dialog.accept)
+        
+        # Generate initial preview
+        update_preview()
+        
+        # Show dialog
+        if not select_dialog.exec():
+            return
+        
+        # Save settings if requested
+        if save_settings_cb.isChecked():
+            self.plugin.settings["export_filename_template"]["value"] = template_edit.text()
+            self.plugin.settings["export_date_format"]["value"] = date_format_edit.text()
+            self.plugin.settings["export_command_format"]["value"] = command_format_combo.currentText()
+        
+        # Get selected commands
+        selected_items = command_list.selectedItems()
+        if not selected_items:
             return
             
-        # Get command outputs for device
-        outputs = self.get_command_outputs(device.id)
+        selected_commands = []
+        for item in selected_items:
+            data = item.data(Qt.UserRole)
+            selected_commands.append((data["command_id"], data["timestamp"], item.text()))
         
-        try:
-            # Determine export format
-            if file_path.lower().endswith(".html"):
-                # HTML export
-                with open(file_path, "w") as f:
-                    f.write("<html><head><title>Command Outputs</title></head><body>\n")
-                    f.write(f"<h1>Command Outputs for {device.get_property('alias', 'Device')}</h1>\n")
+        # Create a temporary handler with the current dialog settings
+        class TempPlugin:
+            def __init__(self):
+                self.settings = {
+                    "export_filename_template": {"value": template_edit.text()},
+                    "export_date_format": {"value": date_format_edit.text()},
+                    "export_command_format": {"value": command_format_combo.currentText()}
+                }
+                
+        temp_plugin = TempPlugin()
+        temp_handler = OutputHandler(temp_plugin)
+        
+        # Handle export to individual files or a single file
+        if individual_files_cb.isChecked():
+            # Ask for directory to save files
+            export_dir = QFileDialog.getExistingDirectory(
+                self.plugin.main_window,
+                "Select Export Directory",
+                ""
+            )
+            
+            if not export_dir:
+                return
+                
+            # Export each command to a separate file
+            exported_count = 0
+            exported_files = []
+            
+            for cmd_id, timestamp, cmd_text in selected_commands:
+                try:
+                    # Get the command output
+                    output_data = all_outputs[cmd_id][timestamp]
+                    output = output_data.get("output", "")
                     
-                    for cmd_id, cmd_outputs in outputs.items():
-                        for timestamp, data in cmd_outputs.items():
+                    # Generate filename based on template
+                    filename = temp_handler.generate_export_filename(device, cmd_id, cmd_text)
+                    if not filename.lower().endswith('.txt'):
+                        filename += ".txt"
+                        
+                    # Full path
+                    file_path = os.path.join(export_dir, filename)
+                    
+                    # If file exists, add a number suffix to avoid overwriting
+                    counter = 1
+                    original_path = file_path
+                    while os.path.exists(file_path):
+                        file_name, file_ext = os.path.splitext(original_path)
+                        file_path = f"{file_name}_{counter}{file_ext}"
+                        counter += 1
+                    
+                    # Export to file
+                    with open(file_path, "w") as f:
+                        f.write(f"Device: {device.get_property('alias', 'Device')}\n")
+                        f.write(f"Command: {cmd_text}\n")
+                        f.write(f"Date/Time: {datetime.datetime.fromisoformat(timestamp).strftime('%Y-%m-%d %H:%M:%S')}\n")
+                        f.write("-" * 50 + "\n")
+                        f.write(output)
+                    
+                    exported_count += 1
+                    exported_files.append(os.path.basename(file_path))
+                    
+                except Exception as e:
+                    logger.error(f"Error exporting command {cmd_id}: {e}")
+            
+            # Show success message with exported filenames
+            if exported_count > 0:
+                files_list = "\n".join(exported_files[:5])
+                if len(exported_files) > 5:
+                    files_list += f"\n... and {len(exported_files) - 5} more"
+                    
+                QMessageBox.information(
+                    self.plugin.main_window,
+                    "Export Successful",
+                    f"Exported {exported_count} command outputs to {export_dir}\n\nFiles:\n{files_list}"
+                )
+            else:
+                QMessageBox.warning(
+                    self.plugin.main_window,
+                    "Export Failed",
+                    "Failed to export any commands."
+                )
+            
+        else:
+            # Export all to a single file
+            # Ask for file to save to
+            file_path, _ = QFileDialog.getSaveFileName(
+                self.plugin.main_window,
+                "Export Command Outputs",
+                "",
+                "Text Files (*.txt);;HTML Files (*.html);;All Files (*.*)"
+            )
+            
+            if not file_path:
+                return
+                
+            try:
+                # Determine export format
+                if file_path.lower().endswith(".html"):
+                    # HTML export
+                    with open(file_path, "w") as f:
+                        f.write("<html><head><title>Command Outputs</title></head><body>\n")
+                        f.write(f"<h1>Command Outputs for {device.get_property('alias', 'Device')}</h1>\n")
+                        
+                        for cmd_id, timestamp, cmd_text in selected_commands:
+                            output_data = all_outputs[cmd_id][timestamp]
+                            output = output_data.get("output", "")
                             dt = datetime.datetime.fromisoformat(timestamp)
-                            cmd_text = data.get("command", cmd_id)
-                            output = data.get("output", "")
                             
                             f.write(f"<h2>{cmd_text}</h2>\n")
                             f.write(f"<p>Date/Time: {dt.strftime('%Y-%m-%d %H:%M:%S')}</p>\n")
@@ -639,39 +910,38 @@ class OutputHandler:
                             f.write("\n</pre>\n")
                             f.write("<hr>\n")
                             
-                    f.write("</body></html>")
-            else:
-                # Text export
-                with open(file_path, "w") as f:
-                    f.write(f"Command Outputs for {device.get_property('alias', 'Device')}\n")
-                    f.write("=" * 50 + "\n\n")
-                    
-                    for cmd_id, cmd_outputs in outputs.items():
-                        for timestamp, data in cmd_outputs.items():
+                        f.write("</body></html>")
+                else:
+                    # Text export
+                    with open(file_path, "w") as f:
+                        f.write(f"Command Outputs for {device.get_property('alias', 'Device')}\n")
+                        f.write("=" * 50 + "\n\n")
+                        
+                        for cmd_id, timestamp, cmd_text in selected_commands:
+                            output_data = all_outputs[cmd_id][timestamp]
+                            output = output_data.get("output", "")
                             dt = datetime.datetime.fromisoformat(timestamp)
-                            cmd_text = data.get("command", cmd_id)
-                            output = data.get("output", "")
                             
                             f.write(f"Command: {cmd_text}\n")
                             f.write(f"Date/Time: {dt.strftime('%Y-%m-%d %H:%M:%S')}\n")
                             f.write("-" * 50 + "\n")
                             f.write(output)
-                            f.write("\n\n" + "=" * 50 + "\n\n")
-            
-            # Show success message
-            QMessageBox.information(
-                self.plugin.main_window,
-                "Export Successful",
-                f"Command outputs exported to {file_path}"
-            )
-            
-        except Exception as e:
-            # Show error message
-            QMessageBox.critical(
-                self.plugin.main_window,
-                "Export Failed",
-                f"Failed to export command outputs: {str(e)}"
-            )
+                            f.write("\n\n" + "=" * 80 + "\n\n")
+                
+                # Show success message
+                QMessageBox.information(
+                    self.plugin.main_window,
+                    "Export Successful",
+                    f"Command outputs exported to {file_path}"
+                )
+                
+            except Exception as e:
+                # Show error message
+                QMessageBox.critical(
+                    self.plugin.main_window,
+                    "Export Failed",
+                    f"Failed to export command outputs: {str(e)}"
+                )
             
     def _delete_device_commands(self, command_list):
         """Delete selected device commands"""
@@ -1158,4 +1428,93 @@ class OutputHandler:
                 for col, data in enumerate(row_data):
                     item = QTableWidgetItem(data)
                     table_widget.setItem(row_idx, col, item)
+        
+    def generate_export_filename(self, device, command, command_text=None):
+        """Generate a filename for exporting command output using template
+        
+        Args:
+            device: The device to generate a filename for
+            command: The command ID
+            command_text: The actual command text (optional)
+            
+        Returns:
+            str: The generated filename
+        """
+        template = self.plugin.settings["export_filename_template"]["value"]
+        date_format = self.plugin.settings["export_date_format"]["value"]
+        command_format = self.plugin.settings["export_command_format"]["value"]
+        
+        # Get the date formatted according to settings
+        current_date = datetime.datetime.now().strftime(date_format)
+        
+        # Handle command formatting
+        cmd_text = command_text or command
+        if command_format == "truncated":
+            # Replace spaces with hyphens and limit to 15 chars instead of truncating at first space
+            cmd_text = cmd_text.replace(" ", "-")[:15]
+        elif command_format == "sanitized":
+            # Remove special characters, convert spaces to hyphens
+            cmd_text = "".join(c if c.isalnum() or c == " " else "-" for c in cmd_text)
+            cmd_text = cmd_text.replace(" ", "-").replace("--", "-").strip("-")[:25]  # Limit length and clean up
+        else:  # "full" format - still replace spaces with hyphens for filename safety
+            cmd_text = cmd_text.replace(" ", "-")
+        
+        # Create placeholder values
+        placeholders = {
+            "command": cmd_text,
+            "date": current_date,
+            "hostname": device.get_property("hostname", "unknown"),
+            "ip": device.get_property("ip_address", "unknown"),
+            "status": device.get_property("status", "unknown"),
+        }
+        
+        # Add all device properties as potential placeholders
+        for key, value in device.get_properties().items():
+            # Only add simple values, not lists or dicts
+            if isinstance(value, (str, int, float, bool)):
+                placeholders[key] = str(value)
+        
+        # Apply the template
+        try:
+            filename = template.format(**placeholders)
+            # Sanitize filename to remove characters that aren't allowed in filenames
+            return self._sanitize_filename(filename)
+        except KeyError as e:
+            logger.error(f"Error in filename template: Unknown placeholder {e}")
+            # Fallback to a simple filename
+            return f"{device.get_property('hostname', 'device')}_{cmd_text}_{current_date}.txt"
+        except Exception as e:
+            logger.error(f"Error generating filename from template: {e}")
+            # Fallback to a simple filename
+            return f"command_output_{current_date}.txt"
+    
+    def _sanitize_filename(self, filename):
+        """Sanitize a filename to remove illegal characters
+        
+        Args:
+            filename (str): The filename to sanitize
+            
+        Returns:
+            str: The sanitized filename
+        """
+        # Replace characters that are not allowed in filenames
+        invalid_chars = '<>:"/\\|?*'
+        for char in invalid_chars:
+            filename = filename.replace(char, '-')
+        
+        # Replace spaces with hyphens for better filenames
+        filename = filename.replace(' ', '-')
+        
+        # Clean up multiple consecutive hyphens
+        while '--' in filename:
+            filename = filename.replace('--', '-')
+        
+        # Ensure the filename is not too long
+        if len(filename) > 240:  # Leave room for extension
+            filename = filename[:240]
+            
+        # Remove any trailing hyphens
+        filename = filename.rstrip('-')
+            
+        return filename
         
