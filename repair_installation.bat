@@ -177,16 +177,8 @@ python -c "import importlib.util; packages=['paramiko', 'nmap', 'netifaces', 'sc
 :: Try direct imports for most problematic packages
 echo.
 echo [INFO] Testing critical imports directly...
-python -c "try:
-    import PySide6
-    print('PySide6 imported successfully')
-except ImportError as e:
-    print(f'Failed to import PySide6: {e}')"
-python -c "try:
-    import pandas
-    print('pandas imported successfully')
-except ImportError as e:
-    print(f'Failed to import pandas: {e}')"
+python -c "try: import PySide6; print('PySide6 imported successfully'); except ImportError as e: print(f'Failed to import PySide6: {e}')"
+python -c "try: import pandas; print('pandas imported successfully'); except ImportError as e: print(f'Failed to import pandas: {e}')"
 
 :: Deactivate virtual environment
 call venv\Scripts\deactivate.bat
