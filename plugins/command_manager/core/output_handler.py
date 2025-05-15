@@ -15,9 +15,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QFileDialog, QSplitter, QTabWidget, QTextEdit
+    QFileDialog, QSplitter, QTabWidget, QTextEdit, QStackedWidget
 )
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QColor
 
 class OutputHandler:
     """Handler for command outputs and device command panels"""
@@ -298,18 +298,29 @@ class OutputHandler:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
+        # Create a splitter for command list and output view
+        splitter = QSplitter(Qt.Vertical)
+        
+        # Create a widget for the command list section
+        command_list_widget = QWidget()
+        command_list_layout = QVBoxLayout(command_list_widget)
+        command_list_layout.setContentsMargins(0, 0, 0, 0)
+        
         # Command output list
         device_command_list = QTableWidget()
-        device_command_list.setColumnCount(4)
-        device_command_list.setHorizontalHeaderLabels(["Command", "Date/Time", "Success", "View"])
+        device_command_list.setColumnCount(3)  # Removed View column
+        device_command_list.setHorizontalHeaderLabels(["Command", "Date/Time", "Success"])
         device_command_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         device_command_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         device_command_list.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        device_command_list.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         device_command_list.setSelectionBehavior(QTableWidget.SelectRows)
+        device_command_list.setSortingEnabled(True)
         
         # Store device for reference
         device_command_list.setProperty("device", device)
+        
+        # Add command list to layout
+        command_list_layout.addWidget(device_command_list)
         
         # Button bar
         button_layout = QHBoxLayout()
@@ -323,14 +334,80 @@ class OutputHandler:
         delete_btn = QPushButton("Delete")
         delete_btn.clicked.connect(lambda: self._delete_device_commands(device_command_list))
         
+        run_btn = QPushButton("Run Command")
+        run_btn.clicked.connect(lambda: self._run_command_for_device(device))
+        
         button_layout.addWidget(refresh_btn)
+        button_layout.addWidget(run_btn)
         button_layout.addWidget(export_btn)
         button_layout.addWidget(delete_btn)
         button_layout.addStretch()
         
-        # Add widgets to layout
-        layout.addWidget(device_command_list)
-        layout.addLayout(button_layout)
+        # Add buttons to layout
+        command_list_layout.addLayout(button_layout)
+        
+        # Create output view widget
+        output_widget = QWidget()
+        output_layout = QVBoxLayout(output_widget)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Output display options
+        display_options = QHBoxLayout()
+        
+        # Label for the output
+        output_label = QLabel("Command Output:")
+        
+        # Toggle button for table view
+        table_view_toggle = QPushButton("Table View")
+        table_view_toggle.setCheckable(True)
+        table_view_toggle.setProperty("is_table_view", False)
+        table_view_toggle.setEnabled(False)  # Initially disabled until we have selectable content
+        
+        display_options.addWidget(output_label)
+        display_options.addStretch()
+        display_options.addWidget(table_view_toggle)
+        
+        output_layout.addLayout(display_options)
+        
+        # Create stacked widget to switch between text and table views
+        output_stack = QStackedWidget()
+        
+        # Raw output view (text)
+        raw_output = QTextEdit()
+        raw_output.setReadOnly(True)
+        raw_output.setFont(QFont("Courier New", 10))
+        raw_output.setPlaceholderText("Select a command to view its output")
+        
+        # Table output view
+        table_output = QTableWidget()
+        table_output.setSortingEnabled(True)
+        table_output.setEditTriggers(QTableWidget.NoEditTriggers)  # Read-only
+        
+        # Add widgets to stack
+        output_stack.addWidget(raw_output)
+        output_stack.addWidget(table_output)
+        
+        output_layout.addWidget(output_stack)
+        
+        # Connect the toggle button
+        table_view_toggle.clicked.connect(
+            lambda checked: self._toggle_output_format(device_command_list, output_stack, raw_output, table_output, checked)
+        )
+        
+        # Add widgets to splitter
+        splitter.addWidget(command_list_widget)
+        splitter.addWidget(output_widget)
+        
+        # Set initial sizes (60% command list, 40% output view)
+        splitter.setSizes([600, 400])
+        
+        # Add the splitter to the main layout
+        layout.addWidget(splitter)
+        
+        # Connect selection changed signal
+        device_command_list.itemSelectionChanged.connect(
+            lambda: self._on_command_selection_changed(device_command_list, output_stack, raw_output, table_output, table_view_toggle)
+        )
         
         # Set up device command list
         self._refresh_device_commands(device_command_list)
@@ -360,6 +437,14 @@ class OutputHandler:
                 cmd_text = data.get("command", cmd_id)
                 cmd_item = QTableWidgetItem(cmd_text)
                 
+                # Store metadata in the item
+                cmd_item.setData(Qt.UserRole, {
+                    "device_id": device.id,
+                    "command_id": cmd_id,
+                    "timestamp": timestamp,
+                    "output": data.get("output", "")
+                })
+                
                 # Date/time
                 dt = datetime.datetime.fromisoformat(timestamp)
                 dt_item = QTableWidgetItem(dt.strftime("%Y-%m-%d %H:%M:%S"))
@@ -368,60 +453,147 @@ class OutputHandler:
                 success = "Yes" if data.get("success", True) else "No"
                 success_item = QTableWidgetItem(success)
                 
-                # View button
-                view_btn = QPushButton("View")
-                view_btn.setProperty("device_id", device.id)
-                view_btn.setProperty("command_id", cmd_id)
-                view_btn.setProperty("timestamp", timestamp)
-                view_btn.clicked.connect(self._on_view_command)
-                
                 # Add to row
                 command_list.setItem(row, 0, cmd_item)
                 command_list.setItem(row, 1, dt_item)
                 command_list.setItem(row, 2, success_item)
-                command_list.setCellWidget(row, 3, view_btn)
-                
-    def _on_view_command(self):
-        """Handle view command button"""
-        # Get button that was clicked
-        button = self.plugin.sender()
-        if not button:
+        
+    def _on_command_selection_changed(self, command_list, output_stack, raw_output, table_output, table_view_toggle):
+        """Handle command selection changed
+        
+        Args:
+            command_list: The command list widget
+            output_stack: The stacked widget containing raw and table outputs
+            raw_output: The raw output text edit widget
+            table_output: The table output widget
+            table_view_toggle: The toggle button for table view
+        """
+        # Get selected items
+        selected_items = command_list.selectedItems()
+        if not selected_items:
+            raw_output.clear()
+            table_output.setRowCount(0)
+            table_output.setColumnCount(0)
+            table_view_toggle.setEnabled(False)
             return
             
-        # Get properties
-        device_id = button.property("device_id")
-        command_id = button.property("command_id")
-        timestamp = button.property("timestamp")
+        # Get the first selected row
+        row = selected_items[0].row()
         
-        # Get command output
-        outputs = self.get_command_outputs(device_id, command_id)
-        if not outputs or timestamp not in outputs:
+        # Get the command item (first column)
+        command_item = command_list.item(row, 0)
+        if not command_item:
             return
             
-        output = outputs[timestamp]["output"]
+        # Get the stored data
+        data = command_item.data(Qt.UserRole)
+        if not data:
+            return
+            
+        # Get the output
+        output_text = data.get("output", "")
         
-        # Show output in dialog
-        from PySide6.QtWidgets import QDialog, QDialogButtonBox
+        # Show raw output first
+        raw_output.setPlainText(output_text)
+        output_stack.setCurrentWidget(raw_output)
         
-        dialog = QDialog(self.plugin.main_window)
-        dialog.setWindowTitle("Command Output")
-        dialog.resize(600, 400)
+        # Reset table view toggle button state
+        table_view_toggle.setChecked(False)
         
-        layout = QVBoxLayout(dialog)
+        # Check if output can be displayed as a table
+        can_be_table = self._can_display_as_table(output_text)
+        table_view_toggle.setEnabled(can_be_table)
         
-        output_text = QTextEdit()
-        output_text.setReadOnly(True)
-        output_text.setFont(QFont("Courier New", 10))
-        output_text.setText(output)
+        # Store output text for later use
+        raw_output.setProperty("current_output", output_text)
+            
+    def _toggle_output_format(self, command_list, output_stack, raw_output, table_output, is_table_view):
+        """Toggle between raw and table output formats
         
-        layout.addWidget(output_text)
+        Args:
+            command_list: The command list widget
+            output_stack: The stacked widget containing raw and table outputs
+            raw_output: The raw output text edit widget
+            table_output: The table output widget
+            is_table_view: Whether table view is enabled
+        """
+        # Get the current output text
+        output_text = raw_output.property("current_output")
+        if not output_text:
+            return
+            
+        if is_table_view:
+            # Parse the output into a table and show it
+            self._parse_output_to_table(output_text, table_output)
+            output_stack.setCurrentWidget(table_output)
+        else:
+            # Switch to raw view
+            output_stack.setCurrentWidget(raw_output)
+    
+    def _update_output_display(self, output_text, is_table_view):
+        """Update the output display based on the selected format
         
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        buttons.rejected.connect(dialog.reject)
+        Args:
+            output_text: The output text edit widget
+            is_table_view: Whether to show as table format
+        """
+        # Get the current output text
+        current_output = output_text.property("current_output")
+        if not current_output:
+            return
+            
+        if is_table_view:
+            # Try to format as table
+            try:
+                # Simple table formatting - add bold for headers and ensure alignment
+                lines = current_output.strip().split('\n')
+                if len(lines) > 2:
+                    # Check if this looks like a table
+                    if '|' in lines[0] or '  ' in lines[0]:
+                        formatted_output = "<pre>"
+                        # Format the first line as a header
+                        if '|' in lines[0]:
+                            # For pipe-separated tables
+                            headers = [h.strip() for h in lines[0].split('|')]
+                            formatted_output += "<b>" + " | ".join(headers) + "</b>\n"
+                            formatted_output += "-" * len(lines[0]) + "\n"
+                        else:
+                            # For space-separated tables
+                            formatted_output += "<b>" + lines[0] + "</b>\n"
+                            formatted_output += "-" * len(lines[0]) + "\n"
+                            
+                        # Add the rest of the lines
+                        for line in lines[1:]:
+                            formatted_output += line + "\n"
+                            
+                        formatted_output += "</pre>"
+                        output_text.setHtml(formatted_output)
+                        return
+                    
+                # If we get here, it doesn't look like a table
+                output_text.setText("Cannot display this output as a formatted table.")
+            except Exception as e:
+                logger.error(f"Error formatting output as table: {e}")
+                output_text.setText(f"Error formatting as table: {str(e)}")
+        else:
+            # Raw format
+            output_text.setPlainText(current_output)
         
-        layout.addWidget(buttons)
+    def _run_command_for_device(self, device):
+        """Run a command for a specific device
         
-        dialog.exec()
+        Args:
+            device: The device to run a command on
+        """
+        from plugins.command_manager.ui.command_dialog import CommandDialog
+        
+        # Create and show the command dialog with the selected device
+        dialog = CommandDialog(self.plugin, [device], parent=self.plugin.main_window)
+        result = dialog.exec()
+        
+        # Refresh the commands panel if a command was run
+        if result and hasattr(self.plugin, 'commands_panel_widget') and self.plugin.commands_panel_widget:
+            self.update_commands_panel(device)
         
     def _export_device_commands(self, device):
         """Export device commands to file"""
@@ -536,14 +708,19 @@ class OutputHandler:
             rows_to_delete.add(row)
             
         for row in sorted(rows_to_delete, reverse=True):
-            view_btn = command_list.cellWidget(row, 3)
-            if view_btn:
-                device_id = view_btn.property("device_id")
-                command_id = view_btn.property("command_id")
-                timestamp = view_btn.property("timestamp")
-                
-                if self.delete_command_output(device_id, command_id, timestamp):
-                    deleted += 1
+            # Get the command item (first column)
+            cmd_item = command_list.item(row, 0)
+            if cmd_item:
+                # Get the metadata from the item
+                data = cmd_item.data(Qt.UserRole)
+                if data:
+                    device_id = data.get("device_id")
+                    command_id = data.get("command_id")
+                    timestamp = data.get("timestamp")
+                    
+                    if device_id and command_id and timestamp:
+                        if self.delete_command_output(device_id, command_id, timestamp):
+                            deleted += 1
                     
         # Refresh the list
         self._refresh_device_commands(command_list)
@@ -585,6 +762,400 @@ class OutputHandler:
         Args:
             device: The selected device
         """
-        # This method would contain the code to update the commands panel
-        # For brevity, I'm not including the full implementation here
-        pass 
+        logger.debug(f"Updating commands panel for device: {device.id}")
+        
+        if not hasattr(self.plugin, 'commands_panel_widget') or not self.plugin.commands_panel_widget:
+            logger.warning("Commands panel widget not found")
+            return
+            
+        # Clear existing widgets from the panel
+        panel = self.plugin.commands_panel_widget
+        
+        # Remove all widgets from layout
+        if panel.layout():
+            while panel.layout().count():
+                item = panel.layout().takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+        else:
+            # Create layout if none exists
+            panel.setLayout(QVBoxLayout())
+            
+        layout = panel.layout()
+        
+        # Get command outputs for the device
+        outputs = self.get_command_outputs(device.id)
+        
+        # Create a splitter for command list and output view
+        splitter = QSplitter(Qt.Vertical)
+        
+        # Create a widget for the command list section
+        command_list_widget = QWidget()
+        command_list_layout = QVBoxLayout(command_list_widget)
+        command_list_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create a table for command history
+        command_list = QTableWidget()
+        command_list.setColumnCount(3)  # Removed View column
+        command_list.setHorizontalHeaderLabels(["Command", "Date/Time", "Success"])
+        command_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        command_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        command_list.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        command_list.setSelectionBehavior(QTableWidget.SelectRows)
+        command_list.setSortingEnabled(True)
+        
+        # Store device for reference
+        command_list.setProperty("device", device)
+        
+        # Add command outputs to the table
+        for cmd_id, cmd_outputs in outputs.items():
+            for timestamp, data in cmd_outputs.items():
+                row = command_list.rowCount()
+                command_list.insertRow(row)
+                
+                # Command
+                cmd_text = data.get("command", cmd_id)
+                cmd_item = QTableWidgetItem(cmd_text)
+                
+                # Store metadata in the item
+                cmd_item.setData(Qt.UserRole, {
+                    "device_id": device.id,
+                    "command_id": cmd_id,
+                    "timestamp": timestamp,
+                    "output": data.get("output", "")
+                })
+                
+                # Date/time
+                dt = datetime.datetime.fromisoformat(timestamp)
+                dt_item = QTableWidgetItem(dt.strftime("%Y-%m-%d %H:%M:%S"))
+                
+                # Success
+                success = "Yes" if data.get("success", True) else "No"
+                success_item = QTableWidgetItem(success)
+                
+                # Add to row
+                command_list.setItem(row, 0, cmd_item)
+                command_list.setItem(row, 1, dt_item)
+                command_list.setItem(row, 2, success_item)
+        
+        # Add the table to the layout
+        command_list_layout.addWidget(command_list)
+        
+        # Button bar
+        button_layout = QHBoxLayout()
+        
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(lambda: self._refresh_device_commands(command_list))
+        
+        export_btn = QPushButton("Export")
+        export_btn.clicked.connect(lambda: self._export_device_commands(device))
+        
+        delete_btn = QPushButton("Delete")
+        delete_btn.clicked.connect(lambda: self._delete_device_commands(command_list))
+        
+        run_btn = QPushButton("Run Command")
+        run_btn.clicked.connect(lambda: self._run_command_for_device(device))
+        
+        button_layout.addWidget(refresh_btn)
+        button_layout.addWidget(run_btn)
+        button_layout.addWidget(export_btn)
+        button_layout.addWidget(delete_btn)
+        button_layout.addStretch()
+        
+        # Add buttons to the layout
+        command_list_layout.addLayout(button_layout)
+        
+        # Create output view widget
+        output_widget = QWidget()
+        output_layout = QVBoxLayout(output_widget)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Output display options
+        display_options = QHBoxLayout()
+        
+        # Label for the output
+        output_label = QLabel("Command Output:")
+        
+        # Toggle button for table view
+        table_view_toggle = QPushButton("Table View")
+        table_view_toggle.setCheckable(True)
+        table_view_toggle.setProperty("is_table_view", False)
+        table_view_toggle.setEnabled(False)  # Initially disabled until we have selectable content
+        
+        display_options.addWidget(output_label)
+        display_options.addStretch()
+        display_options.addWidget(table_view_toggle)
+        
+        output_layout.addLayout(display_options)
+        
+        # Create stacked widget to switch between text and table views
+        output_stack = QStackedWidget()
+        
+        # Raw output view (text)
+        raw_output = QTextEdit()
+        raw_output.setReadOnly(True)
+        raw_output.setFont(QFont("Courier New", 10))
+        raw_output.setPlaceholderText("Select a command to view its output")
+        
+        # Table output view
+        table_output = QTableWidget()
+        table_output.setSortingEnabled(True)
+        table_output.setEditTriggers(QTableWidget.NoEditTriggers)  # Read-only
+        
+        # Add widgets to stack
+        output_stack.addWidget(raw_output)
+        output_stack.addWidget(table_output)
+        
+        output_layout.addWidget(output_stack)
+        
+        # Connect the toggle button
+        table_view_toggle.clicked.connect(
+            lambda checked: self._toggle_output_format(command_list, output_stack, raw_output, table_output, checked)
+        )
+        
+        # Add widgets to splitter
+        splitter.addWidget(command_list_widget)
+        splitter.addWidget(output_widget)
+        
+        # Set initial sizes (60% command list, 40% output view)
+        splitter.setSizes([600, 400])
+        
+        # Add the splitter to the main layout
+        layout.addWidget(splitter)
+        
+        # Connect selection changed signal
+        command_list.itemSelectionChanged.connect(
+            lambda: self._on_command_selection_changed(command_list, output_stack, raw_output, table_output, table_view_toggle)
+        )
+        
+        # Display a message if no commands found
+        if command_list.rowCount() == 0:
+            info_label = QLabel(f"No command history found for device: {device.get_property('alias', device.id)}")
+            info_label.setWordWrap(True)
+            layout.insertWidget(0, info_label)
+    
+    def _can_display_as_table(self, text):
+        """Determine if text can be displayed as a table
+        
+        Args:
+            text: The text to check
+            
+        Returns:
+            bool: Whether the text can be displayed as a table
+        """
+        if not text or len(text.strip()) == 0:
+            return False
+            
+        lines = text.strip().split('\n')
+        if len(lines) < 2:  # Need at least header and one data row
+            return False
+            
+        # Look for common table formats
+        
+        # Check for pipe-separated format
+        if '|' in lines[0]:
+            # Count pipes in header and make sure they're consistent
+            pipe_count = lines[0].count('|')
+            if pipe_count < 1:  # Need at least one separator
+                return False
+                
+            # Check a sample of lines to ensure consistent format
+            for i in range(1, min(5, len(lines))):
+                if i < len(lines) and lines[i].count('|') != pipe_count:
+                    return False
+                    
+            return True
+            
+        # Check for space-aligned columns (at least 3 spaces between columns)
+        if '   ' in lines[0]:
+            # Look for patterns of multiple spaces that indicate columns
+            space_pattern = [pos for pos, char in enumerate(lines[0]) if char == ' ' and lines[0][pos-1:pos+2] == '   ']
+            if len(space_pattern) < 1:  # Need at least one column separator
+                return False
+                
+            # Check if subsequent lines have similar spacing
+            for i in range(1, min(5, len(lines))):
+                if i < len(lines) and len(lines[i]) > 10:  # Ignore short lines
+                    has_spaces = False
+                    for pos in space_pattern:
+                        if pos < len(lines[i]) and lines[i][pos] == ' ':
+                            has_spaces = True
+                            break
+                    if not has_spaces:
+                        return False
+                        
+            return True
+            
+        # Check for commands that typically produce tabular output
+        command_line = lines[0].lower()
+        tabular_commands = [
+            "show ip interface brief",
+            "show interfaces status",
+            "show ip route",
+            "show vlan",
+            "show mac address-table",
+            "show cdp neighbors",
+            "show arp"
+        ]
+        
+        for cmd in tabular_commands:
+            if cmd in command_line:
+                return True
+                
+        return False
+    
+    def _parse_output_to_table(self, text, table_widget):
+        """Parse text output into a table format
+        
+        Args:
+            text: The text to parse
+            table_widget: The table widget to populate
+        """
+        table_widget.clear()
+        table_widget.setRowCount(0)
+        
+        lines = text.strip().split('\n')
+        if len(lines) < 2:
+            return
+            
+        # Determine table format
+        if '|' in lines[0]:
+            # Pipe-separated format
+            self._parse_pipe_separated_table(lines, table_widget)
+        else:
+            # Space-separated format
+            self._parse_space_separated_table(lines, table_widget)
+            
+    def _parse_pipe_separated_table(self, lines, table_widget):
+        """Parse pipe-separated text into a table
+        
+        Args:
+            lines: List of text lines
+            table_widget: The table widget to populate
+        """
+        # Get headers (first line)
+        headers = [h.strip() for h in lines[0].split('|') if h.strip()]
+        table_widget.setColumnCount(len(headers))
+        table_widget.setHorizontalHeaderLabels(headers)
+        
+        # Set up header
+        for col in range(len(headers)):
+            table_widget.horizontalHeader().setSectionResizeMode(
+                col, QHeaderView.ResizeToContents if col < len(headers) - 1 else QHeaderView.Stretch
+            )
+        
+        # Skip any separator line after header (containing only dashes, plusses, pipes)
+        start_row = 1
+        if len(lines) > 1 and all(c in '-+|' for c in lines[1] if c.strip()):
+            start_row = 2
+            
+        # Add data rows
+        for i in range(start_row, len(lines)):
+            if not lines[i].strip() or '|' not in lines[i]:
+                continue  # Skip empty lines
+                
+            row_data = [d.strip() for d in lines[i].split('|') if d.strip() or len(d.strip()) == 0]
+            if not row_data:
+                continue
+                
+            row_idx = table_widget.rowCount()
+            table_widget.insertRow(row_idx)
+            
+            for col, data in enumerate(row_data):
+                if col < len(headers):
+                    item = QTableWidgetItem(data)
+                    table_widget.setItem(row_idx, col, item)
+        
+    def _parse_space_separated_table(self, lines, table_widget):
+        """Parse space-separated text into a table
+        
+        Args:
+            lines: List of text lines
+            table_widget: The table widget to populate
+        """
+        # Find column positions by looking at spaces in the header line
+        header_line = lines[0]
+        col_positions = [0]  # Start of first column
+        in_space = False
+        
+        # Find column boundaries by looking for transitions between spaces and non-spaces
+        for i in range(1, len(header_line)):
+            # Transition from text to space
+            if not in_space and header_line[i] == ' ' and header_line[i-1] != ' ':
+                in_space = True
+            # Transition from space to text
+            elif in_space and header_line[i] != ' ' and header_line[i-1] == ' ':
+                in_space = False
+                col_positions.append(i)
+                
+        if len(col_positions) <= 1:
+            # Fallback: split by multiple spaces
+            headers = [h for h in header_line.split('  ') if h.strip()]
+            table_widget.setColumnCount(len(headers))
+            table_widget.setHorizontalHeaderLabels(headers)
+            
+            # Set up header
+            for col in range(len(headers)):
+                table_widget.horizontalHeader().setSectionResizeMode(
+                    col, QHeaderView.ResizeToContents if col < len(headers) - 1 else QHeaderView.Stretch
+                )
+                
+            # Add data rows
+            for i in range(1, len(lines)):
+                if not lines[i].strip():
+                    continue
+                    
+                row_data = [d for d in lines[i].split('  ') if d.strip()]
+                if not row_data:
+                    continue
+                    
+                row_idx = table_widget.rowCount()
+                table_widget.insertRow(row_idx)
+                
+                for col, data in enumerate(row_data):
+                    if col < len(headers):
+                        item = QTableWidgetItem(data.strip())
+                        table_widget.setItem(row_idx, col, item)
+        else:
+            # Extract headers based on column positions
+            headers = []
+            for i in range(len(col_positions)):
+                start = col_positions[i]
+                end = len(header_line) if i == len(col_positions) - 1 else col_positions[i + 1]
+                header = header_line[start:end].strip()
+                headers.append(header)
+                
+            table_widget.setColumnCount(len(headers))
+            table_widget.setHorizontalHeaderLabels(headers)
+            
+            # Set up header
+            for col in range(len(headers)):
+                table_widget.horizontalHeader().setSectionResizeMode(
+                    col, QHeaderView.ResizeToContents if col < len(headers) - 1 else QHeaderView.Stretch
+                )
+                
+            # Add data rows
+            for i in range(1, len(lines)):
+                if not lines[i].strip():
+                    continue
+                    
+                row_data = []
+                for j in range(len(col_positions)):
+                    start = col_positions[j]
+                    end = len(lines[i]) if j == len(col_positions) - 1 else col_positions[j + 1]
+                    if start < len(lines[i]):
+                        cell_data = lines[i][start:end].strip()
+                        row_data.append(cell_data)
+                    else:
+                        row_data.append("")
+                        
+                if not any(row_data):  # Skip empty rows
+                    continue
+                    
+                row_idx = table_widget.rowCount()
+                table_widget.insertRow(row_idx)
+                
+                for col, data in enumerate(row_data):
+                    item = QTableWidgetItem(data)
+                    table_widget.setItem(row_idx, col, item)
+        

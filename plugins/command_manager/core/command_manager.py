@@ -11,7 +11,7 @@ from pathlib import Path
 from loguru import logger
 
 from PySide6.QtCore import Qt, Signal, Slot, QObject
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QMenu, QDialog
 from PySide6.QtGui import QIcon, QAction
 
 # Import interfaces from the main application
@@ -343,16 +343,52 @@ class CommandManagerPlugin(PluginInterface):
     
     def get_toolbar_actions(self):
         """Get actions to be added to the toolbar"""
-        return [self.toolbar_action]
+        return [self.toolbar_action, self.credential_manager_action]
+        
+    def find_existing_menu(self, menu_name):
+        """Find an existing menu by name (case-insensitive)
+        
+        This method helps plugins integrate with existing menus rather than creating
+        duplicate menus. It performs a case-insensitive search for standard menus
+        like File, Edit, View, Tools, etc.
+        
+        Args:
+            menu_name (str): The name of the menu to find
+            
+        Returns:
+            str: The exact name of the menu if found, otherwise the original name
+        """
+        if not hasattr(self.main_window, 'menuBar') or not callable(self.main_window.menuBar):
+            logger.warning("Main window does not have a menuBar() method")
+            return menu_name
+            
+        menu_bar = self.main_window.menuBar()
+        
+        # Get all existing menu titles
+        existing_menus = {}
+        for menu in menu_bar.findChildren(QMenu):
+            if menu.title():
+                existing_menus[menu.title().lower()] = menu.title()
+                
+        logger.debug(f"Existing menus: {existing_menus}")
+        
+        # Look for a case-insensitive match
+        menu_name_lower = menu_name.lower()
+        if menu_name_lower in existing_menus:
+            logger.debug(f"Found existing menu {existing_menus[menu_name_lower]} for {menu_name}")
+            return existing_menus[menu_name_lower]
+            
+        return menu_name
         
     def get_menu_actions(self):
-        """Get actions to be added to the menu"""
-        return {
-            "Tools": [
-                self.toolbar_action,
-                self.credential_manager_action  # Add credential manager to Tools menu
-            ]
-        }
+        """Get actions to be added to the menu
+        
+        Returns a dictionary mapping menu names to lists of actions.
+        Uses find_existing_menu to ensure we add to existing menus instead
+        of creating duplicates.
+        """
+        # Return an empty dictionary to avoid creating a Tools menu entry
+        return {}
         
     def get_device_context_menu_actions(self):
         """Get actions to be added to the device context menu"""
@@ -423,4 +459,80 @@ class CommandManagerPlugin(PluginInterface):
                 self.main_window,
                 "Error Opening Credential Manager",
                 f"An error occurred while opening the Credential Manager: {str(e)}"
-            ) 
+            )
+    
+    # Methods for credential handling
+    
+    def get_all_device_credentials(self):
+        """Get all device credentials"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.get_all_device_credentials()
+        return {}
+        
+    def get_all_group_credentials(self):
+        """Get all group credentials"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.get_all_group_credentials()
+        return {}
+        
+    def get_all_subnet_credentials(self):
+        """Get all subnet credentials"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.get_all_subnet_credentials()
+        return {}
+        
+    def set_device_credentials(self, device_id, credentials):
+        """Set credentials for a device"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.set_device_credentials(device_id, credentials)
+            
+    def set_group_credentials(self, group_name, credentials):
+        """Set credentials for a group"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.set_group_credentials(group_name, credentials)
+            
+    def set_subnet_credentials(self, subnet, credentials):
+        """Set credentials for a subnet"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.set_subnet_credentials(subnet, credentials)
+            
+    def delete_device_credentials(self, device_id):
+        """Delete credentials for a device"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.delete_device_credentials(device_id)
+            
+    def delete_group_credentials(self, group_name):
+        """Delete credentials for a group"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.delete_group_credentials(group_name)
+            
+    def delete_subnet_credentials(self, subnet):
+        """Delete credentials for a subnet"""
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.delete_subnet_credentials(subnet)
+            
+    # Methods for command set handling
+    
+    def get_device_types(self):
+        """Get all available device types"""
+        if hasattr(self, 'command_handler') and self.command_handler:
+            return self.command_handler.get_device_types()
+        return []
+        
+    def get_firmware_versions(self, device_type):
+        """Get firmware versions for a device type"""
+        if hasattr(self, 'command_handler') and self.command_handler:
+            return self.command_handler.get_firmware_versions(device_type)
+        return []
+        
+    def get_commands(self, device_type, firmware_version):
+        """Get commands for a device type and firmware version"""
+        if hasattr(self, 'command_handler') and self.command_handler:
+            return self.command_handler.get_commands(device_type, firmware_version)
+        return []
+        
+    def get_command_set(self, device_type, firmware_version):
+        """Get command set for a device type and firmware version"""
+        if hasattr(self, 'command_handler') and self.command_handler:
+            return self.command_handler.get_command_set(device_type, firmware_version)
+        return None 

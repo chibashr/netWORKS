@@ -26,6 +26,13 @@ def register_ui(plugin):
     plugin.toolbar_action.triggered.connect(lambda: show_command_dialog(plugin))
     logger.debug(f"Created toolbar_action: {plugin.toolbar_action}")
     
+    # Create a prominent Credential Manager action for the main toolbar
+    plugin.credential_manager_action = QAction("Credential Manager", plugin.main_window)
+    plugin.credential_manager_action.setToolTip("Manage device credentials and access settings")
+    plugin.credential_manager_action.triggered.connect(lambda: on_manage_credentials(plugin))
+    plugin.credential_manager_action.setObjectName("CredentialManagerAction")
+    logger.debug(f"Created credential_manager_action: {plugin.credential_manager_action}")
+    
     # Create toolbar
     plugin.toolbar = create_toolbar(plugin)
     
@@ -76,18 +83,8 @@ def create_toolbar(plugin):
         # Add a separator before the credential management button to make it stand out
         toolbar.addSeparator()
         
-        # Action to manage credentials - make it more prominent with bold styling
-        creds_action = QAction("👤 Credential Manager", plugin.main_window)
-        creds_action.setToolTip("Manage device credentials and access settings")
-        creds_action.triggered.connect(lambda: on_manage_credentials(plugin))
-        # Set a unique object name to help with debugging
-        creds_action.setObjectName("CredentialManagerAction")
-        
-        # Store the action as an instance variable so we can reference it later
-        plugin.credential_manager_action = creds_action
-        
-        logger.debug(f"Created creds_action: {creds_action}")
-        toolbar.addAction(creds_action)
+        # Add the standalone credential manager action (this will be in both toolbar and main window toolbar)
+        toolbar.addAction(plugin.credential_manager_action)
         
         # Add a separator after the credential management button
         toolbar.addSeparator()

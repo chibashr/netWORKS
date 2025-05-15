@@ -3,6 +3,6 @@
 
 """Command Manager plugin for NetWORKS"""
 
-from .core.command_manager import CommandManagerPlugin
+from plugins.command_manager.core.command_manager import CommandManagerPlugin
 
 __all__ = ['CommandManagerPlugin'] 

@@ -134,4 +134,67 @@ Represents a single command within a command set.
 The plugin integrates with the NetWORKS application by:
 1. Adding a toolbar action for opening the Command Manager
 2. Adding context menu items to device entries
-3. Adding a "Command Outputs" tab to device details 
+3. Adding a "Command Outputs" tab to device details
+
+## Menu Integration
+
+The Command Manager plugin provides a `find_existing_menu` method that helps plugins integrate with existing menus in the application. This approach prevents the creation of duplicate menus with similar names.
+
+### Usage
+
+```python
+# Find the existing Tools menu (case-insensitive)
+tools_menu = plugin.find_existing_menu("Tools")
+
+# Create menu actions
+return {
+    tools_menu: [
+        action1,
+        action2
+    ]
+}
+```
+
+### Method Documentation
+
+```python
+def find_existing_menu(self, menu_name):
+    """Find an existing menu by name (case-insensitive)
+    
+    This method helps plugins integrate with existing menus rather than creating
+    duplicate menus. It performs a case-insensitive search for standard menus
+    like File, Edit, View, Tools, etc.
+    
+    Args:
+        menu_name (str): The name of the menu to find
+        
+    Returns:
+        str: The exact name of the menu if found, otherwise the original name
+    """
+    # Implementation details...
+```
+
+### Benefits
+
+- Prevents duplicate menus in the application
+- Ensures consistent UI
+- Allows plugins to integrate with standard application menus
+- Case-insensitive matching to handle different capitalization
+
+### Example
+
+When registering plugin menus, use this pattern:
+
+```python
+def get_menu_actions(self):
+    """Get actions to be added to the menu"""
+    # Find the existing Tools menu
+    tools_menu = self.find_existing_menu("Tools")
+    
+    return {
+        tools_menu: [
+            self.toolbar_action,
+            self.credential_manager_action
+        ]
+    }
+``` 
