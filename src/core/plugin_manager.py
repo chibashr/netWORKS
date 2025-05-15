@@ -442,14 +442,14 @@ class PluginManager(QObject):
         
         # Check the internal plugins directory
         if hasattr(self.app, 'config'):
-            self.internal_plugins_dir = self.app.config.get_value("application.plugins_directory")
+            self.internal_plugins_dir = self.app.config.get("application.plugins_directory")
             logger.debug(f"Looking for plugins in internal directory: {self.internal_plugins_dir}")
             internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
             discovered_plugins.update(internal_plugins)
         
         # Check the external plugins directory
         if hasattr(self.app, 'config'):
-            self.external_plugins_dir = self.app.config.get_value("application.external_plugins_directory")
+            self.external_plugins_dir = self.app.config.get("application.external_plugins_directory")
             logger.debug(f"Looking for plugins in external directory: {self.external_plugins_dir}")
             external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
             discovered_plugins.update(external_plugins)
@@ -489,7 +489,7 @@ class PluginManager(QObject):
                 self._install_plugin_requirements(plugin_info)
             
             # Install plugin requirements if auto-install is enabled regardless of plugin state
-            if hasattr(self.app, 'config') and self.app.config.get_value("application.auto_install_plugin_requirements", False):
+            if hasattr(self.app, 'config') and self.app.config.get("application.auto_install_plugin_requirements", False):
                 if plugin_info.requirements.get("python"):
                     logger.info(f"Auto-installing Python requirements for plugin {plugin_id}")
                     self._install_plugin_requirements(plugin_info)
@@ -1444,7 +1444,7 @@ class PluginManager(QObject):
         logger.info("Loading all enabled plugins")
         
         # Auto-enable newly discovered plugins if configured to do so
-        if hasattr(self.app, 'config') and self.app.config.get_value("application.auto_enable_discovered_plugins", True):
+        if hasattr(self.app, 'config') and self.app.config.get("application.auto_enable_discovered_plugins", True):
             discovered_plugins = [p for p in self.plugins.values() if p.state == PluginState.DISCOVERED]
             if discovered_plugins:
                 logger.info(f"Auto-enabling {len(discovered_plugins)} newly discovered plugins")
