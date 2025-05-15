@@ -145,22 +145,12 @@ pip install PySide6==6.9.0 --force-reinstall --no-cache-dir
 pip install loguru==0.7.3 --force-reinstall --no-cache-dir
 pip install chardet==5.2.0 --force-reinstall --no-cache-dir
 
-echo [INFO] Installing numpy first (pandas dependency)...
-pip install numpy==1.24.3 --force-reinstall --no-cache-dir
-if %ERRORLEVEL% neq 0 (
-    echo [WARNING] Failed to install numpy. Will try to continue with pandas installation anyway...
-)
-
-echo [INFO] Installing pandas with dependencies...
-pip install python-dateutil pytz pandas==1.5.3 --force-reinstall --no-cache-dir
-if %ERRORLEVEL% neq 0 (
-    echo [WARNING] Failed to install pandas using standard method. Trying alternative approach...
-    pip install pandas==1.5.3 --force-reinstall --no-cache-dir --no-deps
-    pip install numpy python-dateutil pytz
-    echo [INFO] Completed alternative installation attempt.
-) else (
-    echo [INFO] Pandas installation completed.
-)
+echo [INFO] Installing pandas with compatible numpy...
+pip uninstall -y pandas numpy python-dateutil pytz
+pip install numpy==1.24.3 --no-cache-dir
+pip install python-dateutil==2.8.2 pytz==2023.3 --no-cache-dir
+pip install pandas==1.5.3 --no-cache-dir
+echo [INFO] Pandas installation completed.
 
 :: Verify installation
 echo.
