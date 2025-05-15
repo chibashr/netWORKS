@@ -152,6 +152,15 @@ pip install python-dateutil==2.8.2 pytz==2023.3 --no-cache-dir
 pip install pandas==1.5.3 --no-cache-dir
 echo [INFO] Pandas installation completed.
 
+echo [INFO] Installing plugin dependencies...
+pip install paramiko==3.5.1 --no-cache-dir
+pip install python-nmap==0.7.1 --no-cache-dir
+pip install netifaces==0.11.0 --no-cache-dir
+pip install scapy==2.6.1 --no-cache-dir
+pip install bcrypt==4.3.0 --no-cache-dir
+pip install pycryptodome==3.22.0 --no-cache-dir
+echo [INFO] Plugin dependencies installation completed.
+
 :: Verify installation
 echo.
 echo [INFO] Verifying installation...
@@ -160,6 +169,10 @@ python -c "import importlib.util; packages=['PySide6', 'qtpy', 'qtawesome', 'yam
 echo.
 echo [INFO] Checking optional dependencies...
 python -c "import importlib.util; packages=['pandas', 'openpyxl', 'docx', 'xlrd']; missing = [p for p in packages if importlib.util.find_spec(p) is None]; print('All optional dependencies are installed!' if not missing else 'Some optional dependencies are missing: ' + ', '.join(missing))"
+
+echo.
+echo [INFO] Checking plugin dependencies...
+python -c "import importlib.util; packages=['paramiko', 'nmap', 'netifaces', 'scapy', 'bcrypt', 'Crypto']; missing = [p for p in packages if importlib.util.find_spec(p) is None]; print('All plugin dependencies are installed!' if not missing else 'Some plugin dependencies are missing: ' + ', '.join(missing))"
 
 :: Try direct imports for most problematic packages
 echo.
