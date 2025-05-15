@@ -296,16 +296,22 @@ class PluginManager(QObject):
         self.app = app
         self.plugins = {}  # id -> PluginInfo
         
-        # Set plugin directories
-        self.internal_plugins_dir = self.app.config.get(
-            "application.plugins_directory", 
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "plugins"))
-        )
+        # Set default plugin directories
+        self.internal_plugins_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "plugins"))
         
-        self.external_plugins_dir = self.app.config.get(
-            "application.external_plugins_directory",
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "plugins"))
-        )
+        # For external plugins, first look for a local plugins folder relative to application
+        app_dir = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        local_plugins_dir = os.path.join(app_dir, "plugins")
+        
+        # Set external plugins directory - only use from config if explicitly set by user
+        if hasattr(self.app, 'config'):
+            # Get configured external plugins directory, with local_plugins_dir as default
+            self.external_plugins_dir = self.app.config.get(
+                "application.external_plugins_directory", 
+                local_plugins_dir
+            )
+        else:
+            self.external_plugins_dir = local_plugins_dir
         
         # Ensure external plugins directory exists
         os.makedirs(self.external_plugins_dir, exist_ok=True)
@@ -440,27 +446,17 @@ class PluginManager(QObject):
         # Discover plugins in directories
         discovered_plugins = {}
         
-        # Check the internal plugins directory
-        if hasattr(self.app, 'config'):
-            internal_dir = self.app.config.get("application.plugins_directory")
-            if internal_dir:
-                self.internal_plugins_dir = internal_dir
+        # Check the internal plugins directory - these are bundled with the application
+        if self.internal_plugins_dir:
             logger.debug(f"Looking for plugins in internal directory: {self.internal_plugins_dir}")
-            
-            if self.internal_plugins_dir:
-                internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
-                discovered_plugins.update(internal_plugins)
+            internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
+            discovered_plugins.update(internal_plugins)
         
-        # Check the external plugins directory
-        if hasattr(self.app, 'config'):
-            external_dir = self.app.config.get("application.external_plugins_directory")
-            if external_dir:
-                self.external_plugins_dir = external_dir
+        # Check the external plugins directory - these are user-installed plugins
+        if self.external_plugins_dir:
             logger.debug(f"Looking for plugins in external directory: {self.external_plugins_dir}")
-            
-            if self.external_plugins_dir:
-                external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
-                discovered_plugins.update(external_plugins)
+            external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
+            discovered_plugins.update(external_plugins)
             
         # Process discovered plugins
         for plugin_id, plugin_info in discovered_plugins.items():

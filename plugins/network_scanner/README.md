@@ -47,9 +47,13 @@ The Network Scanner plugin allows NetWORKS to discover devices on your network u
 ### Basic Scanning
 
 1. From the NetWORKS main window, open the Network Scanner dock widget or use the Tools menu.
-2. Click "Scan" to open the scan dialog.
-3. Select your desired interface and scan options.
-4. Click OK to begin the scan.
+2. Configure your scan settings:
+   - Select your desired network interface
+   - The network range will be automatically populated, or you can enter a custom range
+   - Choose a scan type from the dropdown
+   - Adjust OS detection and port scanning options as needed
+3. Click "Start Scan" to begin scanning using the current panel settings.
+4. For more advanced options, click "Advanced..." to open the full scan dialog.
 
 ### Scanning from the Context Menu
 
@@ -70,7 +74,7 @@ The Network Scanner plugin allows NetWORKS to discover devices on your network u
 
 ### Advanced Options
 
-Access advanced scan options from the "Advanced" tab in the scan dialog:
+Access advanced scan options from the "Advanced" tab in the scan dialog (click "Advanced..." button):
 
 - **OS Detection**: Enable/disable OS detection
 - **Port Scanning**: Enable/disable port scanning
@@ -93,12 +97,20 @@ Discovered devices are automatically added to the NetWORKS device inventory with
 - **No devices found**: Try using elevated permissions or a more comprehensive scan
 - **Slow scanning**: Comprehensive scans can take time; use the quick scan for faster results
 - **Missing information**: OS detection and port scanning require appropriate permissions
+- **Timeout errors**: If you encounter timeout errors, try using a smaller network range or increase the timeout value in settings
 
 ## For Developers
 
 See the [API.md](API.md) file for information on programmatically integrating with the Network Scanner plugin.
 
 ## Changelog
+
+### Version 1.2.0 (2025-05-25)
+- Modified scan button to directly run scan with current panel settings
+- Added new 'Advanced...' button to open the full scan dialog
+- Fixed nmap timeout issues on new installations by increasing default timeout values
+- Added -T4 timing template to scan profiles to improve scan speed
+- Improved error handling for scan timeouts with more helpful messages
 
 ### Version 1.1.9 (2025-05-24)
 - Fixed import error for QIntValidator in plugin manager dialog

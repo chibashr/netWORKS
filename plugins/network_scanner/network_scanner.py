@@ -96,7 +96,7 @@ class ScannerWorker(QObject):
     scan_complete = Signal(dict)  # scan results
     scan_error = Signal(str)  # error message
     
-    def __init__(self, network_range, scan_type="quick", timeout=300, 
+    def __init__(self, network_range, scan_type="quick", timeout=600, 
                  os_detection=True, port_scan=True, use_sudo=False,
                  custom_scan_args=""):
         """Initialize the scanner worker"""
@@ -146,15 +146,15 @@ class ScannerWorker(QObject):
             # Use profile arguments if provided
             if self.scan_type and self.scan_type != "custom":
                 if self.scan_type == "quick":
-                    arguments = "-sn"  # Ping scan (no port scan)
+                    arguments = "-sn -T4"  # Ping scan (no port scan)
                 elif self.scan_type == "standard":
-                    arguments = "-sn -F -O"  # Fast scan with OS detection
+                    arguments = "-sn -F -O -T4"  # Fast scan with OS detection
                 elif self.scan_type == "comprehensive":
-                    arguments = "-sS -p 1-1000 -O -A"  # SYN scan with OS and service detection
+                    arguments = "-sS -p 1-1000 -O -A -T4"  # SYN scan with OS and service detection
                 elif self.scan_type == "stealth":
                     arguments = "-sS -T2"  # SYN scan with timing template 2 (slower)
                 elif self.scan_type == "service":
-                    arguments = "-sV -p 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080"
+                    arguments = "-sV -p 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080 -T4"
             
             # Add OS detection if requested
             if self.os_detection and "-O" not in arguments:
@@ -185,12 +185,22 @@ class ScannerWorker(QObject):
                 # Start the scan within a try/except block
                 try:
                     # Use a reasonable timeout value
-                    timeout_val = max(30, min(self.timeout, 600))  # Between 30 and 600 seconds
+                    timeout_val = max(60, min(self.timeout, 900))  # Between 60 and 900 seconds
+                    # Add a -T4 timing template if not already specified to speed up the scan
+                    if not any(arg in arguments for arg in ["-T1", "-T2", "-T3", "-T4", "-T5"]):
+                        arguments += " -T4"
+                    logger.debug(f"Starting nmap scan with timeout {timeout_val}s and arguments: {arguments}")
                     self.scanner.scan(hosts=self.network_range, arguments=arguments, 
                                      timeout=timeout_val, sudo=self.use_sudo)
                 except Exception as scan_error:
                     logger.error(f"Error during nmap scan: {scan_error}")
-                    self.scan_error.emit(f"Scan error: {scan_error}")
+                    
+                    # Check if the error is a timeout and provide a more helpful message
+                    error_msg = str(scan_error).lower()
+                    if "timed out" in error_msg or "timeout" in error_msg:
+                        self.scan_error.emit("Scan timed out. Try using a smaller network range or increasing the timeout value in settings.")
+                    else:
+                        self.scan_error.emit(f"Scan error: {scan_error}")
                     self.is_running = False
                     return
                     
@@ -358,7 +368,7 @@ class NetworkScannerPlugin(PluginInterface):
         """Initialize the plugin"""
         super().__init__()
         self.name = "Network Scanner"
-        self.version = "1.1.9"
+        self.version = "1.2.0"
         self.description = "Scan network segments for devices and add them to NetWORKS"
         self.author = "NetWORKS Team"
         
@@ -380,26 +390,26 @@ class NetworkScannerPlugin(PluginInterface):
                     "quick": {
                         "name": "Quick Scan",
                         "description": "Fast ping scan to discover hosts (minimal network impact)",
-                        "arguments": "-sn",
+                        "arguments": "-sn -T4",
                         "os_detection": False,
                         "port_scan": False,
-                        "timeout": 60
+                        "timeout": 120
                     },
                     "standard": {
                         "name": "Standard Scan",
                         "description": "Balanced scan with basic port scanning and OS detection",
-                        "arguments": "-sn -F -O",
+                        "arguments": "-sn -F -O -T4",
                         "os_detection": True,
                         "port_scan": True,
-                        "timeout": 180
+                        "timeout": 300
                     },
                     "comprehensive": {
                         "name": "Comprehensive Scan",
                         "description": "In-depth scan with full port scanning and OS fingerprinting",
-                        "arguments": "-sS -p 1-1000 -O -A",
+                        "arguments": "-sS -p 1-1000 -O -A -T4",
                         "os_detection": True,
                         "port_scan": True,
-                        "timeout": 300
+                        "timeout": 600
                     },
                     "stealth": {
                         "name": "Stealth Scan",
@@ -407,41 +417,41 @@ class NetworkScannerPlugin(PluginInterface):
                         "arguments": "-sS -T2",
                         "os_detection": False,
                         "port_scan": True,
-                        "timeout": 240
+                        "timeout": 480
                     },
                     "service": {
                         "name": "Service Detection",
                         "description": "Focused on detecting services on common ports",
-                        "arguments": "-sV -p 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080",
+                        "arguments": "-sV -p 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080 -T4",
                         "os_detection": False,
                         "port_scan": True,
-                        "timeout": 240
+                        "timeout": 480
                     }
                 },
                 "value": {
                     "quick": {
                         "name": "Quick Scan",
                         "description": "Fast ping scan to discover hosts (minimal network impact)",
-                        "arguments": "-sn",
+                        "arguments": "-sn -T4",
                         "os_detection": False,
                         "port_scan": False,
-                        "timeout": 60
+                        "timeout": 120
                     },
                     "standard": {
                         "name": "Standard Scan",
                         "description": "Balanced scan with basic port scanning and OS detection",
-                        "arguments": "-sn -F -O",
+                        "arguments": "-sn -F -O -T4",
                         "os_detection": True,
                         "port_scan": True,
-                        "timeout": 180
+                        "timeout": 300
                     },
                     "comprehensive": {
                         "name": "Comprehensive Scan",
                         "description": "In-depth scan with full port scanning and OS fingerprinting",
-                        "arguments": "-sS -p 1-1000 -O -A",
+                        "arguments": "-sS -p 1-1000 -O -A -T4",
                         "os_detection": True,
                         "port_scan": True,
-                        "timeout": 300
+                        "timeout": 600
                     },
                     "stealth": {
                         "name": "Stealth Scan",
@@ -449,15 +459,15 @@ class NetworkScannerPlugin(PluginInterface):
                         "arguments": "-sS -T2",
                         "os_detection": False,
                         "port_scan": True,
-                        "timeout": 240
+                        "timeout": 480
                     },
                     "service": {
                         "name": "Service Detection",
                         "description": "Focused on detecting services on common ports",
-                        "arguments": "-sV -p 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080",
+                        "arguments": "-sV -p 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080 -T4",
                         "os_detection": False,
                         "port_scan": True,
-                        "timeout": 240
+                        "timeout": 480
                     }
                 }
             },
@@ -481,8 +491,8 @@ class NetworkScannerPlugin(PluginInterface):
                 "name": "Default Scan Timeout",
                 "description": "Default timeout in seconds for scan operations",
                 "type": "int",
-                "default": 300,
-                "value": 300
+                "default": 600,
+                "value": 600
             },
             "os_detection": {
                 "name": "OS Detection",
@@ -822,6 +832,13 @@ class NetworkScannerPlugin(PluginInterface):
         self.scan_button.setMinimumWidth(100)  # Set minimum width for buttons
         self.scan_button.clicked.connect(self.on_scan_button_clicked)
         button_layout.addWidget(self.scan_button)
+        
+        # Advanced Scan button
+        self.advanced_scan_button = QPushButton("Advanced...")
+        self.advanced_scan_button.setMinimumWidth(100)
+        self.advanced_scan_button.clicked.connect(self.on_advanced_scan_button_clicked)
+        self.advanced_scan_button.setToolTip("Open the advanced scan configuration dialog")
+        button_layout.addWidget(self.advanced_scan_button)
         
         # Stop button
         self.stop_button = QPushButton("Stop")
@@ -1457,6 +1474,41 @@ class NetworkScannerPlugin(PluginInterface):
     @safe_action_wrapper
     def on_scan_button_clicked(self):
         """Handle scan button click"""
+        # Check if scan already in progress
+        if self._is_scanning:
+            QMessageBox.information(
+                self.main_window,
+                "Scan in Progress",
+                "A scan is already in progress. Please wait for it to complete or click Stop to cancel it."
+            )
+            return
+            
+        # Get network range from the UI
+        network_range = self.network_range_edit.text()
+        if not network_range:
+            # If no network range is specified, get it from the selected interface
+            network_range = self._get_interface_subnet(self.interface_combo.currentText())
+            if not network_range:
+                QMessageBox.warning(
+                    self.main_window,
+                    "Missing Network Range",
+                    "Please enter a network range or select a valid interface."
+                )
+                return
+        
+        # Get scan type from UI
+        scan_type = self.scan_type_combo.currentText()
+        
+        # Get options from UI
+        os_detection = self.os_detection_check.isChecked()
+        port_scan = self.port_scan_check.isChecked()
+        
+        # Start the scan directly with the current panel settings
+        self.scan_network(network_range, scan_type)
+        
+    @safe_action_wrapper
+    def on_advanced_scan_button_clicked(self):
+        """Handle advanced scan button click - opens the full scan dialog"""
         # Check if scan already in progress
         if self._is_scanning:
             QMessageBox.information(

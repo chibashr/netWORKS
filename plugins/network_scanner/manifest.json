@@ -1,7 +1,7 @@
 {
   "id": "network_scanner",
   "name": "Network Scanner",
-  "version": "1.1.9",
+  "version": "1.2.0",
   "description": "A plugin that scans the network for devices and adds them to NetWORKS",
   "author": "NetWORKS Team",
   "entry_point": "network_scanner.py",
@@ -19,6 +19,17 @@
   },
   "dependencies": [],
   "changelog": [
+    {
+      "version": "1.2.0",
+      "date": "2025-05-25",
+      "changes": [
+        "Modified scan button to directly run scan with current panel settings",
+        "Added new 'Advanced...' button to open the full scan dialog",
+        "Fixed nmap timeout issues on new installations by increasing default timeout values",
+        "Added -T4 timing template to scan profiles to improve scan speed",
+        "Improved error handling for scan timeouts with more helpful messages"
+      ]
+    },
     {
       "version": "1.1.9",
       "date": "2025-05-24",
