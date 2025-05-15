@@ -1194,17 +1194,44 @@ class DeviceTableView(QTableView):
                 
         if filtered_actions:
             menu.addSeparator()
-            sorted_actions = sorted(filtered_actions, key=lambda x: x[2])
+            # Group by plugin using a dictionary
+            plugin_actions = {}
             
-            for name, callback, _ in sorted_actions:
-                # Create a closure that captures the current callback
-                action = menu.addAction(name)
-                # Create a local copy of the callback to ensure it's properly captured in the lambda
-                local_callback = callback
-                # Use the same _handle_action pattern for consistency with built-in actions
-                action.triggered.connect(
-                    lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
-                )
+            for name, callback, priority in sorted(filtered_actions, key=lambda x: x[2]):
+                # Extract plugin name from function module if available
+                plugin_name = "Other Actions"
+                if hasattr(callback, '__module__'):
+                    module_parts = callback.__module__.split('.')
+                    if 'plugins' in module_parts:
+                        # Try to get plugin name from module path
+                        plugin_idx = module_parts.index('plugins')
+                        if plugin_idx + 1 < len(module_parts):
+                            plugin_name = module_parts[plugin_idx + 1].replace('_', ' ').title()
+                
+                # Add to plugin group
+                if plugin_name not in plugin_actions:
+                    plugin_actions[plugin_name] = []
+                plugin_actions[plugin_name].append((name, callback, priority))
+            
+            # Add each plugin group as a submenu or directly if only one action
+            for plugin_name, actions in plugin_actions.items():
+                if len(actions) == 1:
+                    # Just one action, add directly
+                    name, callback, _ = actions[0]
+                    action = menu.addAction(name)
+                    local_callback = callback
+                    action.triggered.connect(
+                        lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
+                    )
+                else:
+                    # Multiple actions, create submenu
+                    plugin_menu = menu.addMenu(plugin_name)
+                    for name, callback, _ in sorted(actions, key=lambda x: x[2]):
+                        action = plugin_menu.addAction(name)
+                        local_callback = callback
+                        action.triggered.connect(
+                            lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
+                        )
         
         # Emit signal for plugins to add to menu
         self.context_menu_requested.emit(devices, menu)

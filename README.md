@@ -10,6 +10,8 @@ An extensible device management application.
 - Context menu support for device interactions
 - Multi-device selection and bulk operations
 - Device grouping with automatic name conflict resolution
+- Autosave with configurable intervals and automatic backups
+- Comprehensive application settings with multiple configuration options
 - Bulk import of devices from files or pasted text
 - Manifest and changelog tracking for the application and plugins
 - Windows launcher for easy setup and execution
@@ -52,6 +54,28 @@ NetWORKS supports multiple workspaces for managing different device configuratio
 2. From here you can:
    - Switch to a different workspace
    - Delete workspaces (except the default workspace)
+
+## Autosave and Backups
+
+NetWORKS includes a comprehensive autosave system to prevent data loss:
+
+- **Automated Saving**: Configure automatic workspace saving at specified intervals
+- **Smart Detection**: Option to only save when changes are detected
+- **Backup System**: Automatic creation of backup files during autosaves
+- **Backup Rotation**: Configurable limit on the number of backup files to keep
+
+See the [Autosave Documentation](docs/autosave.md) for detailed information on configuring and using this feature.
+
+## Application Settings
+
+Access the settings dialog via **Tools → Settings** to configure various aspects of the application:
+
+- **General**: Theme, plugin loading, update settings
+- **User Interface**: Font size, toolbar position, table appearance
+- **Autosave**: Configure autosave behavior and backups
+- **Devices**: Device discovery and connection settings
+- **Logging**: Log level, retention, and diagnostics
+- **Advanced**: Performance, networking, and security settings
 
 ## Device Storage
 
@@ -126,6 +150,7 @@ NetWORKS includes comprehensive documentation to help you get started:
 
 For more detailed documentation, see the [docs](docs) directory, which includes:
 
+- [Autosave Documentation](docs/autosave.md): How to configure and use the autosave system
 - [Plugin Development Guide](docs/plugins/README.md)
 - [API Documentation Guidelines](docs/api/README.md)
 - [Core API Reference](docs/api/core.md)

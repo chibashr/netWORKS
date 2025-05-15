@@ -1,6 +1,6 @@
 {
   "name": "NetWORKS",
-  "version": "0.8.43",
+  "version": "0.8.45",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -9,16 +9,16 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-  "version_string": "0.8.43",
+  "version_string": "0.8.45",
   "version_info": {
     "major": 0,
     "minor": 8,
-    "patch": 43,
+    "patch": 45,
     "build": 0,
     "release_type": "alpha"
   },
-  "build_date": "2025-05-13",
-  "release_notes": "Fixed Command Manager plugin import issues and improved UI component handling to enhance plugin loading reliability.",
+  "build_date": "2025-05-18",
+  "release_notes": "Added comprehensive settings dialog with multiple configurable options and implemented autosave functionality with backup support.",
   "release_type": "alpha",
   "api_version": "0.8",
   "feature_flags": {
@@ -49,6 +49,16 @@
     "qt": ">=6.5.0"
   },
   "version_history": [
+    {
+      "version": "0.8.45",
+      "date": "2025-05-18",
+      "changes": "Added comprehensive settings dialog with 6 categories of configurable options including UI, devices, logging, and more. Implemented autosave functionality with configurable intervals, smart change detection, and automatic backup system with version management."
+    },
+    {
+      "version": "0.8.44",
+      "date": "2025-05-15",
+      "changes": "Added ability for plugins to register actions to existing menus such as 'Tools', enhancing plugin integration with the UI. Implemented workspace-specific UI layout persistence to save and restore panel arrangements, sizes, and positions across workspace switches."
+    },
     {
       "version": "0.8.43",
       "date": "2025-05-13",

@@ -1,3 +1,49 @@
 _test_sample_plugin_key: test-value-1747064822
+advanced:
+  cache_size: 100
+  credential_timeout: 15
+  max_threads: 4
+  proxy_host: ''
+  proxy_port: 8080
+  store_credentials: true
+  use_proxy: false
 application:
+  check_for_updates: true
+  external_plugins_directory: D:\SynologyDrive\Development\New folder (2)\plugins
   first_run: false
+  plugins_enabled: true
+  update_channel: stable
+autosave:
+  backup_directory: ''
+  create_backups: true
+  enabled: true
+  interval: 5
+  max_backups: 10
+  only_on_changes: true
+  show_notification: true
+devices:
+  auto_discover: true
+  auto_ping: true
+  connection_timeout: 5
+  refresh_interval: 60
+  ssh_port: 22
+  telnet_port: 23
+general:
+  check_updates: true
+  repository_url: https://github.com/chibashr/netWORKS
+  update_channel: Beta
+logging:
+  backtrace: true
+  diagnose: true
+  file_rotation_size: 10 MB
+  level: INFO
+  retention_days: 7
+ui:
+  device_table:
+    alternate_row_colors: true
+    auto_resize_columns: true
+    row_height: 30
+  font_size: 10
+  show_statusbar: true
+  theme: light
+  toolbar_position: top

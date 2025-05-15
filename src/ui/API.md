@@ -9,6 +9,7 @@ This document provides detailed information about the UI components of NetWORKS 
 - [Device Tree](#device-tree)
 - [UI Extension Points](#ui-extension-points)
 - [Device Dialogs](#device-dialogs)
+- [Workspace Integration](#workspace-integration)
 
 ## Main Window
 
@@ -40,6 +41,7 @@ class MainWindow:
     def update_status_bar()             # Update status bar with current counts
     def add_plugin_ui_components(self, plugin_info)  # Add UI components from a plugin
     def remove_plugin_ui_components(self, plugin_info)  # Remove UI components from a plugin
+    def findMenu(self, menu_name)       # Find a menu by name
 ```
 
 ## Device Table
@@ -133,15 +135,26 @@ def get_menu_actions() -> dict:
     
     Returns:
         dict: Dictionary mapping menu names to lists of QAction objects
+              Menu names can be either existing menus (like "File", "Edit", "Tools") 
+              or new menu names to be created
     """
 ```
 
 Example:
 ```python
 def get_menu_actions(self):
-    action = QAction("My Menu Action", self)
-    action.triggered.connect(self.on_my_menu_action)
-    return {"My Menu": [action]}
+    # Create an action for a new plugin-specific menu
+    plugin_action = QAction("Plugin Specific Action", self)
+    plugin_action.triggered.connect(self.on_plugin_action)
+    
+    # Create an action for an existing menu (like Tools)
+    tools_action = QAction("Plugin Tool Action", self)
+    tools_action.triggered.connect(self.on_tool_action)
+    
+    return {
+        "My Plugin Menu": [plugin_action],  # Creates a new menu
+        "Tools": [tools_action]  # Adds to existing Tools menu
+    }
 ```
 
 ### Device Panels
@@ -241,4 +254,28 @@ def get_settings_pages() -> list:
     Returns:
         list: List of (page_name, widget) tuples
     """
-``` 
+```
+
+## Workspace Integration
+
+NetWORKS supports plugin integration with workspaces, including preserving plugin UI layouts.
+
+### Plugin Layout Persistence
+
+When a user switches workspaces or closes and reopens the application, the following plugin UI elements will be preserved:
+
+1. Dock widget positions and sizes
+2. Custom panels in the properties view
+3. Custom toolbar items
+4. Menu items added to existing or custom menus
+
+This happens automatically for any UI components added through the standard plugin extension points.
+
+### Best Practices for Plugin Layout
+
+For best results with workspaces:
+
+1. Always add UI components during plugin initialization
+2. Remove UI components during cleanup
+3. Use standard extension points rather than direct manipulation
+4. Ensure your plugin responds appropriately to workspace changes 

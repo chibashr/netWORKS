@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QAbstractItemView, QSizePolicy, QInputDialog, QLineEdit, QMessageBox, QDialog, QListWidget, QTableWidget, QTableWidgetItem
 )
 from PySide6.QtGui import QIcon, QAction, QFont, QKeySequence
-from PySide6.QtCore import Qt, QSize, Signal, Slot, QModelIndex, QSettings
+from PySide6.QtCore import Qt, QSize, Signal, Slot, QModelIndex, QSettings, QTimer, QByteArray
 from PySide6.QtWidgets import QStyle
 
 from .device_table import DeviceTableModel, DeviceTableView, QAbstractItemView
@@ -51,8 +51,14 @@ class MainWindow(QMainWindow):
         # Connect signals
         self._connect_signals()
         
+        # Initialize autosave
+        self._setup_autosave()
+        
         # Restore window state, size and position if available
         self._restore_window_state()
+        
+        # Initialize update checker
+        self._setup_update_checker()
         
         logger.info("Main window initialized")
         
@@ -136,6 +142,10 @@ class MainWindow(QMainWindow):
         self.action_documentation.setStatusTip("View program documentation")
         self.action_documentation.triggered.connect(self.on_documentation)
         
+        self.action_check_updates = QAction("Check for Updates", self)
+        self.action_check_updates.setStatusTip("Check for application updates")
+        self.action_check_updates.triggered.connect(self.on_check_updates)
+        
         self.action_about = QAction("About", self)
         self.action_about.setStatusTip("About NetWORKS")
         self.action_about.triggered.connect(self.on_about)
@@ -194,6 +204,7 @@ class MainWindow(QMainWindow):
         # Help menu
         self.menu_help = self.menu_bar.addMenu("Help")
         self.menu_help.addAction(self.action_documentation)
+        self.menu_help.addAction(self.action_check_updates)
         self.menu_help.addAction(self.action_about)
         
         # Plugin menus (will be populated by plugins)
@@ -203,7 +214,21 @@ class MainWindow(QMainWindow):
         """Create toolbar"""
         self.toolbar = QToolBar("Main Toolbar")
         self.toolbar.setMovable(False)
-        self.toolbar.setIconSize(QSize(24, 24))
+        self.toolbar.setIconSize(QSize(20, 20))  # Reduced from 24x24
+        
+        # Make the toolbar more compact
+        self.toolbar.setStyleSheet("""
+            QToolBar {
+                spacing: 2px;
+                padding: 1px;
+                margin: 0px;
+            }
+            QToolButton {
+                padding: 2px;
+                margin: 0px;
+            }
+        """)
+        
         self.addToolBar(self.toolbar)
         
         # Add actions to toolbar
@@ -361,18 +386,43 @@ class MainWindow(QMainWindow):
         # Add menu actions
         menu_actions = plugin.get_menu_actions()
         for menu_name, actions in menu_actions.items():
-            # Create the menu if it doesn't exist
-            if menu_name not in self.plugin_menus:
-                self.plugin_menus[menu_name] = self.menu_bar.addMenu(menu_name)
-                
-            # Add actions to the menu
-            for action in actions:
-                self.plugin_menus[menu_name].addAction(action)
+            # Check if it's an existing menu or a new plugin menu
+            existing_menu = self.findMenu(menu_name)
+            if existing_menu:
+                # Add actions to existing menu
+                for action in actions:
+                    existing_menu.addAction(action)
+                    # Store the menu and action for later removal
+                    if not hasattr(plugin_info, 'ui_components'):
+                        plugin_info.ui_components = {}
+                    if 'menu_actions' not in plugin_info.ui_components:
+                        plugin_info.ui_components['menu_actions'] = []
+                    plugin_info.ui_components['menu_actions'].append((menu_name, action))
+            else:
+                # Create a new plugin menu if it doesn't exist
+                if menu_name not in self.plugin_menus:
+                    self.plugin_menus[menu_name] = self.menu_bar.addMenu(menu_name)
+                    
+                # Add actions to the plugin menu
+                for action in actions:
+                    self.plugin_menus[menu_name].addAction(action)
+                    # Store the menu and action for later removal
+                    if not hasattr(plugin_info, 'ui_components'):
+                        plugin_info.ui_components = {}
+                    if 'plugin_menu_actions' not in plugin_info.ui_components:
+                        plugin_info.ui_components['plugin_menu_actions'] = []
+                    plugin_info.ui_components['plugin_menu_actions'].append((menu_name, action))
                 
         # Add device panels to properties widget
         device_panels = plugin.get_device_panels()
         for panel_name, widget in device_panels:
             self.properties_widget.addTab(widget, panel_name)
+            # Store for later removal
+            if not hasattr(plugin_info, 'ui_components'):
+                plugin_info.ui_components = {}
+            if 'device_panels' not in plugin_info.ui_components:
+                plugin_info.ui_components['device_panels'] = []
+            plugin_info.ui_components['device_panels'].append((panel_name, widget))
             
         # Add dock widgets
         dock_widgets = plugin.get_dock_widgets()
@@ -380,13 +430,54 @@ class MainWindow(QMainWindow):
             dock = QDockWidget(widget_name, self)
             dock.setWidget(widget)
             self.addDockWidget(area, dock)
+            # Store for later removal
+            if not hasattr(plugin_info, 'ui_components'):
+                plugin_info.ui_components = {}
+            if 'dock_widgets' not in plugin_info.ui_components:
+                plugin_info.ui_components['dock_widgets'] = []
+            plugin_info.ui_components['dock_widgets'].append((widget_name, dock))
             
     def remove_plugin_ui_components(self, plugin_info):
         """Remove UI components from a plugin"""
-        # This method is more complex because we need to keep track of 
-        # which components belong to which plugin. For a simple demo,
-        # we'll just leave this as a stub.
         logger.debug(f"Removing UI components for plugin: {plugin_info}")
+        
+        if not hasattr(plugin_info, 'ui_components'):
+            logger.debug(f"No UI components to remove for plugin: {plugin_info}")
+            return
+            
+        # Remove menu actions from existing menus
+        if 'menu_actions' in plugin_info.ui_components:
+            for menu_name, action in plugin_info.ui_components['menu_actions']:
+                menu = self.findMenu(menu_name)
+                if menu and action in menu.actions():
+                    menu.removeAction(action)
+                    
+        # Remove actions from plugin menus
+        if 'plugin_menu_actions' in plugin_info.ui_components:
+            for menu_name, action in plugin_info.ui_components['plugin_menu_actions']:
+                if menu_name in self.plugin_menus:
+                    menu = self.plugin_menus[menu_name]
+                    menu.removeAction(action)
+                    # Remove menu if it's empty
+                    if len(menu.actions()) == 0:
+                        self.menu_bar.removeAction(menu.menuAction())
+                        del self.plugin_menus[menu_name]
+        
+        # Remove device panels
+        if 'device_panels' in plugin_info.ui_components:
+            for panel_name, widget in plugin_info.ui_components['device_panels']:
+                index = self.properties_widget.indexOf(widget)
+                if index >= 0:
+                    self.properties_widget.removeTab(index)
+                    
+        # Remove dock widgets
+        if 'dock_widgets' in plugin_info.ui_components:
+            for widget_name, dock in plugin_info.ui_components['dock_widgets']:
+                self.removeDockWidget(dock)
+                dock.deleteLater()
+                
+        # Clear the components
+        plugin_info.ui_components = {}
         
     def update_property_panel(self, devices=None):
         """Update property panel with device info
@@ -568,56 +659,83 @@ class MainWindow(QMainWindow):
     def on_settings(self):
         """Open settings dialog"""
         logger.debug("Opening settings dialog")
-        # This will be implemented later or by a plugin
-        self.status_bar.showMessage("Settings dialog not implemented yet", 3000)
+        from .settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self.config, self)
+        dialog.exec()
         
     @Slot()
     def on_new_workspace(self):
         """Create a new workspace"""
         logger.debug("Creating new workspace")
-        from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QMessageBox
         
-        name, ok = QInputDialog.getText(
-            self, "New Workspace", "Enter workspace name:", 
-            QLineEdit.Normal, ""
-        )
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Create New Workspace")
+        dialog.resize(400, 300)
         
-        if ok and name:
-            description, _ = QInputDialog.getText(
-                self, "Workspace Description", "Enter description (optional):", 
-                QLineEdit.Normal, ""
-            )
+        layout = QVBoxLayout(dialog)
+        
+        # Name field
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Workspace Name:"))
+        name_edit = QLineEdit()
+        name_layout.addWidget(name_edit)
+        layout.addLayout(name_layout)
+        
+        # Description field
+        layout.addWidget(QLabel("Description:"))
+        desc_edit = QTextEdit()
+        layout.addWidget(desc_edit)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        create_button = QPushButton("Create")
+        cancel_button = QPushButton("Cancel")
+        button_layout.addWidget(create_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        
+        # Handle creation
+        def on_create():
+            name = name_edit.text().strip()
+            description = desc_edit.toPlainText().strip()
             
-            success = self.device_manager.create_workspace(name, description)
-            if success:
-                # Ask if user wants to switch to new workspace
-                response = QMessageBox.question(
-                    self, "Switch Workspace",
-                    f"Workspace '{name}' created. Switch to it now?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
+            if not name:
+                QMessageBox.warning(dialog, "Invalid Name", "Please enter a name for the workspace.")
+                return
                 
-                if response == QMessageBox.Yes:
-                    self.device_manager.load_workspace(name)
-                    # Update UI with new workspace
-                    self.updateWindowTitle()
-                    self.status_workspace.setText(f"Workspace: {self.device_manager.current_workspace}")
-                    self.status_bar.showMessage(f"Switched to workspace: {name}", 3000)
-                    
-                    # Refresh UI components to reflect the new workspace
-                    if hasattr(self, "device_table"):
-                        self.device_table.refresh()
-                    if hasattr(self, "device_panel"):
-                        self.device_panel.refresh()
-                    if hasattr(self, "device_tree"):
-                        self.device_tree.refresh()
-                        
-                    # Update device count in status bar
-                    self.update_status_bar()
-                else:
-                    self.status_bar.showMessage(f"Created workspace: {name}", 3000)
+            # Check if workspace already exists
+            workspaces = self.device_manager.list_workspaces()
+            for ws in workspaces:
+                if ws.get("name") == name:
+                    QMessageBox.warning(dialog, "Workspace Exists", f"A workspace named '{name}' already exists.")
+                    return
+            
+            # Save current workspace before creating a new one
+            self.device_manager.save_workspace()
+            
+            # Create the new workspace
+            self.device_manager.create_workspace(name, description)
+            
+            # Switch to the new workspace (will load it)
+            success = self.device_manager.load_workspace(name)
+            if success:
+                # Update UI with new workspace
+                self.updateWindowTitle()
+                self.status_workspace.setText(f"Workspace: {name}")
+                self.status_bar.showMessage(f"Created and switched to workspace: {name}", 3000)
+                
+                # Save the current layout to the new workspace
+                self._save_workspace_layout()
+                
+                dialog.accept()
             else:
-                self.status_bar.showMessage(f"Failed to create workspace: {name}", 3000)
+                QMessageBox.critical(dialog, "Error", f"Failed to load workspace: {name}")
+        
+        create_button.clicked.connect(on_create)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        dialog.exec()
     
     @Slot()
     def on_open_workspace(self):
@@ -743,6 +861,9 @@ class MainWindow(QMainWindow):
             if current_item:
                 name = current_item.text().split(" - ")[0]
                 if name != self.device_manager.current_workspace:
+                    # Save current window layout before switching
+                    self._save_workspace_layout()
+                    
                     # Save current workspace before switching
                     self.device_manager.save_workspace()
                     
@@ -761,6 +882,9 @@ class MainWindow(QMainWindow):
                             self.device_panel.refresh()
                         if hasattr(self, "device_tree"):
                             self.device_tree.refresh()
+                            
+                        # Restore the layout of the new workspace
+                        self._restore_window_state()
                             
                         # Update device count in status bar
                         self.update_status_bar()
@@ -999,6 +1123,37 @@ class MainWindow(QMainWindow):
         dialog = AboutDialog(self.app, self)
         dialog.exec()
         
+    @Slot()
+    def on_check_updates(self):
+        """Handle check for updates action"""
+        logger.debug("Manual check for updates requested")
+        # Show message while checking
+        self.status_bar.showMessage("Checking for updates...", 3000)
+        # Check for updates and show result even if no updates available
+        self.check_for_updates(silent=False)
+        
+    @Slot(str, str, str)
+    def on_update_available(self, current_version, new_version, release_notes):
+        """Handle update available signal
+        
+        Args:
+            current_version: Current version string
+            new_version: New version string
+            release_notes: Release notes for the new version
+        """
+        logger.info(f"Update available: {current_version} -> {new_version}")
+        
+        # Check if this version has been skipped
+        skipped_version = self.config.get("general.skipped_version", "")
+        if skipped_version == new_version:
+            logger.debug(f"Update {new_version} was previously skipped")
+            return
+        
+        # Show update dialog
+        from .update_dialog import UpdateDialog
+        dialog = UpdateDialog(current_version, new_version, release_notes, self)
+        dialog.exec()
+        
     # Signal handlers
     
     @Slot(object)
@@ -1062,24 +1217,85 @@ class MainWindow(QMainWindow):
         # Save the current workspace
         self.device_manager.save_workspace()
         
+        # Also save the window layout specifically for this workspace
+        self._save_workspace_layout()
+        
         # Unload all plugins
         self.plugin_manager.unload_all_plugins()
         
         # Accept the event
         event.accept()
         
+    def _save_workspace_layout(self):
+        """Save window layout for the current workspace"""
+        workspace_name = self.device_manager.current_workspace
+        workspace_dir = os.path.join(self.device_manager.workspaces_dir, workspace_name)
+        
+        # Create workspace settings directory if it doesn't exist
+        settings_dir = os.path.join(workspace_dir, "settings")
+        os.makedirs(settings_dir, exist_ok=True)
+        
+        # Save window state to workspace-specific settings
+        settings = QSettings(os.path.join(settings_dir, "window_layout.ini"), QSettings.IniFormat)
+        settings.setValue("geometry", self.saveGeometry())
+        settings.setValue("windowState", self.saveState())
+        settings.setValue("size", self.size())
+        settings.setValue("pos", self.pos())
+        logger.debug(f"Saved window layout for workspace: {workspace_name}")
+        
     def _restore_window_state(self):
         """Restore window state from settings"""
         try:
+            # First try to load workspace-specific layout if available
+            workspace_name = self.device_manager.current_workspace
+            workspace_dir = os.path.join(self.device_manager.workspaces_dir, workspace_name)
+            settings_dir = os.path.join(workspace_dir, "settings")
+            layout_file = os.path.join(settings_dir, "window_layout.ini")
+            
+            if os.path.exists(layout_file):
+                logger.debug(f"Restoring workspace-specific layout for: {workspace_name}")
+                settings = QSettings(layout_file, QSettings.IniFormat)
+                
+                if settings.contains("geometry"):
+                    # Ensure we have the correct type (QByteArray)
+                    geometry_value = settings.value("geometry")
+                    if not isinstance(geometry_value, QByteArray):
+                        geometry_value = QByteArray(geometry_value)
+                    
+                    self.restoreGeometry(geometry_value)
+                    logger.debug("Workspace-specific geometry restored")
+                
+                if settings.contains("windowState"):
+                    # Ensure we have the correct type (QByteArray)
+                    state_value = settings.value("windowState")
+                    if not isinstance(state_value, QByteArray):
+                        state_value = QByteArray(state_value)
+                    
+                    self.restoreState(state_value)
+                    logger.debug("Workspace-specific window state restored")
+                    
+                return  # Successfully restored workspace-specific layout
+            
+            # Fall back to application-wide settings if workspace-specific not available
             settings = QSettings(self.app.applicationName(), "WindowState")
             # Restore geometry if available
             if settings.contains("geometry"):
-                self.restoreGeometry(settings.value("geometry"))
+                # Ensure we have the correct type (QByteArray)
+                geometry_value = settings.value("geometry")
+                if not isinstance(geometry_value, QByteArray):
+                    geometry_value = QByteArray(geometry_value)
+                
+                self.restoreGeometry(geometry_value)
                 logger.debug("Window geometry restored")
             
             # Restore window state (dock positions etc.)
             if settings.contains("windowState"):
-                self.restoreState(settings.value("windowState"))
+                # Ensure we have the correct type (QByteArray)
+                state_value = settings.value("windowState")
+                if not isinstance(state_value, QByteArray):
+                    state_value = QByteArray(state_value)
+                
+                self.restoreState(state_value)
                 logger.debug("Window state restored")
                 
             # Fallback to size and position if geometry not available
@@ -1116,3 +1332,185 @@ class MainWindow(QMainWindow):
         # Not found
         logger.debug(f"Menu '{menu_name}' not found")
         return None 
+
+    def _setup_autosave(self):
+        """Setup autosave functionality"""
+        # Create autosave timer
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.timeout.connect(self.on_autosave)
+        
+        # Track whether changes have been made
+        self.workspace_changed = False
+        
+        # Update autosave settings from config
+        self._update_autosave_settings()
+        
+        # Connect to config changes to update autosave settings
+        self.config.config_changed.connect(self._update_autosave_settings)
+        
+        # Connect to device manager signals to track changes
+        self.device_manager.device_added.connect(self._on_workspace_changed)
+        self.device_manager.device_removed.connect(self._on_workspace_changed)
+        self.device_manager.device_changed.connect(self._on_workspace_changed)
+        self.device_manager.group_added.connect(self._on_workspace_changed)
+        self.device_manager.group_removed.connect(self._on_workspace_changed)
+        
+    def _update_autosave_settings(self):
+        """Update autosave settings from config"""
+        # Check if autosave is enabled
+        enabled = self.config.get("autosave.enabled", False)
+        
+        # If enabled, start the timer with the configured interval
+        if enabled:
+            interval = self.config.get("autosave.interval", 5)
+            self.autosave_timer.setInterval(interval * 60 * 1000)  # Convert minutes to milliseconds
+            
+            # Start the timer if it's not already running
+            if not self.autosave_timer.isActive():
+                self.autosave_timer.start()
+                logger.debug(f"Autosave enabled with interval {interval} minutes")
+        else:
+            # Stop the timer if it's running
+            if self.autosave_timer.isActive():
+                self.autosave_timer.stop()
+                logger.debug("Autosave disabled")
+        
+    def _on_workspace_changed(self, *args):
+        """Track that workspace has changed for smart autosave"""
+        self.workspace_changed = True
+    
+    @Slot()
+    def on_autosave(self):
+        """Handle autosave"""
+        # Check if we should only save on changes
+        only_on_changes = self.config.get("autosave.only_on_changes", True)
+        
+        # If only saving on changes and no changes made, skip
+        if only_on_changes and not self.workspace_changed:
+            logger.debug("Autosave skipped - no changes made")
+            return
+            
+        logger.debug("Autosaving workspace")
+        
+        # Check if we should create backups
+        create_backups = self.config.get("autosave.create_backups", True)
+        
+        if create_backups:
+            self._create_backup()
+            
+        # Save the workspace
+        self.device_manager.save_workspace()
+        
+        # Reset changed flag
+        self.workspace_changed = False
+        
+        # Show notification if enabled
+        show_notification = self.config.get("autosave.show_notification", False)
+        if show_notification:
+            self.status_bar.showMessage("Workspace autosaved", 3000)
+            
+    def _create_backup(self):
+        """Create a backup of the current workspace"""
+        import os
+        import shutil
+        import datetime
+        
+        try:
+            # Get backup settings
+            backup_dir = self.config.get("autosave.backup_directory", "")
+            max_backups = self.config.get("autosave.max_backups", 10)
+            
+            # If no backup directory specified, use default in config directory
+            if not backup_dir:
+                backup_dir = os.path.join(self.config.config_dir, "backups")
+                
+            # Ensure backup directory exists
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            # Get workspace directory
+            workspace_name = self.device_manager.current_workspace
+            workspace_dir = os.path.join(self.device_manager.workspaces_dir, workspace_name)
+            
+            # Create backup filename with timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"{workspace_name}_{timestamp}.zip"
+            backup_path = os.path.join(backup_dir, backup_filename)
+            
+            # Create zip backup
+            import zipfile
+            with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(workspace_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, os.path.dirname(workspace_dir))
+                        zipf.write(file_path, arcname)
+            
+            logger.debug(f"Created workspace backup: {backup_path}")
+            
+            # Clean up old backups if we have more than max_backups
+            self._cleanup_old_backups(backup_dir, workspace_name, max_backups)
+            
+        except Exception as e:
+            logger.error(f"Failed to create workspace backup: {e}")
+            
+    def _cleanup_old_backups(self, backup_dir, workspace_name, max_backups):
+        """Clean up old backups if there are more than max_backups"""
+        import os
+        import glob
+        
+        try:
+            # Get list of backup files for this workspace
+            backup_pattern = os.path.join(backup_dir, f"{workspace_name}_*.zip")
+            backup_files = glob.glob(backup_pattern)
+            
+            # Sort by modification time (oldest first)
+            backup_files.sort(key=os.path.getmtime)
+            
+            # Delete oldest backups if we have too many
+            while len(backup_files) > max_backups:
+                oldest_backup = backup_files.pop(0)
+                os.remove(oldest_backup)
+                logger.debug(f"Deleted old workspace backup: {oldest_backup}")
+                
+        except Exception as e:
+            logger.error(f"Failed to clean up old backups: {e}")
+        
+    def _setup_update_checker(self):
+        """Set up the update checker"""
+        from src.core.update_checker import UpdateChecker
+        
+        self.update_checker = UpdateChecker(self.config)
+        
+        # Connect signals
+        self.update_checker.update_available.connect(self.on_update_available)
+        
+        # Check for updates on startup if enabled
+        if self.config.get("general.check_updates", True):
+            # Schedule update check after a delay to not slow down startup
+            QTimer.singleShot(5000, self.check_for_updates)
+
+    def check_for_updates(self, silent=True):
+        """Check for updates
+        
+        Args:
+            silent: If True, don't show message if no updates are available
+        """
+        logger.debug("Checking for updates")
+        
+        # Get branch from configuration
+        branch = self.update_checker.get_branch()
+        
+        # Check for updates in the background
+        def check_thread():
+            result = self.update_checker.check_for_updates(branch)
+            
+            # Show message if no updates available and not in silent mode
+            if not silent and not result[0]:
+                # Use invokeMethod to safely update UI from another thread
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage("No updates available", 3000))
+        
+        # Run in another thread to not block UI
+        import threading
+        thread = threading.Thread(target=check_thread)
+        thread.daemon = True
+        thread.start() 

@@ -749,7 +749,12 @@ class CommandDialog(QDialog):
         """Set the selected devices"""
         # Clear existing selections
         self.device_table.clearSelection()
-                
+        
+        # Fix: Check if devices is a single Device object or a list
+        if not isinstance(devices, list):
+            # Convert to a list with a single device
+            devices = [devices]
+            
         # Select devices
         for device in devices:
             for row in range(self.device_table.rowCount()):

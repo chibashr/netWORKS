@@ -122,192 +122,219 @@ class ScannerWorker(QObject):
     def run(self):
         """Run the network scan"""
         self.is_running = True
-        self.should_stop = False
         
         try:
-            # Create the scanner here rather than in __init__ to ensure it's in the worker thread
-            self.scanner = nmap.PortScanner()
+            # Initialize the scanner instance
+            try:
+                import nmap
+                self.scanner = nmap.PortScanner()
+                logger.debug(f"Created nmap scanner instance for {self.network_range}")
+            except ImportError:
+                logger.error("Failed to import python-nmap. Make sure it's installed.")
+                self.scan_error.emit("Failed to import python-nmap. Make sure it's installed.")
+                self.is_running = False
+                return
+            except Exception as e:
+                logger.error(f"Error initializing nmap scanner: {e}")
+                self.scan_error.emit(f"Error initializing scanner: {str(e)}")
+                self.is_running = False
+                return
             
+            # Build the arguments string
+            arguments = ""
+            
+            # Use profile arguments if provided
+            if self.scan_type and self.scan_type != "custom":
+                if self.scan_type == "quick":
+                    arguments = "-sn"  # Ping scan (no port scan)
+                elif self.scan_type == "standard":
+                    arguments = "-sn -F -O"  # Fast scan with OS detection
+                elif self.scan_type == "comprehensive":
+                    arguments = "-sS -p 1-1000 -O -A"  # SYN scan with OS and service detection
+                elif self.scan_type == "stealth":
+                    arguments = "-sS -T2"  # SYN scan with timing template 2 (slower)
+                elif self.scan_type == "service":
+                    arguments = "-sV -p 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080"
+            
+            # Add OS detection if requested
+            if self.os_detection and "-O" not in arguments:
+                arguments += " -O"
+                
+            # Add port scan if requested
+            if self.port_scan and not any(x in arguments for x in ["-p", "-sS", "-sT", "-sV"]):
+                arguments += " -p 22,23,80,443,8080"
+                
+            # Add custom arguments if provided
+            if self.custom_scan_args:
+                arguments += f" {self.custom_scan_args}"
+                
+            # Log the scan command
+            logger.info(f"Starting network scan of {self.network_range} with arguments: {arguments}")
+            
+            # Tracking variables
             scan_start_time = time.time()
             devices_found = 0
             
-            # If custom arguments are provided, use them directly
-            if self.custom_scan_args:
-                arguments = self.custom_scan_args
-            else:
-                # Determine scan arguments based on scan type
-                if self.scan_type == "quick":
-                    # Just ping scan
-                    arguments = "-sn"
-                elif self.scan_type == "standard":
-                    # Ping scan with some port scanning and OS detection if enabled
-                    arguments = "-sn"
-                    if self.port_scan:
-                        arguments += " -F"  # Fast port scan
-                    if self.os_detection:
-                        arguments += " -O"
-                else:  # comprehensive
-                    # Full scan with port scanning and OS detection
-                    arguments = "-sS"
-                    if self.port_scan:
-                        arguments += " -p 1-1000"
-                    if self.os_detection:
-                        arguments += " -O -A"
-            
-            # Add sudo if requested and not already in arguments
-            if self.use_sudo and not arguments.startswith("sudo"):
-                command_prefix = "sudo "
-            else:
-                command_prefix = ""
-                
-            logger.info(f"Starting network scan of {self.network_range} with arguments: {arguments}")
-            logger.debug(f"Using command prefix: {command_prefix}")
-            
-            # Check if we should stop before even starting
-            if self.should_stop:
-                logger.info("Scan stopped before starting")
-                self.is_running = False
-                return
-                
-            # Start the scan within a try/except block
             try:
-                # Use a reasonable timeout value
-                timeout_val = max(30, min(self.timeout, 600))  # Between 30 and 600 seconds
-                self.scanner.scan(hosts=self.network_range, arguments=arguments, 
-                                 timeout=timeout_val, sudo=self.use_sudo)
-            except Exception as scan_error:
-                logger.error(f"Error during nmap scan: {scan_error}")
-                self.scan_error.emit(f"Scan error: {scan_error}")
-                self.is_running = False
-                return
-                
-            # Check for stop request after scan
-            if self.should_stop:
-                logger.info("Scan stopped after initial scan")
-                self.is_running = False
-                return
-                
-            # Process results
-            try:
-                all_hosts = self.scanner.all_hosts()
-                total_hosts = len(all_hosts)
-                
-                # Emit initial progress
-                self.progress.emit(0, total_hosts)
-                
-                for i, host in enumerate(all_hosts):
-                    # Check if we should stop
-                    if self.should_stop:
-                        logger.info("Scan stopped during host processing")
-                        break
+                # Check if we should stop before even starting
+                if self.should_stop:
+                    logger.info("Scan stopped before starting")
+                    self.is_running = False
+                    return
                     
-                    # Emit progress
-                    self.progress.emit(i+1, total_hosts)
+                # Start the scan within a try/except block
+                try:
+                    # Use a reasonable timeout value
+                    timeout_val = max(30, min(self.timeout, 600))  # Between 30 and 600 seconds
+                    self.scanner.scan(hosts=self.network_range, arguments=arguments, 
+                                     timeout=timeout_val, sudo=self.use_sudo)
+                except Exception as scan_error:
+                    logger.error(f"Error during nmap scan: {scan_error}")
+                    self.scan_error.emit(f"Scan error: {scan_error}")
+                    self.is_running = False
+                    return
                     
-                    # Get host data
-                    host_data = {}
-                    host_data["ip_address"] = host
+                # Check for stop request after scan
+                if self.should_stop:
+                    logger.info("Scan stopped after initial scan")
+                    self.is_running = False
+                    return
                     
-                    try:
-                        # Get hostname if available
-                        try:
-                            if "hostname" in self.scanner[host]:
-                                host_data["hostname"] = self.scanner[host]["hostname"]
-                        except (KeyError, TypeError) as e:
-                            logger.debug(f"Error getting hostname for {host}: {e}")
+                # Process results
+                try:
+                    all_hosts = self.scanner.all_hosts()
+                    total_hosts = len(all_hosts)
+                    
+                    # Emit initial progress
+                    self.progress.emit(0, total_hosts)
+                    
+                    for i, host in enumerate(all_hosts):
+                        # Check if we should stop
+                        if self.should_stop:
+                            logger.info("Scan stopped during host processing")
+                            break
                         
-                        # Get MAC address if available
-                        try:
-                            if "addresses" in self.scanner[host] and "mac" in self.scanner[host]["addresses"]:
-                                host_data["mac_address"] = self.scanner[host]["addresses"]["mac"]
-                                
-                                # Get vendor if available
-                                if "vendor" in self.scanner[host] and self.scanner[host]["addresses"]["mac"] in self.scanner[host]["vendor"]:
-                                    host_data["mac_vendor"] = self.scanner[host]["vendor"][self.scanner[host]["addresses"]["mac"]]
-                        except (KeyError, TypeError) as e:
-                            logger.debug(f"Error getting MAC for {host}: {e}")
+                        # Emit progress
+                        self.progress.emit(i+1, total_hosts)
                         
-                        # Get status
+                        # Get host data (with proper error handling to avoid memory corruption)
                         try:
-                            if "status" in self.scanner[host]:
-                                host_data["status"] = self.scanner[host]["status"]["state"]
-                        except (KeyError, TypeError) as e:
-                            logger.debug(f"Error getting status for {host}: {e}")
-                            host_data["status"] = "unknown"
-                        
-                        # Get OS information if available
-                        try:
-                            if "osmatch" in self.scanner[host] and len(self.scanner[host]["osmatch"]) > 0:
-                                best_match = self.scanner[host]["osmatch"][0]
-                                host_data["os_fingerprint"] = best_match["name"]
-                        except (KeyError, TypeError, IndexError) as e:
-                            logger.debug(f"Error getting OS info for {host}: {e}")
-                        
-                        # Get open ports if available
-                        open_ports = []
-                        try:
-                            for proto in self.scanner[host].all_protocols():
-                                ports = self.scanner[host][proto].keys()
-                                for port in ports:
-                                    if self.scanner[host][proto][port]["state"] == "open":
-                                        service = self.scanner[host][proto][port].get("name", "unknown")
-                                        open_ports.append(f"{port}/{proto} ({service})")
-                        except (KeyError, TypeError, AttributeError) as e:
-                            logger.debug(f"Error getting ports for {host}: {e}")
+                            host_data = {}
+                            host_data["ip_address"] = host
+                            host_data["scan_source"] = "nmap"
                             
-                        if open_ports:
-                            host_data["open_ports"] = open_ports
-                        
-                        # Add scan timestamp
-                        host_data["scan_timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        # Add scan source
-                        host_data["scan_source"] = "nmap"
-                        
-                        # Tag as "scanned"
-                        host_data["tags"] = ["scanned"]
-                        
-                        # Generate an alias if none exists
-                        if "hostname" in host_data and host_data["hostname"]:
-                            host_data["alias"] = host_data["hostname"]
-                        elif "mac_vendor" in host_data:
-                            host_data["alias"] = f"{host_data['mac_vendor']} Device"
-                        else:
-                            host_data["alias"] = f"Device at {host}"
-                        
-                        # Emit the device found signal
-                        self.device_found.emit(host_data)
-                        devices_found += 1
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing host {host}: {e}")
-                
-                # Calculate scan time
-                scan_time = time.time() - scan_start_time
-                
-                # Emit scan complete signal with results
-                scan_results = {
-                    "network_range": self.network_range,
-                    "scan_type": self.scan_type,
-                    "total_hosts": total_hosts,
-                    "devices_found": devices_found,
-                    "scan_time": scan_time,
-                    "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                
-                self.scan_complete.emit(scan_results)
+                            # Get hostname (if available)
+                            try:
+                                if 'hostnames' in self.scanner[host] and self.scanner[host]['hostnames']:
+                                    hostnames = self.scanner[host]['hostnames']
+                                    if isinstance(hostnames, list) and hostnames:
+                                        for hostname_entry in hostnames:
+                                            if 'name' in hostname_entry and hostname_entry['name']:
+                                                host_data["hostname"] = hostname_entry['name']
+                                                break
+                            except Exception as e:
+                                logger.warning(f"Error getting hostname for {host}: {e}")
+                            
+                            # Get MAC address and vendor (if available)
+                            try:
+                                if 'addresses' in self.scanner[host]:
+                                    if 'mac' in self.scanner[host]['addresses']:
+                                        host_data["mac_address"] = self.scanner[host]['addresses']['mac']
+                                
+                                # Get vendor information
+                                if 'vendor' in self.scanner[host] and self.scanner[host]['vendor']:
+                                    vendors = self.scanner[host]['vendor']
+                                    if isinstance(vendors, dict) and host_data.get("mac_address") in vendors:
+                                        host_data["mac_vendor"] = vendors[host_data["mac_address"]]
+                            except Exception as e:
+                                logger.warning(f"Error getting MAC/vendor for {host}: {e}")
+                            
+                            # Get OS detection results
+                            try:
+                                if 'osmatch' in self.scanner[host] and self.scanner[host]['osmatch']:
+                                    os_matches = self.scanner[host]['osmatch']
+                                    if isinstance(os_matches, list) and os_matches:
+                                        # Get the highest accuracy match
+                                        best_match = max(os_matches, key=lambda x: int(x.get('accuracy', 0)) if x.get('accuracy') else 0)
+                                        if 'name' in best_match:
+                                            host_data["os"] = best_match['name']
+                            except Exception as e:
+                                logger.warning(f"Error getting OS info for {host}: {e}")
+                            
+                            # Get open ports and services
+                            try:
+                                if 'tcp' in self.scanner[host]:
+                                    open_ports = []
+                                    services = {}
+                                    
+                                    for port, port_data in self.scanner[host]['tcp'].items():
+                                        if port_data['state'] == 'open':
+                                            open_ports.append(port)
+                                            if 'name' in port_data and port_data['name']:
+                                                services[port] = port_data['name']
+                                                
+                                    if open_ports:
+                                        host_data["open_ports"] = open_ports
+                                        
+                                    if services:
+                                        host_data["services"] = services
+                            except Exception as e:
+                                logger.warning(f"Error getting port/service info for {host}: {e}")
+                            
+                            # Add tags
+                            host_data["tags"] = ["scanned", "nmap"]
+                            
+                            # Generate an alias if none exists
+                            if "hostname" in host_data and host_data["hostname"]:
+                                host_data["alias"] = host_data["hostname"]
+                            elif "mac_vendor" in host_data:
+                                host_data["alias"] = f"{host_data['mac_vendor']} Device"
+                            else:
+                                host_data["alias"] = f"Device at {host}"
+                            
+                            # Emit the device found signal
+                            self.device_found.emit(host_data)
+                            devices_found += 1
+                        except Exception as e:
+                            logger.error(f"Error processing host {host}: {e}", exc_info=True)
+                    
+                    # Calculate scan time
+                    scan_time = time.time() - scan_start_time
+                    
+                    # Emit scan complete signal with results
+                    scan_results = {
+                        "network_range": self.network_range,
+                        "scan_type": self.scan_type,
+                        "total_hosts": total_hosts,
+                        "devices_found": devices_found,
+                        "scan_time": scan_time,
+                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    
+                    self.scan_complete.emit(scan_results)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing scan results: {e}", exc_info=True)
+                    self.scan_error.emit(f"Error processing results: {str(e)}")
                 
             except Exception as e:
-                logger.error(f"Error processing scan results: {e}", exc_info=True)
-                self.scan_error.emit(f"Error processing results: {str(e)}")
-            
-        except Exception as e:
-            logger.error(f"Unhandled scan error: {e}", exc_info=True)
-            self.scan_error.emit(str(e))
-            
+                logger.error(f"Unhandled scan error: {e}", exc_info=True)
+                self.scan_error.emit(str(e))
+                
         finally:
-            # Clear the scanner reference
-            self.scanner = None
+            # Cleanup to prevent memory leaks
+            try:
+                logger.debug("Cleaning up scanner resources")
+                # Clear the scanner reference and explicitly help garbage collection
+                if hasattr(self, 'scanner') and self.scanner:
+                    self.scanner = None
+                
+                # Force a garbage collection cycle to clean up any lingering objects
+                import gc
+                gc.collect()
+            except Exception as cleanup_error:
+                logger.error(f"Error during scanner cleanup: {cleanup_error}")
+                
             self.is_running = False
             logger.debug("Scanner worker finished")
 
@@ -1116,34 +1143,46 @@ class NetworkScannerPlugin(PluginInterface):
         It creates a new device or updates an existing one.
         """
         try:
+            # Use a local copy of host_data to avoid memory corruption
+            device_data = host_data.copy()
+            
             # Check if this device already exists based on IP or MAC
             existing_device = None
-            if "ip_address" in host_data and host_data["ip_address"]:
+            if "ip_address" in device_data and device_data["ip_address"]:
                 # Try to find by IP address
                 for device in self.device_manager.get_devices():
-                    if device.get_property("ip_address") == host_data["ip_address"]:
+                    if device.get_property("ip_address") == device_data["ip_address"]:
                         existing_device = device
                         break
                         
-            if not existing_device and "mac_address" in host_data and host_data["mac_address"]:
+            if not existing_device and "mac_address" in device_data and device_data["mac_address"]:
                 # Try to find by MAC address
                 for device in self.device_manager.get_devices():
-                    if device.get_property("mac_address") == host_data["mac_address"]:
+                    if device.get_property("mac_address") == device_data["mac_address"]:
                         existing_device = device
                         break
             
             if existing_device:
-                # Update existing device
-                for key, value in host_data.items():
+                # Update existing device (one property at a time to prevent race conditions)
+                for key, value in device_data.items():
                     if key == "tags":
                         # Merge tags rather than replace
                         current_tags = existing_device.get_property("tags", [])
+                        new_tags = []
                         for tag in value:
-                            if tag not in current_tags:
-                                current_tags.append(tag)
-                        existing_device.set_property("tags", current_tags)
+                            if tag not in current_tags and tag not in new_tags:
+                                new_tags.append(tag)
+                        
+                        # Only update if there are new tags to add
+                        if new_tags:
+                            updated_tags = current_tags.copy()  # Make a copy to avoid modifying original
+                            updated_tags.extend(new_tags)
+                            existing_device.set_property("tags", updated_tags)
                     else:
-                        existing_device.set_property(key, value)
+                        # Only update if value is different to minimize device_changed events
+                        current_value = existing_device.get_property(key, None)
+                        if current_value != value:
+                            existing_device.set_property(key, value)
                 
                 # Log the update
                 self.log_message(f"Updated existing device: {existing_device.get_property('alias')}")
@@ -1156,7 +1195,7 @@ class NetworkScannerPlugin(PluginInterface):
                 # Create a new device
                 new_device = self.device_manager.create_device(
                     device_type="scanned",
-                    **host_data
+                    **device_data
                 )
                 
                 # Add it to the device manager
@@ -1200,11 +1239,27 @@ class NetworkScannerPlugin(PluginInterface):
         # Clean up
         self._is_scanning = False
         
-        # Stop the thread
+        # Stop the thread and ensure proper cleanup
         if self._scanner_thread and self._scanner_thread.isRunning():
             self._scanner_thread.quit()
-            self._scanner_thread.wait()
+            success = self._scanner_thread.wait(1000)  # 1 second timeout
             
+            if not success:
+                logger.warning("Thread did not exit cleanly after scan completion, forcing termination")
+                self._scanner_thread.terminate()
+                self._scanner_thread.wait(1000)
+            
+            # Reset references to help garbage collection
+            self._scanner_worker = None
+            self._scanner_thread = None
+        
+        # Force a garbage collection cycle to clean up lingering objects
+        try:
+            import gc
+            gc.collect()
+        except Exception as e:
+            logger.warning(f"Error during garbage collection: {e}")
+        
         # Emit the scan completed signal
         self.scan_completed.emit(results)
         
