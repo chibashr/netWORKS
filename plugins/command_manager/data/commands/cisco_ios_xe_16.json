@@ -1,0 +1,156 @@
+{
+  "device_type": "Cisco IOS XE",
+  "firmware_version": "16",
+  "commands": [
+    {
+      "command": "show version",
+      "alias": "Show Version",
+      "description": "Displays software version, system uptime, and device information"
+    },
+    {
+      "command": "show running-config",
+      "alias": "Show Running Config",
+      "description": "Displays the current operating configuration"
+    },
+    {
+      "command": "show interfaces",
+      "alias": "Show Interfaces",
+      "description": "Displays statistics for all interfaces"
+    },
+    {
+      "command": "show ip interface brief",
+      "alias": "Show IP Interfaces",
+      "description": "Displays IP interface status and configuration"
+    },
+    {
+      "command": "show ip route",
+      "alias": "Show IP Route",
+      "description": "Displays the IP routing table"
+    },
+    {
+      "command": "show cdp neighbors detail",
+      "alias": "Show CDP Neighbors Detail",
+      "description": "Displays detailed information about CDP neighbors"
+    },
+    {
+      "command": "show inventory",
+      "alias": "Show Inventory",
+      "description": "Displays the product inventory list including hardware details"
+    },
+    {
+      "command": "show vlan",
+      "alias": "Show VLANs",
+      "description": "Displays VLAN information"
+    },
+    {
+      "command": "show mac address-table",
+      "alias": "Show MAC Table",
+      "description": "Displays the MAC address table"
+    },
+    {
+      "command": "show logging",
+      "alias": "Show Logs",
+      "description": "Displays the contents of the logging buffer"
+    },
+    {
+      "command": "show platform",
+      "alias": "Show Platform",
+      "description": "Displays platform-specific hardware information"
+    },
+    {
+      "command": "show processes cpu",
+      "alias": "Show CPU Usage",
+      "description": "Displays CPU utilization information"
+    },
+    {
+      "command": "show processes memory",
+      "alias": "Show Memory Usage",
+      "description": "Displays memory utilization information"
+    },
+    {
+      "command": "show environment all",
+      "alias": "Show Environment",
+      "description": "Displays environmental status including power supplies, fans, and temperature"
+    },
+    {
+      "command": "show ip ospf neighbor",
+      "alias": "Show OSPF Neighbors",
+      "description": "Displays OSPF neighbor information"
+    },
+    {
+      "command": "show ip bgp summary",
+      "alias": "Show BGP Summary",
+      "description": "Displays BGP neighbor summary information"
+    },
+    {
+      "command": "show ip bgp",
+      "alias": "Show BGP Routes",
+      "description": "Displays BGP routing table"
+    },
+    {
+      "command": "show interface status",
+      "alias": "Show Interface Status",
+      "description": "Displays interface line status"
+    },
+    {
+      "command": "show interface transceiver",
+      "alias": "Show Transceiver Details",
+      "description": "Displays optical transceiver information"
+    },
+    {
+      "command": "show standby brief",
+      "alias": "Show HSRP",
+      "description": "Displays HSRP status"
+    },
+    {
+      "command": "show vrrp brief",
+      "alias": "Show VRRP",
+      "description": "Displays VRRP status"
+    },
+    {
+      "command": "show etherchannel summary",
+      "alias": "Show Port Channels",
+      "description": "Displays EtherChannel information"
+    },
+    {
+      "command": "show spanning-tree",
+      "alias": "Show Spanning Tree",
+      "description": "Displays spanning tree information"
+    },
+    {
+      "command": "show access-lists",
+      "alias": "Show Access Lists",
+      "description": "Displays configured ACLs"
+    },
+    {
+      "command": "show ntp status",
+      "alias": "Show NTP Status",
+      "description": "Displays NTP synchronization status"
+    },
+    {
+      "command": "show ntp associations",
+      "alias": "Show NTP Associations",
+      "description": "Displays NTP server associations"
+    },
+    {
+      "command": "show module",
+      "alias": "Show Modules",
+      "description": "Displays information about installed modules/line cards"
+    },
+    {
+      "command": "show license all",
+      "alias": "Show Licenses",
+      "description": "Displays license information"
+    },
+    {
+      "command": "show sdwan running-config",
+      "alias": "Show SD-WAN Config",
+      "description": "Displays SD-WAN configuration (on SD-WAN enabled devices)"
+    },
+    {
+      "command": "show tech-support",
+      "alias": "Show Tech Support",
+      "description": "Displays system information for technical support (produces lots of output)"
+    }
+  ]
+}

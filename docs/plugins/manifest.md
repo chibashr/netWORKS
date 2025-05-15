@@ -20,6 +20,7 @@ The following fields are optional but recommended:
 - `min_app_version`: The minimum NetWORKS version required
 - `max_app_version`: The maximum NetWORKS version supported
 - `dependencies`: A list of plugin dependencies
+- `requirements`: Python package and system dependencies needed by the plugin
 - `changelog`: A list of changes for each version
 
 ## Example Manifest
@@ -39,6 +40,15 @@ The following fields are optional but recommended:
       "version": ">=1.0.0"
     }
   ],
+  "requirements": {
+    "python": [
+      "requests>=2.28.0",
+      "beautifulsoup4>=4.11.0"
+    ],
+    "system": [
+      "nmap (for network scanning functionality)"
+    ]
+  },
   "changelog": [
     {
       "version": "1.0.0",
@@ -58,6 +68,22 @@ NetWORKS validates plugin manifests against a JSON schema to ensure they contain
 ## Legacy Support
 
 For backward compatibility, NetWORKS also supports the older `plugin.yaml` format. However, it is recommended to use the JSON format for new plugins.
+
+## Plugin Dependencies
+
+The `dependencies` field specifies other plugins that must be enabled for this plugin to function. Each dependency includes:
+
+- `id`: The plugin ID of the dependency
+- `version`: The required version range (using npm-style version specifiers)
+
+## Package Requirements
+
+The `requirements` field specifies external dependencies needed by the plugin:
+
+- `python`: A list of Python packages (in pip format) that will be automatically installed
+- `system`: A list of system/OS dependencies that may need to be manually installed
+
+NetWORKS will automatically install Python package requirements when the plugin is enabled and remove them when the plugin is uninstalled, ensuring clean system management.
 
 ## Changelog
 

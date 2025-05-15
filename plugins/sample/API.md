@@ -11,6 +11,7 @@ Key features include:
 - Comprehensive signal monitoring and testing
 - Core application feature testing dashboard
 - Plugin lifecycle management examples
+- Robust error handling and fault tolerance
 
 ## Public API
 
@@ -109,8 +110,11 @@ Example usage:
 # Set sample property
 device.set_property("sample", "My Sample Value")
 
-# Get sample property
+# Get sample property (with default value if not found)
 value = device.get_property("sample", "Default")
+
+# Check if property exists
+has_property = device.get_property("sample", None) is not None
 
 # Get test results
 test_result = device.get_property("test_result", "Not tested")
@@ -135,6 +139,96 @@ print(f"Signal test result: {signal_test_result}")
 
 # Enable signal monitoring
 sample_plugin.monitor_signal("plugin_loaded", True)
+```
+
+### Resilient Testing
+
+The sample plugin implements resilient testing strategies to handle different application structures:
+
+#### Device Manager Test
+
+```python
+# The device manager test will attempt to:
+# 1. Verify the device manager API is accessible
+# 2. Check if basic methods are available
+# 3. Try to add/remove test devices (but won't fail if this part doesn't work)
+# 4. Report success if basic access was possible
+
+result, message = sample_plugin._test_device_manager()
+```
+
+#### Device Table Test
+
+```python
+# The device table test tries multiple methods to access the table:
+# 1. Look for device_table_model in main_window
+# 2. Look for device_table in main_window
+# 3. Try to get the model from device_table if found
+# 4. Search for QTableView and QTableWidget instances in the main window
+# 5. Succeed if any method finds the table
+
+result, message = sample_plugin._test_device_table()
+```
+
+#### Configuration Test
+
+```python
+# The configuration test uses multiple approaches:
+# 1. Try various common configuration key names
+# 2. Explore available config keys if possible
+# 3. Attempt to set and get a test value
+# 4. Succeed if any method can verify config access
+
+result, message = sample_plugin._test_configuration()
+```
+
+## Error Handling
+
+The Sample Plugin implements comprehensive error handling to ensure stability and fault tolerance:
+
+### Device Property Access
+
+Property access is always performed with safe defaults and type checking:
+
+```python
+# Safe property access with default value
+device_name = device.get_property("name", "N/A")
+
+# Type checking to prevent format errors
+device_name_str = str(device_name) if device_name is not None else "N/A"
+```
+
+### Signal Event Logging
+
+Signal events are logged with robust parameter handling:
+
+```python
+# Safe parameter formatting
+if isinstance(parameters, list) or isinstance(parameters, tuple):
+    # Handle case where list might contain None values
+    safe_params = ["<None>" if p is None else str(p) for p in parameters]
+    params_text = ", ".join(safe_params)
+else:
+    params_text = str(parameters)
+```
+
+### Device Testing Exception Handling
+
+Device testing includes comprehensive exception handling:
+
+```python
+try:
+    # Perform device tests
+    # ...
+except Exception as e:
+    # Handle any exceptions that occur during testing
+    error_msg = f"Error testing device {device_name}: {str(e)}"
+    logger.error(error_msg)
+    self.log_message(error_msg)
+    
+    # Update device with error information
+    device.set_property("test_result", "ERROR")
+    device.set_property("test_summary", f"Test failed with error: {str(e)}")
 ```
 
 ## Signals
@@ -199,6 +293,113 @@ The plugin provides the following UI components:
   - "Sample Plugin Log": Shows plugin operation log
   - "Test Dashboard": Shows test results and monitoring data
 
+### Context Menus
+
+The plugin demonstrates how to implement robust context menus for both device table and group tree:
+
+#### Device Context Menu
+
+The device context menu appears when right-clicking:
+- On selected devices: Shows actions that apply to the selection
+- On unselected devices: Automatically selects the device and shows the menu
+- On empty space: Falls back to the default application menu (if available)
+
+```python
+def _setup_device_context_menu(self):
+    """Set up context menu for device table items"""
+    # Create context menu specific to our plugin
+    self.device_context_menu = QMenu("Sample Plugin")
+    self.device_context_menu.addAction(self.device_context_actions["mark_important"])
+    self.device_context_menu.addAction(self.device_context_actions["set_sample_value"])
+    # ... add more actions ...
+    
+    # Set the custom context menu policy for the device table
+    self.device_table.setContextMenuPolicy(Qt.CustomContextMenu)
+    self.device_table.customContextMenuRequested.connect(self._on_device_context_menu)
+```
+
+To ensure that context menus work correctly, the sample plugin provides comprehensive testing:
+
+```python
+def _test_context_menu_setup(self):
+    """Verify that the context menu setup is correct"""
+    try:
+        # Check if device table is accessible
+        if not hasattr(self, 'device_table'):
+            logger.error("Device table reference not stored")
+            return False
+            
+        # Check if context menu is accessible
+        if not hasattr(self, 'device_context_menu'):
+            logger.error("Device context menu not created")
+            return False
+            
+        # Check context menu policy
+        if self.device_table.contextMenuPolicy() != Qt.CustomContextMenu:
+            logger.error("Device table has wrong context menu policy")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error testing context menu setup: {e}")
+        return False
+```
+
+#### Device Details Testing
+
+The plugin includes comprehensive testing of device detail functionality:
+
+```python
+def _test_device_details(self):
+    """Test the device details functionality"""
+    try:
+        # Get devices
+        devices = self.device_manager.get_devices()
+        if not devices:
+            return True, "No devices available to test"
+            
+        # Test updating device details with a sample device
+        sample_device = devices[0]
+        
+        # Safely test property access
+        name = sample_device.get_property('name', 'Unnamed')
+        device_type = sample_device.get_property('type', 'Unknown')
+        
+        # Try updating the device details panel
+        self.update_device_details(sample_device)
+        
+        # Test setting a property
+        test_value = f"test-{int(time.time())}"
+        sample_device.set_property("sample_test", test_value)
+        read_value = sample_device.get_property("sample_test", None)
+        
+        if read_value == test_value:
+            return True, "Device details test successful"
+        else:
+            return False, "Property value mismatch"
+    except Exception as e:
+        return False, f"Error in device details test: {e}"
+```
+
+#### Signal Connection Tracking
+
+For proper signal disconnection during plugin unloading, the plugin tracks signal connections:
+
+```python
+# When connecting a signal
+self.device_table.customContextMenuRequested.connect(self._on_device_context_menu)
+self._device_table_custom_context_connected = True
+
+# When disconnecting during cleanup
+if hasattr(self, 'device_table') and hasattr(self, '_device_table_custom_context_connected'):
+    if self._device_table_custom_context_connected:
+        try:
+            self.device_table.customContextMenuRequested.disconnect(self._on_device_context_menu)
+            self._device_table_custom_context_connected = False
+        except Exception as e:
+            logger.debug(f"Error disconnecting signal: {e}")
+```
+
 ## Integration Examples
 
 Other plugins can integrate with the Sample Plugin as follows:
@@ -228,11 +429,47 @@ def on_test_completed(self, test_name, success):
 
 ## Changelog
 
+### Version 1.0.5 (2025-05-12)
+- Added comprehensive context menu and device details testing
+- Improved context menu signal handling and connection tracking
+- Added proper disconnection for context menu signals during cleanup
+- Added detailed logging and diagnostics for context menu operations
+- Fixed signal connection tracking to prevent disconnection warnings
+
+### Version 1.0.4 (2025-05-12)
+- Fixed crash when checking device properties with has_property method
+- Updated code to use get_property method with proper null checks
+- Improved property access throughout the plugin for better compatibility
+
+### Version 1.0.3 (2025-05-12)
+- Fixed device context menu to properly appear when right-clicking on selected devices
+- Completely redesigned context menu handling for both device table and group tree
+- Added proper item selection when right-clicking on unselected devices
+- Improved menu action enabling/disabling based on selection properties
+
+### Version 1.0.2 (2025-05-12)
+- Improved device manager test to gracefully handle initialization issues
+- Enhanced device table test with multiple detection methods
+- Fixed configuration system test to work with various config formats
+- Made all tests more resilient to variations in application structure
+
+### Version 1.0.1 (2025-05-12)
+- Fixed device selection handling to safely handle None property values
+- Added robust error handling in signal event logging
+- Improved device testing with better exception handling
+- Enhanced device details display with proper NULL value handling
+
 ### Version 1.0.0 (2025-05-19)
 - Added comprehensive application testing capabilities
 - Updated to comply with new documentation standards
 - Enhanced UI with testing dashboard
 - Added signal testing and monitoring functionality
+
+### Version 0.9.1 (2025-04-15)
+- Added context menu support for device table
+- Implemented device and group action capabilities
+- Added more plugin settings for demonstration
+- Improved test functionality
 
 ### Version 0.1.0 (2023-11-14)
 - Initial sample plugin

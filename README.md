@@ -10,6 +10,8 @@ An extensible device management application.
 - Context menu support for device interactions
 - Multi-device selection and bulk operations
 - Device grouping with automatic name conflict resolution
+- Autosave with configurable intervals and automatic backups
+- Comprehensive application settings with multiple configuration options
 - Bulk import of devices from files or pasted text
 - Manifest and changelog tracking for the application and plugins
 - Windows launcher for easy setup and execution
@@ -52,6 +54,28 @@ NetWORKS supports multiple workspaces for managing different device configuratio
 2. From here you can:
    - Switch to a different workspace
    - Delete workspaces (except the default workspace)
+
+## Autosave and Backups
+
+NetWORKS includes a comprehensive autosave system to prevent data loss:
+
+- **Automated Saving**: Configure automatic workspace saving at specified intervals
+- **Smart Detection**: Option to only save when changes are detected
+- **Backup System**: Automatic creation of backup files during autosaves
+- **Backup Rotation**: Configurable limit on the number of backup files to keep
+
+See the [Autosave Documentation](docs/autosave.md) for detailed information on configuring and using this feature.
+
+## Application Settings
+
+Access the settings dialog via **Tools → Settings** to configure various aspects of the application:
+
+- **General**: Theme, plugin loading, update settings
+- **User Interface**: Font size, toolbar position, table appearance
+- **Autosave**: Configure autosave behavior and backups
+- **Devices**: Device discovery and connection settings
+- **Logging**: Log level, retention, and diagnostics
+- **Advanced**: Performance, networking, and security settings
 
 ## Device Storage
 
@@ -126,6 +150,7 @@ NetWORKS includes comprehensive documentation to help you get started:
 
 For more detailed documentation, see the [docs](docs) directory, which includes:
 
+- [Autosave Documentation](docs/autosave.md): How to configure and use the autosave system
 - [Plugin Development Guide](docs/plugins/README.md)
 - [API Documentation Guidelines](docs/api/README.md)
 - [Core API Reference](docs/api/core.md)
@@ -162,4 +187,101 @@ Plugins can extend the application in the following ways:
 
 ## License
 
-This project is licensed under the MIT License. 
+This project is licensed under the MIT License.
+
+# Network Commands Plugin
+
+## Overview
+
+The Network Commands plugin for NetWORKS allows you to run and manage commands on network devices and store the results for analysis. It supports command templates, command groups, credential management, and result export.
+
+## Features
+
+- **Command Execution**: Run commands on network devices and view results
+- **Command Templates**: Manage templates for common commands by device type
+- **Command Groups**: Create groups of commands to run in sequence
+- **Secure Credentials**: Store and manage credentials for devices and groups
+- **Result Management**: View, export, and manage command results
+- **Custom Commands**: Enter and run custom commands directly in the UI
+
+## Installation
+
+1. Ensure NetWORKS is installed
+2. Place the `network_commands` folder in the `plugins` directory
+3. Start NetWORKS and enable the plugin
+
+## Usage
+
+### Running Commands
+
+1. Select a device in the device list
+2. Right-click and select "Run Command"
+3. Choose a command from the menu
+4. View the results in the Command Results panel
+
+### Using Command Groups
+
+1. Create a command group using the "Manage Command Groups" dialog
+2. Select one or more devices
+3. Right-click and select "Run Command Group"
+4. Choose a command group from the menu
+5. All commands in the group will run sequentially
+
+### Managing Credentials
+
+1. Select a device or group
+2. Right-click and select "Set Device Credentials" or "Set Group Credentials"
+3. Enter the username, password, and optional enable secret
+4. Credentials will be securely stored for future use
+
+### Exporting Results
+
+1. Select a device
+2. Open the Command Results panel
+3. Click "Export Results"
+4. Choose individual results to export or export all results
+
+## Command Templates
+
+Command templates are stored in JSON files in the `templates` directory. Each file contains templates for a specific device type.
+
+Example template format:
+
+```json
+{
+  "device_type": "cisco_ios",
+  "commands": [
+    {
+      "id": "show_version",
+      "name": "Show Version",
+      "description": "Display device hardware and software version information",
+      "command": "show version",
+      "parameters": {},
+      "parser": "text"
+    }
+  ]
+}
+```
+
+## Command Groups
+
+Command groups allow you to run multiple commands as a batch. Groups can be created and managed through the UI.
+
+## Security
+
+- Credentials are stored with basic encryption
+- No credentials are stored in plain text
+- Authentication status is verified before running commands
+
+## Troubleshooting
+
+If you encounter issues:
+
+1. Check that your device credentials are correct
+2. Verify network connectivity to the device
+3. Check the application logs for error messages
+4. Make sure the device supports the commands you're trying to run
+
+## License
+
+This plugin is part of the NetWORKS application and is governed by the same license terms. 

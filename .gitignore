@@ -80,3 +80,6 @@ htmlcov/
 .coverage.*
 coverage.xml
 *,cover 
+
+workspaces/
+config/backups/

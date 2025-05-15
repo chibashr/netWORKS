@@ -59,6 +59,28 @@
         }
       }
     },
+    "requirements": {
+      "type": "object",
+      "description": "Package requirements for this plugin",
+      "properties": {
+        "python": {
+          "type": "array",
+          "description": "Python package requirements (pip installable packages)",
+          "items": {
+            "type": "string",
+            "description": "Package requirement in pip format (e.g., 'package>=1.0.0')"
+          }
+        },
+        "system": {
+          "type": "array",
+          "description": "System/OS dependencies that may be needed",
+          "items": {
+            "type": "string",
+            "description": "System package name or description"
+          }
+        }
+      }
+    },
     "changelog": {
       "type": "array",
       "description": "Changelog entries for the plugin",

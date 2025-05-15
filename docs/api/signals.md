@@ -106,9 +106,30 @@ def on_plugin_loaded(self, plugin_info):
         if scanner_plugin:
             # Connect to its signals
             scanner_plugin.scan_completed.connect(self.on_scan_completed)
+            scanner_plugin.scan_device_found.connect(self.on_device_found)
+            # Connect to profile management signals
+            scanner_plugin.profile_created.connect(self.on_profile_created)
+            scanner_plugin.profile_updated.connect(self.on_profile_updated)
+            scanner_plugin.profile_deleted.connect(self.on_profile_deleted)
     
 def on_plugin_unloaded(self, plugin_info):
     logger.debug(f"Plugin unloaded: {plugin_info.name}")
+
+# Signal handler examples
+def on_scan_completed(self, results):
+    logger.info(f"Scan completed with {results.get('devices_found', 0)} devices")
+
+def on_device_found(self, device):
+    logger.info(f"Found device: {device.get_property('ip_address')}")
+
+def on_profile_created(self, profile_name):
+    logger.info(f"Scan profile created: {profile_name}")
+
+def on_profile_updated(self, profile_name):
+    logger.info(f"Scan profile updated: {profile_name}")
+
+def on_profile_deleted(self, profile_name):
+    logger.info(f"Scan profile deleted: {profile_name}")
 ```
 
 ## UI Signals

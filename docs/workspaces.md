@@ -1,6 +1,18 @@
 # Workspaces
 
-NetWORKS supports multiple workspaces for managing different device configurations. A workspace is a logical container for devices, groups, and enabled plugins, allowing users to switch between different network configurations without having to manually manage sets of devices.
+## Introduction
+
+In NetWORKS, workspaces provide a way to organize and manage different sets of devices and their configurations. Each workspace maintains its own collection of devices, groups, and settings, allowing you to switch between different configurations easily.
+
+## UI Layout Persistence
+
+Workspaces now save and restore UI layouts, including:
+- Main window size and position
+- Dock widget positions and sizes
+- Toolbar positions
+- Plugin panel layouts
+
+This means that each workspace can have its own custom UI arrangement tailored to specific use cases.
 
 ## Workspace Structure
 
@@ -53,18 +65,23 @@ The actual device data is stored in the `config/devices` directory and shared ac
 
 ### Creating a Workspace
 
-```python
-workspace_name = "production"
-description = "Production network devices"
-device_manager.create_workspace(workspace_name, description)
-```
+To create a new workspace:
+
+1. Go to "File" → "Workspaces" → "New Workspace"
+2. Enter a name and optional description
+3. Click "Create"
+
+A new workspace will be created with default settings and an empty device list. The UI layout of your current workspace will be copied to the new workspace as a starting point.
 
 ### Switching Workspaces
 
-```python
-workspace_name = "production"
-device_manager.load_workspace(workspace_name)
-```
+To switch to a different workspace:
+
+1. Go to "File" → "Workspaces" → "Open Workspace"
+2. Select a workspace from the list
+3. Click "Open"
+
+When switching workspaces, the UI layout will automatically change to match the saved layout for that workspace.
 
 ### Saving Workspace State
 
@@ -97,4 +114,5 @@ The "default" workspace is created automatically when the application starts for
 2. **Save often**: Call `save_workspace()` after making significant changes.
 3. **Create workspaces for different environments**: For example, create separate workspaces for development, testing, and production environments.
 4. **Document workspaces**: Use the description field to document the purpose and contents of each workspace.
-5. **Share workspaces**: Copy workspace directories between installations to share configurations. 
+5. **Share workspaces**: Copy workspace directories between installations to share configurations.
+6. **Customize layouts per workspace**: Arrange UI elements differently based on the workspace's purpose. 

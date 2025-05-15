@@ -7,12 +7,8 @@ Device table model and view for NetWORKS
 
 from loguru import logger
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Signal, Slot
-from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, QMenu, QApplication, QWidget, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QTextEdit, QPushButton, QHBoxLayout, QComboBox, QTabWidget, QListWidget, QListWidgetItem, QMessageBox, QGroupBox, QCheckBox, QTableWidget, QTableWidgetItem, QFileDialog, QWizard, QWizardPage)
-from PySide6.QtGui import QColor, QBrush, QFont, QIcon
-try:
-    from PySide6.QtGui import QAction
-except ImportError:
-    from PySide6.QtWidgets import QAction
+from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, QMenu, QApplication, QWidget, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QTextEdit, QPushButton, QHBoxLayout, QComboBox, QTabWidget, QListWidget, QListWidgetItem, QMessageBox, QGroupBox, QCheckBox, QTableWidget, QTableWidgetItem, QFileDialog, QWizard, QWizardPage, QScrollArea)
+from PySide6.QtGui import QColor, QBrush, QFont, QIcon, QAction
 from ..core.device_manager import Device
 import csv
 import io
@@ -688,7 +684,7 @@ class DeviceTableView(QTableView):
         is_new = device is None
         dialog = QDialog()
         dialog.setWindowTitle(f"{'Add' if is_new else 'Edit'} Device Properties")
-        dialog.resize(600, 500)
+        dialog.resize(600, 400)  # Reduce initial height from 500 to 400
         
         layout = QVBoxLayout(dialog)
         
@@ -767,6 +763,18 @@ class DeviceTableView(QTableView):
         tags_tab = QWidget()
         tags_layout = QVBoxLayout(tags_tab)
         
+        # Add a label for the tag list
+        tags_layout.addWidget(QLabel("Add these tags to all selected devices:"))
+
+        # Add a filter for tags
+        tags_filter_layout = QHBoxLayout()
+        tags_filter_label = QLabel("Filter:")
+        tags_filter_edit = QLineEdit()
+        tags_filter_edit.setPlaceholderText("Type to filter tags...")
+        tags_filter_layout.addWidget(tags_filter_label)
+        tags_filter_layout.addWidget(tags_filter_edit)
+        tags_layout.addLayout(tags_filter_layout)
+
         # Tag list
         tags_list = QListWidget()
         tags_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -776,10 +784,9 @@ class DeviceTableView(QTableView):
         for tag in current_tags:
             item = QListWidgetItem(tag)
             tags_list.addItem(item)
-            
-        tags_layout.addWidget(QLabel("Tags:"))
-        tags_layout.addWidget(tags_list)
         
+        tags_layout.addWidget(tags_list)
+
         # Tag controls
         tags_control_layout = QHBoxLayout()
         new_tag = QLineEdit()
@@ -805,9 +812,17 @@ class DeviceTableView(QTableView):
             for item in reversed(tags_list.selectedItems()):
                 row = tags_list.row(item)
                 tags_list.takeItem(row)
+        
+        # Add tag filter function
+        def filter_tags(text):
+            filter_text = text.lower()
+            for i in range(tags_list.count()):
+                item = tags_list.item(i)
+                item.setHidden(filter_text and filter_text not in item.text().lower())
                 
         add_tag_button.clicked.connect(add_tag)
         remove_tag_button.clicked.connect(remove_selected_tags)
+        tags_filter_edit.textChanged.connect(filter_tags)
         
         # Add enter key press to add tag
         def on_tag_return_pressed():
@@ -827,6 +842,14 @@ class DeviceTableView(QTableView):
         custom_props_layout = QFormLayout()
         custom_props = {}
         
+        # Create a scroll area for custom properties
+        custom_props_scroll = QScrollArea()
+        custom_props_scroll.setWidgetResizable(True)
+        custom_props_widget = QWidget()
+        custom_props_widget.setLayout(custom_props_layout)
+        custom_props_scroll.setWidget(custom_props_widget)
+        custom_props_scroll.setMaximumHeight(200)  # Limit maximum height
+        
         # Add existing custom properties if editing a device
         current_custom_props = []
         core_props = ["id", "alias", "hostname", "ip_address", "mac_address", "status", "notes", "tags"]
@@ -844,6 +867,7 @@ class DeviceTableView(QTableView):
                     
                     # Add to table button
                     show_in_table_btn = QPushButton("Show in Table")
+                    show_in_table_btn.setMaximumWidth(100)
                     show_in_table_btn.setToolTip("Add this property as a column in the device table")
                     prop_key = key  # Create a local copy of the key for the closure
                     
@@ -852,7 +876,7 @@ class DeviceTableView(QTableView):
                     
                     custom_props_layout.addRow(f"{key}:", prop_layout)
         
-        custom_layout.addLayout(custom_props_layout)
+        custom_layout.addWidget(custom_props_scroll)
         
         # Find common custom properties from other devices
         suggested_props = []
@@ -879,24 +903,71 @@ class DeviceTableView(QTableView):
                 suggestions_label.setWordWrap(True)
                 suggestions_layout.addWidget(suggestions_label)
                 
-                for prop_key, prop_value, source_device in suggested_props:
-                    # Create a row for each suggested property
-                    prop_widget = QWidget()
-                    prop_layout = QHBoxLayout(prop_widget)
-                    prop_layout.setContentsMargins(0, 0, 0, 0)
-                    
-                    # Add checkbox to select the property
-                    checkbox = QCheckBox(f"{prop_key} ({source_device.get_property('alias', 'Unknown')})")
+                # Create a scroll area for the suggested properties
+                scroll_area = QScrollArea()
+                scroll_area.setWidgetResizable(True)
+                scroll_area.setMaximumHeight(200)  # Limit maximum height
+                
+                # Create a table for suggested properties
+                props_table = QTableWidget()
+                props_table.setColumnCount(3)  # Checkbox, Property Name, Add Button
+                props_table.setHorizontalHeaderLabels(["Use", "Property", "Add"])
+                props_table.setRowCount(len(suggested_props))
+                props_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+                props_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+                props_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+                props_table.verticalHeader().setVisible(False)
+                props_table.setAlternatingRowColors(True)
+                props_table.setShowGrid(True)
+                props_table.setSelectionMode(QTableWidget.NoSelection)
+                props_table.setFocusPolicy(Qt.NoFocus)
+                props_table.setEditTriggers(QTableWidget.NoEditTriggers)
+                
+                # Set compact row height
+                props_table.verticalHeader().setDefaultSectionSize(28)
+                
+                # Add suggested properties to the table
+                checkbox_map = {}  # Map to store checkboxes by row
+                button_map = {}    # Map to store buttons by row
+                
+                for row, (prop_key, prop_value, source_device) in enumerate(suggested_props):
+                    # Checkbox column
+                    checkbox = QCheckBox()
                     checkbox.setToolTip(f"Value from {source_device.get_property('alias', 'Unknown')}: {prop_value}")
+                    checkbox_widget = QWidget()
+                    checkbox_layout = QHBoxLayout(checkbox_widget)
+                    checkbox_layout.addWidget(checkbox)
+                    checkbox_layout.setAlignment(Qt.AlignCenter)
+                    checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                    props_table.setCellWidget(row, 0, checkbox_widget)
+                    checkbox_map[row] = checkbox
                     
-                    # Add button to add this property
-                    add_button = QPushButton("Add")
+                    # Property name column
+                    name_item = QTableWidgetItem(f"{prop_key} ({source_device.get_property('alias', 'Unknown')})")
+                    name_item.setToolTip(f"Value: {prop_value}")
+                    name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+                    props_table.setItem(row, 1, name_item)
+                    
+                    # Add button column
+                    add_button = QPushButton("+")
+                    add_button.setMaximumWidth(30)
+                    add_button.setMaximumHeight(25)
                     add_button.setToolTip(f"Add this property with value: {prop_value}")
                     
+                    # Store data for the button
                     prop_key_copy = prop_key
                     prop_value_copy = prop_value
                     
-                    def make_add_handler(key, value, checkbox):
+                    # Create widget to center the button
+                    button_widget = QWidget()
+                    button_layout = QHBoxLayout(button_widget)
+                    button_layout.addWidget(add_button)
+                    button_layout.setAlignment(Qt.AlignCenter)
+                    button_layout.setContentsMargins(0, 0, 0, 0)
+                    props_table.setCellWidget(row, 2, button_widget)
+                    button_map[row] = add_button
+                    
+                    def make_add_handler(key, value, row):
                         def handle_add():
                             # Add the property if not already added
                             if key not in custom_props:
@@ -909,6 +980,7 @@ class DeviceTableView(QTableView):
                                 
                                 # Add to table button
                                 show_in_table_btn = QPushButton("Show in Table")
+                                show_in_table_btn.setMaximumWidth(100)
                                 show_in_table_btn.setToolTip("Add this property as a column in the device table")
                                 
                                 show_in_table_btn.clicked.connect(make_show_in_table_handler(key))
@@ -917,38 +989,35 @@ class DeviceTableView(QTableView):
                                 custom_props_layout.addRow(f"{key}:", prop_layout)
                                 
                                 # Disable the checkbox and button
-                                checkbox.setEnabled(False)
-                                checkbox.setText(f"{key} (Added)")
-                                add_button.setEnabled(False)
+                                checkbox_map[row].setEnabled(False)
+                                button_map[row].setEnabled(False)
+                                name_item = props_table.item(row, 1)
+                                old_text = name_item.text()
+                                name_item.setText(f"{key} (Added)")
                         return handle_add
                     
-                    add_button.clicked.connect(make_add_handler(prop_key_copy, prop_value_copy, checkbox))
-                    
-                    prop_layout.addWidget(checkbox)
-                    prop_layout.addWidget(add_button)
-                    prop_layout.addStretch()
-                    
-                    suggestions_layout.addWidget(prop_widget)
+                    add_button.clicked.connect(make_add_handler(prop_key_copy, prop_value_copy, row))
+                
+                # Set the table as the scroll area's widget
+                scroll_area.setWidget(props_table)
+                suggestions_layout.addWidget(scroll_area)
                 
                 # Add a button to add all selected properties
-                add_selected_button = QPushButton("Add Selected Properties")
+                add_selected_button = QPushButton("Add Selected")
+                add_selected_button.setToolTip("Add all checked properties at once")
+                add_selected_button.setMaximumWidth(120)
                 suggestions_layout.addWidget(add_selected_button)
                 
                 # Handler to add all selected properties
                 def add_selected_properties():
                     # Find all checked properties
-                    for i in range(suggestions_layout.count()):
-                        widget = suggestions_layout.itemAt(i).widget()
-                        if isinstance(widget, QWidget) and not isinstance(widget, (QLabel, QPushButton)):
-                            # Find the checkbox
-                            checkbox = None
-                            for child in widget.findChildren(QCheckBox):
-                                checkbox = child
-                                break
-                            
-                            if checkbox and checkbox.isChecked() and checkbox.isEnabled():
-                                # Extract the property key and value
-                                text = checkbox.text()
+                    for row in range(props_table.rowCount()):
+                        checkbox = checkbox_map.get(row)
+                        if checkbox and checkbox.isChecked() and checkbox.isEnabled():
+                            # Get the property key from the table
+                            name_item = props_table.item(row, 1)
+                            if name_item:
+                                text = name_item.text()
                                 key = text.split(" (")[0]
                                 
                                 # Find the matching suggested property
@@ -964,6 +1033,7 @@ class DeviceTableView(QTableView):
                                         
                                         # Add to table button
                                         show_in_table_btn = QPushButton("Show in Table")
+                                        show_in_table_btn.setMaximumWidth(100)
                                         show_in_table_btn.setToolTip("Add this property as a column in the device table")
                                         
                                         show_in_table_btn.clicked.connect(make_show_in_table_handler(key))
@@ -971,9 +1041,11 @@ class DeviceTableView(QTableView):
                                         
                                         custom_props_layout.addRow(f"{key}:", prop_layout)
                                         
-                                        # Disable the checkbox
+                                        # Disable the checkbox and button
                                         checkbox.setEnabled(False)
-                                        checkbox.setText(f"{key} (Added)")
+                                        if row in button_map:
+                                            button_map[row].setEnabled(False)
+                                        name_item.setText(f"{key} (Added)")
                                         break
                 
                 add_selected_button.clicked.connect(add_selected_properties)
@@ -981,19 +1053,24 @@ class DeviceTableView(QTableView):
                 # Add the suggestions group to the custom tab
                 custom_layout.addWidget(suggestions_group)
         
-        # Add custom property controls
-        add_prop_layout = QHBoxLayout()
+        # Add custom property controls with a form layout for better alignment
+        add_prop_group = QGroupBox("Add New Property")
+        add_prop_layout = QHBoxLayout(add_prop_group)
+        add_prop_layout.setContentsMargins(10, 15, 10, 10)
+        
         new_prop_name = QLineEdit()
         new_prop_name.setPlaceholderText("Property Name")
         new_prop_value = QLineEdit()
         new_prop_value.setPlaceholderText("Property Value")
-        add_prop_button = QPushButton("Add Property")
+        add_prop_button = QPushButton("Add")
+        add_prop_button.setMaximumWidth(60)
+        add_prop_button.setToolTip("Add a new custom property")
         
         add_prop_layout.addWidget(new_prop_name)
         add_prop_layout.addWidget(new_prop_value)
         add_prop_layout.addWidget(add_prop_button)
         
-        custom_layout.addLayout(add_prop_layout)
+        custom_layout.addWidget(add_prop_group)
         
         # Help text for custom properties
         help_text = QLabel("Custom properties can be used to store additional information about a device.\n"
@@ -1037,6 +1114,7 @@ class DeviceTableView(QTableView):
             
             # Add to table button
             show_in_table_btn = QPushButton("Show in Table")
+            show_in_table_btn.setMaximumWidth(100)
             show_in_table_btn.setToolTip("Add this property as a column in the device table")
             
             show_in_table_btn.clicked.connect(make_show_in_table_handler(prop_name))
@@ -1126,7 +1204,7 @@ class DeviceTableView(QTableView):
         
         # SECTION 1: Device Management Actions
         if len(devices) == 1:
-            menu.addAction("Edit Properties", lambda: self._handle_action(self._on_action_edit_properties, devices[0]))
+            menu.addAction("Edit Properties", lambda: self._handle_action(self._on_action_edit_properties, devices))
         else:
             menu.addAction(f"Edit Selected Devices ({len(devices)})", lambda: self._handle_action(self._on_action_edit_properties, devices))
             
@@ -1170,15 +1248,44 @@ class DeviceTableView(QTableView):
                 
         if filtered_actions:
             menu.addSeparator()
-            sorted_actions = sorted(filtered_actions, key=lambda x: x[2])
+            # Group by plugin using a dictionary
+            plugin_actions = {}
             
-            for name, callback, _ in sorted_actions:
-                # Create a closure that captures the current callback
-                action = menu.addAction(name)
-                # Use the same _handle_action pattern for consistency with built-in actions
-                action.triggered.connect(
-                    lambda checked=False, cb=callback: self._handle_action(cb, devices)
-                )
+            for name, callback, priority in sorted(filtered_actions, key=lambda x: x[2]):
+                # Extract plugin name from function module if available
+                plugin_name = "Other Actions"
+                if hasattr(callback, '__module__'):
+                    module_parts = callback.__module__.split('.')
+                    if 'plugins' in module_parts:
+                        # Try to get plugin name from module path
+                        plugin_idx = module_parts.index('plugins')
+                        if plugin_idx + 1 < len(module_parts):
+                            plugin_name = module_parts[plugin_idx + 1].replace('_', ' ').title()
+                
+                # Add to plugin group
+                if plugin_name not in plugin_actions:
+                    plugin_actions[plugin_name] = []
+                plugin_actions[plugin_name].append((name, callback, priority))
+            
+            # Add each plugin group as a submenu or directly if only one action
+            for plugin_name, actions in plugin_actions.items():
+                if len(actions) == 1:
+                    # Just one action, add directly
+                    name, callback, _ = actions[0]
+                    action = menu.addAction(name)
+                    local_callback = callback
+                    action.triggered.connect(
+                        lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
+                    )
+                else:
+                    # Multiple actions, create submenu
+                    plugin_menu = menu.addMenu(plugin_name)
+                    for name, callback, _ in sorted(actions, key=lambda x: x[2]):
+                        action = plugin_menu.addAction(name)
+                        local_callback = callback
+                        action.triggered.connect(
+                            lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
+                        )
         
         # Emit signal for plugins to add to menu
         self.context_menu_requested.emit(devices, menu)
@@ -1194,12 +1301,30 @@ class DeviceTableView(QTableView):
             return
             
         if devices:
-            if len(devices) == 1:
-                # Single device
-                callback(devices[0])
+            # Determine if the callback function is from a plugin 
+            # by checking if it comes from a module with 'plugins' in its path
+            is_plugin_callback = False
+            if hasattr(callback, '__module__'):
+                module_parts = callback.__module__.split('.')
+                is_plugin_callback = 'plugins' in module_parts
+                
+            # Check if devices is a list or a single device
+            if isinstance(devices, list):
+                if len(devices) == 1 and not is_plugin_callback:
+                    # Single device from a list - only for internal actions
+                    # Plugin actions should always receive a list even for a single device
+                    callback(devices[0])
+                else:
+                    # Multiple devices or plugin callback
+                    callback(devices)
             else:
-                # Multiple devices
-                callback(devices)
+                # Single device (not in a list)
+                if is_plugin_callback:
+                    # For plugin callbacks, always convert to a list
+                    callback([devices])
+                else:
+                    # For internal callbacks, pass as is
+                    callback(devices)
         else:
             # No device selected
             callback(None)
@@ -1274,13 +1399,24 @@ class DeviceTableView(QTableView):
         tags_tab = QWidget()
         tags_layout = QVBoxLayout(tags_tab)
         
+        # Add a label for the tag list
+        tags_layout.addWidget(QLabel("Add these tags to all selected devices:"))
+
+        # Add a filter for tags
+        tags_filter_layout = QHBoxLayout()
+        tags_filter_label = QLabel("Filter:")
+        tags_filter_edit = QLineEdit()
+        tags_filter_edit.setPlaceholderText("Type to filter tags...")
+        tags_filter_layout.addWidget(tags_filter_label)
+        tags_filter_layout.addWidget(tags_filter_edit)
+        tags_layout.addLayout(tags_filter_layout)
+
         # Tag list
         tags_list = QListWidget()
         tags_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
             
-        tags_layout.addWidget(QLabel("Add these tags to all selected devices:"))
         tags_layout.addWidget(tags_list)
-        
+
         # Tag controls
         tags_control_layout = QHBoxLayout()
         new_tag = QLineEdit()
@@ -1307,8 +1443,16 @@ class DeviceTableView(QTableView):
                 row = tags_list.row(item)
                 tags_list.takeItem(row)
                 
+        # Add tag filter function
+        def filter_tags(text):
+            filter_text = text.lower()
+            for i in range(tags_list.count()):
+                item = tags_list.item(i)
+                item.setHidden(filter_text and filter_text not in item.text().lower())
+                
         add_tag_button.clicked.connect(add_tag)
         remove_tag_button.clicked.connect(remove_selected_tags)
+        tags_filter_edit.textChanged.connect(filter_tags)
         
         # Add enter key press to add tag
         def on_tag_return_pressed():
@@ -1392,123 +1536,117 @@ class DeviceTableView(QTableView):
                     self.device_manager.remove_device(device)
 
     def _on_action_add_to_group(self, data):
-        """Add devices to a group"""
-        # Check if we got a tuple of (devices, group)
+        """Add device(s) to a group"""
+        # Extract devices and group from data
         if isinstance(data, tuple) and len(data) == 2:
             devices, group = data
-            device_count = len(devices)
-            logger.debug(f"Adding {device_count} devices to group '{group.name}'")
-            
-            # Add each device to the group
-            added_count = 0
-            for device in devices:
-                # Only add if not already in the group
-                if device not in group.devices:
-                    self.device_manager.add_device_to_group(device, group)
-                    added_count += 1
-                else:
-                    logger.debug(f"Device {device.get_property('alias', 'Unnamed')} already in group {group.name}")
-            
-            # Save after all devices are added
-            self.device_manager.save_devices()
-            
-            # Show a message to the user with the result
-            from PySide6.QtWidgets import QMessageBox
-            if added_count > 0:
-                QMessageBox.information(
-                    self, 
-                    "Devices Added",
-                    f"Added {added_count} device{'s' if added_count != 1 else ''} to group '{group.name}'."
-                )
-            else:
-                QMessageBox.information(
-                    self,
-                    "No Changes",
-                    f"The selected device{'s' if device_count > 1 else ''} {'were' if device_count > 1 else 'was'} already in group '{group.name}'."
-                )
-            
+        else:
+            logger.error(f"Invalid data format for add_to_group: {data}")
             return
             
-        # Legacy handling for backward compatibility
-        device_or_devices = data
-        
-        # Multiple devices
-        if isinstance(device_or_devices, list):
-            devices = device_or_devices
-        else:
-            # Single device
-            devices = [device_or_devices]
+        # Get list of devices
+        if not isinstance(devices, list):
+            devices = [devices]
             
-        # No devices to add
         if not devices:
             return
             
-        # Get all groups
-        groups = [g for g in self.device_manager.get_groups() 
-                 if g != self.device_manager.root_group]
-                 
-        if not groups:
-            self.device_manager.create_group("New Group")
-            groups = [g for g in self.device_manager.get_groups() 
-                     if g != self.device_manager.root_group]
-                     
-        # Show group selection dialog
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QListWidget, QDialogButtonBox
+        # Ask if user wants to auto-group by type
+        auto_group = False
+        if len(devices) > 1:
+            reply = QMessageBox.question(
+                self,
+                "Auto-group by Type",
+                "Would you like to automatically create subgroups based on device types?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            auto_group = (reply == QMessageBox.Yes)
         
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Add to Group")
-        dialog.setMinimumWidth(300)
+        # Helper function to get the device type
+        def get_device_type(device):
+            # Use device_type property if it exists
+            device_type = device.get_property("device_type", "")
+            if not device_type:
+                # Try to determine from other properties
+                if device.get_property("is_switch", False) or device.get_property("is_router", False):
+                    device_type = "network"
+                elif device.get_property("is_server", False):
+                    device_type = "server"
+                elif device.get_property("is_workstation", False):
+                    device_type = "workstation"
+                elif device.get_property("is_printer", False):
+                    device_type = "printer"
+                else:
+                    # Default fallback
+                    device_type = "unknown"
+            return device_type
         
-        layout = QVBoxLayout(dialog)
+        # Process devices
+        added_count = 0
         
-        # Header with device count
-        header = QLabel(f"Select group to add {len(devices)} device{'s' if len(devices) > 1 else ''} to:")
-        layout.addWidget(header)
-        
-        # Group list
-        list_widget = QListWidget()
-        for group in sorted(groups, key=lambda g: g.name):
-            list_widget.addItem(group.name)
+        if auto_group:
+            # Group devices by type
+            device_types = {}
+            for device in devices:
+                device_type = get_device_type(device)
+                if device_type not in device_types:
+                    device_types[device_type] = []
+                device_types[device_type].append(device)
             
-        layout.addWidget(list_widget)
-        
-        # Buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-        
-        # Show dialog
-        if dialog.exec() == QDialog.Accepted:
-            # Get selected group
-            selected_item = list_widget.currentItem()
-            if selected_item:
-                group_name = selected_item.text()
-                group = self.device_manager.get_group(group_name)
-                
-                if group:
-                    added_count = 0
-                    for device in devices:
-                        # Only add if not already in the group
-                        if device not in group.devices:
-                            self.device_manager.add_device_to_group(device, group)
-                            added_count += 1
-                            
-                    self.device_manager.save_devices()
+            # Process each type
+            for device_type, type_devices in device_types.items():
+                # Skip if no devices
+                if not type_devices:
+                    continue
                     
-                    # Show a message to the user with the result
-                    if added_count > 0:
-                        QMessageBox.information(
-                            self, 
-                            "Devices Added",
-                            f"Added {added_count} device{'s' if added_count != 1 else ''} to group '{group_name}'."
-                        )
-                    else:
-                        QMessageBox.information(
-                            self,
-                            "No Changes",
-                            f"The selected device{'s' if len(devices) > 1 else ''} {'were' if len(devices) > 1 else 'was'} already in group '{group_name}'."
-                        )
+                # Create a subgroup for this type if it doesn't exist
+                type_name = device_type.replace("_", " ").title()
+                type_group_name = f"{group.name}: {type_name}"
+                
+                # Check if the subgroup already exists
+                type_group = None
+                for subgroup in group.subgroups:
+                    if subgroup.name == type_group_name:
+                        type_group = subgroup
+                        break
+                        
+                # Create the subgroup if it doesn't exist
+                if not type_group:
+                    type_group = self.device_manager.create_group(
+                        type_group_name,
+                        f"Devices of type {type_name} in {group.name}",
+                        group
+                    )
+                    
+                # Add devices to the type group
+                for device in type_devices:
+                    if device not in type_group.devices:
+                        self.device_manager.add_device_to_group(device, type_group)
+                        added_count += 1
+        else:
+            # Add devices directly to the group
+            for device in devices:
+                if device not in group.devices:
+                    self.device_manager.add_device_to_group(device, group)
+                    added_count += 1
+        
+        # Save changes
+        self.device_manager.save_devices()
+        
+        # Show a message to the user with the result
+        if added_count > 0:
+            QMessageBox.information(
+                self, 
+                "Devices Added",
+                f"Added {added_count} device{'s' if added_count != 1 else ''} to group '{group.name}'."
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "No Changes",
+                f"The selected device{'s' if len(devices) > 1 else ''} {'were' if len(devices) > 1 else 'was'} already in group '{group.name}'."
+            )
 
     def _on_action_create_group(self, device_or_devices):
         """Create a new group with selected device(s)"""
@@ -1540,61 +1678,99 @@ class DeviceTableView(QTableView):
         parent_combo = QComboBox()
         for group in groups:
             parent_combo.addItem(group.name, group)
-            
         form.addRow("Parent Group:", parent_combo)
         
+        # Auto-group by device type
+        auto_group_checkbox = QCheckBox("Auto-group by device type")
+        auto_group_checkbox.setToolTip("Create subgroups based on device types")
         layout.addLayout(form)
+        layout.addWidget(auto_group_checkbox)
         
-        # Dialog buttons
+        # Add dialog buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
         
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         
+        # Show dialog
         if dialog.exec():
-            # Validate group name
+            # Get dialog values
             name = group_name.text().strip()
+            desc = group_desc.text().strip()
+            parent = parent_combo.currentData()
+            auto_group = auto_group_checkbox.isChecked()
+            
             if not name:
                 QMessageBox.warning(
                     self,
                     "Invalid Group Name",
-                    "Group name cannot be empty."
+                    "Please enter a valid group name."
                 )
                 return
                 
-            # Check if group already exists (this is redundant as create_group handles duplicates)
-            # but we'll keep it to inform the user
-            if self.device_manager.get_group(name):
-                result = QMessageBox.question(
-                    self,
-                    "Group Already Exists",
-                    f"A group named '{name}' already exists. Would you like to create it with a numbered suffix instead?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if result == QMessageBox.No:
-                    return
-                
             try:
-                # Get parent group from the combo box
-                parent_group = parent_combo.currentData()
+                # Create new group
+                group = self.device_manager.create_group(name, desc, parent)
                 
-                # Create the group
-                new_group = self.device_manager.create_group(
-                    name,
-                    description=group_desc.text().strip(),
-                    parent_group=parent_group
-                )
+                # Helper function to get the device type
+                def get_device_type(device):
+                    # Use device_type property if it exists
+                    device_type = device.get_property("device_type", "")
+                    if not device_type:
+                        # Try to determine from other properties
+                        if device.get_property("is_switch", False) or device.get_property("is_router", False):
+                            device_type = "network"
+                        elif device.get_property("is_server", False):
+                            device_type = "server"
+                        elif device.get_property("is_workstation", False):
+                            device_type = "workstation"
+                        elif device.get_property("is_printer", False):
+                            device_type = "printer"
+                        else:
+                            # Default fallback
+                            device_type = "unknown"
+                    return device_type
                 
-                # Add devices to the group
-                for device in devices:
-                    self.device_manager.add_device_to_group(device, new_group)
+                # Process each device
+                added_devices = 0
+                if auto_group:
+                    # Group devices by type
+                    device_types = {}
+                    for device in devices:
+                        device_type = get_device_type(device)
+                        if device_type not in device_types:
+                            device_types[device_type] = []
+                        device_types[device_type].append(device)
                     
+                    # Create subgroups for each type
+                    for device_type, type_devices in device_types.items():
+                        # Skip if no devices
+                        if not type_devices:
+                            continue
+                            
+                        # Create a subgroup for this type
+                        type_name = device_type.replace("_", " ").title()
+                        type_group_name = f"{name}: {type_name}"
+                        type_group = self.device_manager.create_group(type_group_name, f"{desc} - {type_name}", group)
+                        
+                        # Add devices to this type group
+                        for device in type_devices:
+                            self.device_manager.add_device_to_group(device, type_group)
+                            added_devices += 1
+                else:
+                    # Add all devices directly to the group
+                    for device in devices:
+                        self.device_manager.add_device_to_group(device, group)
+                        added_devices += 1
+                
+                # Show result message
                 QMessageBox.information(
                     self,
                     "Group Created",
-                    f"Group '{new_group.name}' created with {len(devices)} device(s)."
+                    f"Created group '{name}' with {added_devices} devices."
                 )
+                
             except Exception as e:
                 QMessageBox.critical(
                     self,
@@ -1670,13 +1846,16 @@ class DeviceTableView(QTableView):
             action.setEnabled(False)
             return
             
+        # Create a copy of the devices list to avoid reference issues in the lambda
+        devices_copy = devices.copy() if isinstance(devices, list) else [devices]
+            
         # Add actions for each group
         for group in sorted(groups, key=lambda g: g.name):
             # Create a closure that captures the current group
             action = menu.addAction(group.name)
             # When triggered, this will call _on_action_add_to_group with the tuple (devices, group)
             action.triggered.connect(
-                lambda checked=False, g=group: self._on_action_add_to_group((devices, g))
+                lambda checked=False, g=group, d=devices_copy: self._on_action_add_to_group((d, g))
             )
 
     def _populate_remove_from_group_menu(self, menu, devices):
@@ -1697,14 +1876,16 @@ class DeviceTableView(QTableView):
             action.setEnabled(False)
             return
             
+        # Create a copy of the devices list to avoid reference issues in the lambda
+        devices_copy = devices.copy() if isinstance(devices, list) else [devices]
+            
         # Add actions for each group
         for group in sorted(groups, key=lambda g: g.name):
             # Create a closure that captures the current group
             action = menu.addAction(group.name)
             # When triggered, this will call _on_action_remove_from_group with the tuple (devices, group)
-            # Use a proper lambda closure to capture both 'devices' and 'group'
             action.triggered.connect(
-                lambda checked=False, g=group, d=devices: self._on_action_remove_from_group((d, g))
+                lambda checked=False, g=group, d=devices_copy: self._on_action_remove_from_group((d, g))
             )
 
     def _on_action_remove_from_group(self, data):

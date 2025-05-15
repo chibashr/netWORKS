@@ -1,0 +1,56 @@
+{
+  "device_type": "Cisco IOS",
+  "firmware_version": "15.x",
+  "commands": [
+    {
+      "command": "show version",
+      "alias": "Show Version",
+      "description": "Displays the system hardware and software status"
+    },
+    {
+      "command": "show running-config",
+      "alias": "Show Running Config",
+      "description": "Displays the current operating configuration"
+    },
+    {
+      "command": "show interfaces",
+      "alias": "Show Interfaces",
+      "description": "Displays statistics for all interfaces"
+    },
+    {
+      "command": "show ip interface brief",
+      "alias": "Show IP Interfaces",
+      "description": "Displays IP interface status and configuration"
+    },
+    {
+      "command": "show ip route",
+      "alias": "Show IP Route",
+      "description": "Displays the IP routing table"
+    },
+    {
+      "command": "show cdp neighbors",
+      "alias": "Show CDP Neighbors",
+      "description": "Displays neighbors discovered via CDP"
+    },
+    {
+      "command": "show inventory",
+      "alias": "Show Inventory",
+      "description": "Displays the product inventory list"
+    },
+    {
+      "command": "show vlan",
+      "alias": "Show VLANs",
+      "description": "Displays VLAN information"
+    },
+    {
+      "command": "show mac address-table",
+      "alias": "Show MAC Table",
+      "description": "Displays the MAC address table"
+    },
+    {
+      "command": "show logging",
+      "alias": "Show Logs",
+      "description": "Displays the contents of the logging buffer"
+    }
+  ]
+} 

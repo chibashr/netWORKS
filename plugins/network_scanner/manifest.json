@@ -1,0 +1,163 @@
+{
+  "id": "network_scanner",
+  "name": "Network Scanner",
+  "version": "1.2.3",
+  "description": "A plugin that scans the network for devices and adds them to NetWORKS",
+  "author": "NetWORKS Team",
+  "entry_point": "network_scanner.py",
+  "min_app_version": "0.8.16",
+  "requirements": {
+    "python": [
+      "python-nmap>=0.7.1",
+      "netifaces>=0.11.0"
+    ],
+    "system": [
+      "Python 3.8+",
+      "Qt 6.5+",
+      "Nmap 7.0+"
+    ]
+  },
+  "dependencies": [],
+  "changelog": [
+    {
+      "version": "1.2.3",
+      "date": "2025-05-28",
+      "changes": [
+        "Fixed critical bug: Only add devices that actually return data during a scan",
+        "Improved filtering to exclude non-responsive hosts from scan results",
+        "Added verification of host status before adding to inventory"
+      ]
+    },
+    {
+      "version": "1.2.2",
+      "date": "2025-05-27",
+      "changes": [
+        "Fixed stop scan functionality to properly terminate nmap processes",
+        "Added real-time status updates during scanning for better feedback",
+        "Added new Quick Ping scan option that's faster than nmap for simple discovery",
+        "Improved progress feedback with detailed status messages during scans"
+      ]
+    },
+    {
+      "version": "1.2.1",
+      "date": "2025-05-26",
+      "changes": [
+        "Fixed critical bug causing nmap to time out due to duplicate scan arguments",
+        "Improved argument handling to prevent duplicated command-line options"
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2025-05-25",
+      "changes": [
+        "Modified scan button to directly run scan with current panel settings",
+        "Added new 'Advanced...' button to open the full scan dialog",
+        "Fixed nmap timeout issues on new installations by increasing default timeout values",
+        "Added -T4 timing template to scan profiles to improve scan speed",
+        "Improved error handling for scan timeouts with more helpful messages"
+      ]
+    },
+    {
+      "version": "1.1.9",
+      "date": "2025-05-24",
+      "changes": [
+        "Fixed import error for QIntValidator in plugin manager dialog",
+        "Corrected Qt module imports to ensure proper functionality"
+      ]
+    },
+    {
+      "version": "1.1.8",
+      "date": "2025-05-23",
+      "changes": [
+        "Fixed error when opening profile editor from plugin manager dialog",
+        "Implemented custom profile editor in the plugin manager UI",
+        "Improved user experience for managing scan profiles"
+      ]
+    },
+    {
+      "version": "1.1.7",
+      "date": "2025-05-22",
+      "changes": [
+        "Fixed error when accessing plugin methods from settings dialog",
+        "Added safe method forwarding for plugin settings pages",
+        "Improved dialog handling to prevent missing method errors"
+      ]
+    },
+    {
+      "version": "1.1.6",
+      "date": "2025-05-21",
+      "changes": [
+        "Fixed JSON settings display in plugin manager dialog",
+        "Added ability to edit scan profiles through plugin manager interface",
+        "Improved scan profile management with dedicated editor dialog"
+      ]
+    },
+    {
+      "version": "1.1.5",
+      "date": "2025-05-20",
+      "changes": [
+        "Fixed scan profiles not showing up correctly in the plugin settings dialog",
+        "Improved settings page organization to ensure all options are properly displayed",
+        "Added ability to create and manage scan types directly through the settings interface",
+        "Added additional controls for Custom Arguments and Auto Tag settings"
+      ]
+    },
+    {
+      "version": "1.1.4",
+      "date": "2025-05-19",
+      "changes": [
+        "Fixed scan profiles not showing up properly in plugin settings dialog",
+        "Added dedicated Scan Profiles settings page for better organization and visibility"
+      ]
+    },
+    {
+      "version": "1.1.3",
+      "date": "2025-05-18",
+      "changes": [
+        "Improved scan profiles management UI with clearer workflow",
+        "Added dedicated 'Add New Profile' option to the profiles list",
+        "Enhanced form layout with better validation and profile creation experience",
+        "Added interface refresh button to update network interfaces dynamically"
+      ]
+    },
+    {
+      "version": "1.1.2",
+      "date": "2025-05-17",
+      "changes": [
+        "Fixed validator import in scan dialog",
+        "Fixed QIntValidator reference in the timeout field"
+      ]
+    },
+    {
+      "version": "1.1.1",
+      "date": "2025-05-16",
+      "changes": [
+        "Fixed context menu integration with device table",
+        "Improved handling of device selection in context menu actions"
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2025-05-15",
+      "changes": [
+        "Added interface selection for network scanning",
+        "Added more granular scan permissions and options",
+        "Added ability to scan interface subnet directly",
+        "Added ability to rescan selected devices",
+        "Added support for custom nmap arguments",
+        "Added elevated permissions option for more accurate scans"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2025-05-12",
+      "changes": [
+        "Initial release of the Network Scanner plugin",
+        "Automatic discovery of network devices using nmap",
+        "Adds scanned devices to device table with 'scanned' tag",
+        "Supports scanning of IP ranges and CIDR networks",
+        "Context menu integration for on-demand scanning"
+      ]
+    }
+  ]
+} 
