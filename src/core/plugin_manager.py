@@ -442,17 +442,25 @@ class PluginManager(QObject):
         
         # Check the internal plugins directory
         if hasattr(self.app, 'config'):
-            self.internal_plugins_dir = self.app.config.get("application.plugins_directory")
+            internal_dir = self.app.config.get("application.plugins_directory")
+            if internal_dir:
+                self.internal_plugins_dir = internal_dir
             logger.debug(f"Looking for plugins in internal directory: {self.internal_plugins_dir}")
-            internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
-            discovered_plugins.update(internal_plugins)
+            
+            if self.internal_plugins_dir:
+                internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
+                discovered_plugins.update(internal_plugins)
         
         # Check the external plugins directory
         if hasattr(self.app, 'config'):
-            self.external_plugins_dir = self.app.config.get("application.external_plugins_directory")
+            external_dir = self.app.config.get("application.external_plugins_directory")
+            if external_dir:
+                self.external_plugins_dir = external_dir
             logger.debug(f"Looking for plugins in external directory: {self.external_plugins_dir}")
-            external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
-            discovered_plugins.update(external_plugins)
+            
+            if self.external_plugins_dir:
+                external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
+                discovered_plugins.update(external_plugins)
             
         # Process discovered plugins
         for plugin_id, plugin_info in discovered_plugins.items():
