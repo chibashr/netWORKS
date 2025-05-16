@@ -14,7 +14,7 @@
     "major": 0,
     "minor": 9,
     "patch": 0,
-    "build": 215
+    "build": 217
   },
   "app_directory": "src",
   "main_module": "main",
@@ -37,7 +37,7 @@
   "telemetry_enabled": false,
   "analytics_enabled": false,
   "build_date": "2025-05-29",
-  "release_notes": "Enhanced property panel with separate sections for core, plugin, and custom properties.",
+  "release_notes": "Improved IP address sorting in device tables to properly handle octets in numerical order.",
   "release_type": "stable",
   "versioning_scheme": "semver",
   "update_channel": "stable"

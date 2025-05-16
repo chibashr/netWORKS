@@ -3,7 +3,7 @@
     "state": "ENABLED",
     "last_loaded": "",
     "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\command_manager",
-    "version": "1.0.0"
+    "version": "1.0.3"
   },
   "network_scanner": {
     "state": "ENABLED",

@@ -296,54 +296,85 @@ class CredentialStore:
                 logger.error(f"Error saving credentials for subnet {subnet}: {e}")
     
     def get_device_credentials(self, device_id, device_ip=None, groups=None):
-        """
-        Get credentials for a device with fallback to group or subnet credentials
+        """Get credentials for a device
+        
+        Note: This method no longer falls back to group or subnet credentials.
+        This allows the plugin to control the credential hierarchy itself.
         
         Args:
             device_id: The device ID
-            device_ip: The device IP address (for subnet matching)
-            groups: List of groups the device belongs to
+            device_ip: The device IP (not used for direct device credentials)
+            groups: Device group names (not used for direct device credentials)
             
         Returns:
-            dict: Credentials dictionary or empty dict if no credentials found
+            dict: Credentials or None if not found
         """
-        # First check if we have a device manager reference
+        logger.debug(f"Getting credentials for device {device_id}")
+        
+        # First, check if the device exists and has credentials in its properties
         if self.device_manager:
             device = self.device_manager.get_device(device_id)
             if device:
-                # Check for credentials in device properties
-                device_creds = self._get_credentials_from_device(device)
-                if device_creds:
-                    return device_creds
+                creds = self._get_credentials_from_device(device)
+                if creds:
+                    return creds
         
-        # Fall back to legacy file-based credentials for backward compatibility
+        # For backward compatibility, check the legacy storage
         if device_id in self.device_credentials:
             return self.device_credentials[device_id]
         
-        # Next, check if device belongs to any groups with credentials
-        if groups:
-            for group in groups:
-                if group in self.group_credentials:
-                    return self.group_credentials[group]
+        # No credentials found for this device
+        return None
+    
+    def get_group_credentials(self, group_name):
+        """Get credentials for a device group
         
-        # Finally, check if device IP falls within any subnets with credentials
-        if device_ip:
-            try:
-                device_ip_obj = ipaddress.ip_address(device_ip)
-                for subnet, creds in self.subnet_credentials.items():
-                    try:
-                        subnet_obj = ipaddress.ip_network(subnet, strict=False)
-                        if device_ip_obj in subnet_obj:
-                            return creds
-                    except ValueError:
-                        # Invalid subnet
-                        continue
-            except ValueError:
-                # Invalid IP address
-                pass
+        Args:
+            group_name: The group name
+            
+        Returns:
+            dict: Credentials or None if not found
+        """
+        logger.debug(f"Getting credentials for group {group_name}")
         
-        # No credentials found
-        return {}
+        if group_name in self.group_credentials:
+            return self.group_credentials[group_name]
+        
+        return None
+    
+    def get_subnet_credentials(self, subnet):
+        """Get credentials for a subnet
+        
+        Args:
+            subnet: The subnet in CIDR notation
+            
+        Returns:
+            dict: Credentials or None if not found
+        """
+        logger.debug(f"Getting credentials for subnet {subnet}")
+        
+        # First, try exact match
+        if subnet in self.subnet_credentials:
+            return self.subnet_credentials[subnet]
+        
+        # Try to match by IP network
+        try:
+            target_network = ipaddress.ip_network(subnet, strict=False)
+            
+            for network_str, creds in self.subnet_credentials.items():
+                try:
+                    network = ipaddress.ip_network(network_str, strict=False)
+                    # Check if networks match (same network address and prefix)
+                    if (network.network_address == target_network.network_address and 
+                        network.prefixlen == target_network.prefixlen):
+                        return creds
+                except ValueError:
+                    continue
+        except ValueError:
+            # Invalid subnet format
+            pass
+        
+        return None
     
     def set_device_credentials(self, device_id, credentials):
         """Set credentials for a device"""

@@ -8,6 +8,7 @@ Credential Manager for Command Manager plugin
 import os
 import json
 import ipaddress
+from loguru import logger
 
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
@@ -23,12 +24,22 @@ from PySide6.QtGui import QIcon
 class CredentialManager(QDialog):
     """Dialog for managing device credentials"""
     
-    def __init__(self, plugin, devices=None, parent=None):
-        """Initialize the dialog"""
+    def __init__(self, plugin, devices=None, groups=None, subnets=None, parent=None):
+        """Initialize the dialog
+        
+        Args:
+            plugin: The command manager plugin
+            devices: Optional list of devices to select
+            groups: Optional list of device groups to select
+            subnets: Optional list of subnets to select
+            parent: Parent widget
+        """
         super().__init__(parent)
         
         self.plugin = plugin
         self.devices = devices or []
+        self.selected_groups = groups or []
+        self.selected_subnets = subnets or []
         
         # Set dialog properties
         self.setWindowTitle("Credential Manager")
@@ -39,6 +50,14 @@ class CredentialManager(QDialog):
         
         # Load credential data
         self._load_data()
+        
+        # Select the appropriate tab based on what was provided
+        if self.selected_groups:
+            self.tabs.setCurrentIndex(1)  # Group tab
+        elif self.selected_subnets:
+            self.tabs.setCurrentIndex(2)  # Subnet tab
+        else:
+            self.tabs.setCurrentIndex(0)  # Device tab
         
     def _create_ui(self):
         """Create the UI components"""
@@ -345,81 +364,202 @@ class CredentialManager(QDialog):
         self._load_subnets()
         
     def _load_devices(self):
-        """Load device list and credentials"""
-        # Clear list
+        """Load devices into the list"""
         self.device_list.clear()
         
-        # Current devices first
-        for device in self.devices:
-            item = QListWidgetItem(device.get_property("alias", "Unnamed Device"))
-            item.setData(Qt.UserRole, device.id)
-            self.device_list.addItem(item)
+        # All devices from device manager
+        if self.plugin.device_manager:
+            all_devices = self.plugin.device_manager.get_devices()
             
-        # Then all devices with credentials
-        device_credentials = self.plugin.get_all_device_credentials()
-        for device_id, creds in device_credentials.items():
-            # Skip if already in list
-            found = False
-            for i in range(self.device_list.count()):
-                if self.device_list.item(i).data(Qt.UserRole) == device_id:
-                    found = True
-                    break
-                    
-            if found:
-                continue
-                
-            # Try to get device info
-            device = self.plugin.device_manager.get_device(device_id)
-            if device:
-                item = QListWidgetItem(device.get_property("alias", "Unnamed Device"))
-            else:
-                item = QListWidgetItem(f"Device {device_id}")
-                
-            item.setData(Qt.UserRole, device_id)
-            self.device_list.addItem(item)
+            # If specific devices were provided, only show those
+            display_devices = self.devices if self.devices else all_devices
             
+            for device in display_devices:
+                # Get device properties for display
+                alias = device.get_property("alias", device.get_property("hostname", "Unnamed"))
+                ip = device.get_property("ip_address", "")
+                
+                # Create list item with device info
+                item = QListWidgetItem(f"{alias} ({ip})")
+                item.setData(Qt.UserRole, device)
+                
+                # Check if credentials exist for this device
+                has_creds = bool(self.plugin.credential_store.get_device_credentials(device.id))
+                
+                # Set font weight based on credential status
+                font = item.font()
+                font.setBold(has_creds)
+                item.setFont(font)
+                
+                # Add to list
+                self.device_list.addItem(item)
+            
+            # Select the first device if any are available
+            if self.device_list.count() > 0:
+                self.device_list.setCurrentRow(0)
+                
+                # If specific devices were provided, select the first one
+                if self.devices:
+                    # Find and select the item
+                    for i in range(self.device_list.count()):
+                        item = self.device_list.item(i)
+                        if item.data(Qt.UserRole) == self.devices[0]:
+                            self.device_list.setCurrentItem(item)
+                            break
+    
     def _load_groups(self):
-        """Load group list and credentials"""
-        # Clear list
+        """Load device groups into the list"""
         self.group_list.clear()
         
-        # Get all groups
-        groups = self.plugin.device_manager.get_groups()
-        for group in groups:
-            item = QListWidgetItem(group.name)
-            item.setData(Qt.UserRole, group.name)
-            self.group_list.addItem(item)
+        # Get all device groups if available
+        try:
+            device_groups = self.plugin.device_manager.get_groups()
+            logger.debug(f"Retrieved {len(device_groups)} device groups")
             
-        # Then all groups with credentials
-        group_credentials = self.plugin.get_all_group_credentials()
-        for group_name in group_credentials.keys():
-            # Skip if already in list
-            found = False
-            for i in range(self.group_list.count()):
-                if self.group_list.item(i).data(Qt.UserRole) == group_name:
-                    found = True
-                    break
+            for group in device_groups:
+                try:
+                    # Handle different possible group structures
+                    group_name = None
+                    device_count = 0
                     
-            if found:
-                continue
-                
-            # Add group
-            item = QListWidgetItem(group_name)
-            item.setData(Qt.UserRole, group_name)
-            self.group_list.addItem(item)
+                    # Try to get group name
+                    if isinstance(group, dict) and 'name' in group:
+                        group_name = group['name']
+                    elif hasattr(group, 'name'):
+                        group_name = group.name
+                    elif hasattr(group, 'get_name'):
+                        group_name = group.get_name()
+                    else:
+                        # Use string representation as fallback
+                        group_name = str(group)
+                        logger.warning(f"Group missing name attribute, using {group_name}")
+                    
+                    # Try to get device count
+                    if isinstance(group, dict) and 'devices' in group:
+                        device_count = len(group['devices'])
+                    elif hasattr(group, 'devices'):
+                        device_count = len(group.devices)
+                    elif hasattr(group, 'get_devices'):
+                        device_count = len(group.get_devices())
+                    elif hasattr(group, 'device_count'):
+                        device_count = group.device_count
+                    elif hasattr(group, 'get_device_count'):
+                        device_count = group.get_device_count()
+                    else:
+                        logger.warning(f"Could not determine device count for group {group_name}")
+                    
+                    # Create list item with group info
+                    item = QListWidgetItem(f"{group_name} ({device_count} devices)")
+                    item.setData(Qt.UserRole, group)
+                    
+                    # Check if credentials exist for this group
+                    has_creds = bool(self.plugin.credential_store.get_group_credentials(group_name))
+                    
+                    # Set font weight based on credential status
+                    font = item.font()
+                    font.setBold(has_creds)
+                    item.setFont(font)
+                    
+                    # Add to list
+                    self.group_list.addItem(item)
+                except Exception as e:
+                    logger.error(f"Error processing group: {e}")
             
+            # Select the first group if any are available
+            if self.group_list.count() > 0 and not self.selected_groups:
+                self.group_list.setCurrentRow(0)
+            
+            # If specific groups were provided, select the first one
+            if self.selected_groups:
+                # Find and select the item
+                for i in range(self.group_list.count()):
+                    item = self.group_list.item(i)
+                    group_data = item.data(Qt.UserRole)
+                    
+                    # Compare based on group name which is more reliable than object reference
+                    selected_group = self.selected_groups[0]
+                    selected_group_name = None
+                    
+                    if isinstance(selected_group, dict) and 'name' in selected_group:
+                        selected_group_name = selected_group['name']
+                    elif hasattr(selected_group, 'name'):
+                        selected_group_name = selected_group.name
+                    elif hasattr(selected_group, 'get_name'):
+                        selected_group_name = selected_group.get_name()
+                        
+                    # Get name of the current group item
+                    current_group = group_data
+                    current_group_name = None
+                    
+                    if isinstance(current_group, dict) and 'name' in current_group:
+                        current_group_name = current_group['name']
+                    elif hasattr(current_group, 'name'):
+                        current_group_name = current_group.name
+                    elif hasattr(current_group, 'get_name'):
+                        current_group_name = current_group.get_name()
+                        
+                    # Compare names
+                    if selected_group_name and current_group_name and selected_group_name == current_group_name:
+                        self.group_list.setCurrentItem(item)
+                        break
+        except Exception as e:
+            logger.error(f"Error loading device groups: {e}")
+            logger.exception("Exception details:")
+    
     def _load_subnets(self):
-        """Load subnet list and credentials"""
-        # Clear list
+        """Load subnets into the list"""
         self.subnet_list.clear()
         
-        # Get all subnets with credentials
-        subnet_credentials = self.plugin.get_all_subnet_credentials()
-        for subnet in subnet_credentials.keys():
-            item = QListWidgetItem(subnet)
-            item.setData(Qt.UserRole, subnet)
-            self.subnet_list.addItem(item)
-    
+        # Get all devices and group by subnet
+        if self.plugin.device_manager:
+            try:
+                all_devices = self.plugin.device_manager.get_devices()
+                subnets = {}
+                
+                # Group devices by subnet
+                for device in all_devices:
+                    ip = device.get_property("ip_address", "")
+                    if ip:
+                        # Extract subnet (first three octets)
+                        parts = ip.split('.')
+                        if len(parts) == 4:
+                            subnet = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+                            if subnet not in subnets:
+                                subnets[subnet] = []
+                            subnets[subnet].append(device)
+                
+                # Add subnets to the list
+                for subnet, devices in subnets.items():
+                    item = QListWidgetItem(f"{subnet} ({len(devices)} devices)")
+                    item.setData(Qt.UserRole, {'subnet': subnet, 'devices': devices})
+                    
+                    # Check if credentials exist for this subnet
+                    has_creds = bool(self.plugin.credential_store.get_subnet_credentials(subnet))
+                    
+                    # Set font weight based on credential status
+                    font = item.font()
+                    font.setBold(has_creds)
+                    item.setFont(font)
+                    
+                    # Add to list
+                    self.subnet_list.addItem(item)
+                
+                # Select the first subnet if any are available and no specific ones were provided
+                if self.subnet_list.count() > 0 and not self.selected_subnets:
+                    self.subnet_list.setCurrentRow(0)
+                
+                # If specific subnets were provided, select the first one
+                if self.selected_subnets:
+                    # Find and select the item
+                    for i in range(self.subnet_list.count()):
+                        item = self.subnet_list.item(i)
+                        subnet_data = item.data(Qt.UserRole)
+                        if subnet_data['subnet'] == self.selected_subnets[0]['subnet']:
+                            self.subnet_list.setCurrentItem(item)
+                            break
+            except Exception as e:
+                logger.error(f"Error loading subnets: {e}")
+        
     def _on_device_selected(self, current, previous):
         """Handle device selection"""
         if not current:
@@ -472,11 +612,25 @@ class CredentialManager(QDialog):
             self.group_delete_btn.setEnabled(False)
             return
             
-        # Get group name
-        group_name = current.data(Qt.UserRole)
+        # Get group object
+        group = current.data(Qt.UserRole)
+        
+        # Extract group name based on structure
+        group_name = None
+        if isinstance(group, dict) and 'name' in group:
+            group_name = group['name']
+        elif hasattr(group, 'name'):
+            group_name = group.name
+        elif hasattr(group, 'get_name'):
+            group_name = group.get_name()
+        else:
+            group_name = str(group)
+            
+        logger.debug(f"Getting credentials for group: {group_name}")
         
         # Get credentials
-        credentials = self.plugin.get_all_group_credentials().get(group_name, {})
+        group_credentials = self.plugin.get_all_group_credentials()
+        credentials = group_credentials.get(group_name, {})
         
         # Fill form
         if credentials:
@@ -518,10 +672,12 @@ class CredentialManager(QDialog):
             return
             
         # Get subnet
-        subnet = current.data(Qt.UserRole)
+        subnet_data = current.data(Qt.UserRole)
+        subnet = subnet_data['subnet'] if isinstance(subnet_data, dict) and 'subnet' in subnet_data else subnet_data
         
         # Get credentials
-        credentials = self.plugin.get_all_subnet_credentials().get(subnet, {})
+        subnet_credentials = self.plugin.get_all_subnet_credentials()
+        credentials = subnet_credentials.get(subnet, {})
         
         # Fill form
         if credentials:
@@ -628,8 +784,19 @@ class CredentialManager(QDialog):
         if not current:
             return
             
-        # Get group name
-        group_name = current.data(Qt.UserRole)
+        # Get group object and extract name
+        group = current.data(Qt.UserRole)
+        
+        # Extract group name based on structure
+        group_name = None
+        if isinstance(group, dict) and 'name' in group:
+            group_name = group['name']
+        elif hasattr(group, 'name'):
+            group_name = group.name
+        elif hasattr(group, 'get_name'):
+            group_name = group.get_name()
+        else:
+            group_name = str(group)
         
         # Validate form
         username = self.group_username.text().strip()
@@ -666,8 +833,19 @@ class CredentialManager(QDialog):
         if not current:
             return
             
-        # Get group name
-        group_name = current.data(Qt.UserRole)
+        # Get group object and extract name
+        group = current.data(Qt.UserRole)
+        
+        # Extract group name based on structure
+        group_name = None
+        if isinstance(group, dict) and 'name' in group:
+            group_name = group['name']
+        elif hasattr(group, 'name'):
+            group_name = group.name
+        elif hasattr(group, 'get_name'):
+            group_name = group.get_name()
+        else:
+            group_name = str(group)
         
         # Confirm deletion
         result = QMessageBox.question(
@@ -739,7 +917,8 @@ class CredentialManager(QDialog):
             return
             
         # Get subnet
-        subnet = current.data(Qt.UserRole)
+        subnet_data = current.data(Qt.UserRole)
+        subnet = subnet_data['subnet'] if isinstance(subnet_data, dict) and 'subnet' in subnet_data else subnet_data
         
         # Validate form
         username = self.subnet_username.text().strip()
@@ -777,7 +956,8 @@ class CredentialManager(QDialog):
             return
             
         # Get subnet
-        subnet = current.data(Qt.UserRole)
+        subnet_data = current.data(Qt.UserRole)
+        subnet = subnet_data['subnet'] if isinstance(subnet_data, dict) and 'subnet' in subnet_data else subnet_data
         
         # Confirm deletion
         result = QMessageBox.question(

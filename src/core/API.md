@@ -48,6 +48,7 @@ def get_group(self, name) -> DeviceGroup
 def get_groups(self) -> list
 def add_device_to_group(self, device, group) -> bool
 def remove_device_from_group(self, device, group) -> bool
+def get_device_groups_for_device(self, device_id) -> list  # Returns all groups that contain a device
 
 # Selection management
 def select_device(self, device, exclusive=False) -> bool

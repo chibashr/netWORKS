@@ -12,6 +12,74 @@ from PySide6.QtGui import QColor, QBrush, QFont, QIcon, QAction
 from ..core.device_manager import Device
 import csv
 import io
+import re
+
+
+class IPSortFilterProxyModel(QSortFilterProxyModel):
+    """Custom proxy model that handles sorting IP addresses correctly"""
+    
+    def __init__(self, parent=None):
+        """Initialize the proxy model"""
+        super().__init__(parent)
+        # Index of the IP address column
+        self.ip_column_index = -1
+    
+    def lessThan(self, left, right):
+        """
+        Compare items for sorting
+        
+        Args:
+            left: Left index
+            right: Right index
+            
+        Returns:
+            bool: True if left is less than right
+        """
+        # Get the column we're sorting
+        source_model = self.sourceModel()
+        column = left.column()
+        
+        # Find the IP address column if we haven't cached it
+        if self.ip_column_index == -1:
+            for i, header in enumerate(source_model._headers):
+                if header == "IP Address":
+                    self.ip_column_index = i
+                    break
+        
+        # Special handling for IP address column
+        if column == self.ip_column_index:
+            left_data = source_model.data(left)
+            right_data = source_model.data(right)
+            
+            # If either value is None or empty, use regular comparison
+            if not left_data or not right_data:
+                return str(left_data) < str(right_data)
+            
+            # Handle IP addresses
+            try:
+                # Split IPs into octets and convert to integers
+                left_octets = [int(octet) for octet in re.split(r'[.\-:]', left_data) if octet.isdigit()]
+                right_octets = [int(octet) for octet in re.split(r'[.\-:]', right_data) if octet.isdigit()]
+                
+                # Zero-pad the shorter list
+                while len(left_octets) < len(right_octets):
+                    left_octets.append(0)
+                while len(right_octets) < len(left_octets):
+                    right_octets.append(0)
+                
+                # Compare octet by octet
+                for left_octet, right_octet in zip(left_octets, right_octets):
+                    if left_octet != right_octet:
+                        return left_octet < right_octet
+                
+                # If we get here, they are equal
+                return False
+            except:
+                # Fall back to string comparison if there's an error
+                return str(left_data) < str(right_data)
+        
+        # For other columns, use the default sorting mechanism
+        return super().lessThan(left, right)
 
 
 class DeviceTableModel(QAbstractTableModel):
@@ -352,8 +420,8 @@ class DeviceTableView(QTableView):
         # Create and set the model
         self.table_model = DeviceTableModel(self.device_manager)
         
-        # Create a proxy model for filtering and sorting
-        self.proxy_model = QSortFilterProxyModel()
+        # Create a custom proxy model for filtering and sorting
+        self.proxy_model = IPSortFilterProxyModel()
         self.proxy_model.setSourceModel(self.table_model)
         self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
         self.proxy_model.setFilterKeyColumn(-1)  # Filter on all columns
