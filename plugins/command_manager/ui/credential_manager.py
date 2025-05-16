@@ -8,6 +8,7 @@ Credential Manager for Command Manager plugin
 import os
 import json
 import ipaddress
+from loguru import logger
 
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
@@ -502,7 +503,6 @@ class CredentialManager(QDialog):
                         self.group_list.setCurrentItem(item)
                         break
         except Exception as e:
-            from loguru import logger
             logger.error(f"Error loading device groups: {e}")
             logger.exception("Exception details:")
     
@@ -558,7 +558,6 @@ class CredentialManager(QDialog):
                             self.subnet_list.setCurrentItem(item)
                             break
             except Exception as e:
-                from loguru import logger
                 logger.error(f"Error loading subnets: {e}")
         
     def _on_device_selected(self, current, previous):
@@ -613,11 +612,25 @@ class CredentialManager(QDialog):
             self.group_delete_btn.setEnabled(False)
             return
             
-        # Get group name
-        group_name = current.data(Qt.UserRole)
+        # Get group object
+        group = current.data(Qt.UserRole)
+        
+        # Extract group name based on structure
+        group_name = None
+        if isinstance(group, dict) and 'name' in group:
+            group_name = group['name']
+        elif hasattr(group, 'name'):
+            group_name = group.name
+        elif hasattr(group, 'get_name'):
+            group_name = group.get_name()
+        else:
+            group_name = str(group)
+            
+        logger.debug(f"Getting credentials for group: {group_name}")
         
         # Get credentials
-        credentials = self.plugin.get_all_group_credentials().get(group_name, {})
+        group_credentials = self.plugin.get_all_group_credentials()
+        credentials = group_credentials.get(group_name, {})
         
         # Fill form
         if credentials:
@@ -659,10 +672,12 @@ class CredentialManager(QDialog):
             return
             
         # Get subnet
-        subnet = current.data(Qt.UserRole)
+        subnet_data = current.data(Qt.UserRole)
+        subnet = subnet_data['subnet'] if isinstance(subnet_data, dict) and 'subnet' in subnet_data else subnet_data
         
         # Get credentials
-        credentials = self.plugin.get_all_subnet_credentials().get(subnet, {})
+        subnet_credentials = self.plugin.get_all_subnet_credentials()
+        credentials = subnet_credentials.get(subnet, {})
         
         # Fill form
         if credentials:
@@ -769,8 +784,19 @@ class CredentialManager(QDialog):
         if not current:
             return
             
-        # Get group name
-        group_name = current.data(Qt.UserRole)
+        # Get group object and extract name
+        group = current.data(Qt.UserRole)
+        
+        # Extract group name based on structure
+        group_name = None
+        if isinstance(group, dict) and 'name' in group:
+            group_name = group['name']
+        elif hasattr(group, 'name'):
+            group_name = group.name
+        elif hasattr(group, 'get_name'):
+            group_name = group.get_name()
+        else:
+            group_name = str(group)
         
         # Validate form
         username = self.group_username.text().strip()
@@ -807,8 +833,19 @@ class CredentialManager(QDialog):
         if not current:
             return
             
-        # Get group name
-        group_name = current.data(Qt.UserRole)
+        # Get group object and extract name
+        group = current.data(Qt.UserRole)
+        
+        # Extract group name based on structure
+        group_name = None
+        if isinstance(group, dict) and 'name' in group:
+            group_name = group['name']
+        elif hasattr(group, 'name'):
+            group_name = group.name
+        elif hasattr(group, 'get_name'):
+            group_name = group.get_name()
+        else:
+            group_name = str(group)
         
         # Confirm deletion
         result = QMessageBox.question(
@@ -880,7 +917,8 @@ class CredentialManager(QDialog):
             return
             
         # Get subnet
-        subnet = current.data(Qt.UserRole)
+        subnet_data = current.data(Qt.UserRole)
+        subnet = subnet_data['subnet'] if isinstance(subnet_data, dict) and 'subnet' in subnet_data else subnet_data
         
         # Validate form
         username = self.subnet_username.text().strip()
@@ -918,7 +956,8 @@ class CredentialManager(QDialog):
             return
             
         # Get subnet
-        subnet = current.data(Qt.UserRole)
+        subnet_data = current.data(Qt.UserRole)
+        subnet = subnet_data['subnet'] if isinstance(subnet_data, dict) and 'subnet' in subnet_data else subnet_data
         
         # Confirm deletion
         result = QMessageBox.question(
