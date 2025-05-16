@@ -443,8 +443,8 @@ class CommandDialog(QDialog):
         self.device_table.setRowCount(len(devices))
         
         for i, device in enumerate(devices):
-            # Device name (use alias if available, otherwise hostname, otherwise name)
-            name = device.get_property("alias", device.get_property("hostname", device.name))
+            # Device name (use alias if available, otherwise hostname, otherwise "Unknown Device")
+            name = device.get_property("alias", device.get_property("hostname", "Unknown Device"))
             name_item = QTableWidgetItem(name)
             name_item.setData(Qt.UserRole, device)  # Store device object in the item
             self.device_table.setItem(i, 0, name_item)
