@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, 
     QSplitter, QTextEdit, QMenu, QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QProgressBar, QWidget,
-    QCheckBox, QGroupBox, QFormLayout, QDialogButtonBox, QTabWidget
+    QCheckBox, QGroupBox, QFormLayout, QDialogButtonBox, QTabWidget,
+    QLineEdit
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QTextCursor
 
@@ -365,6 +366,16 @@ class CommandDialog(QDialog):
         
         # Command list
         command_label = QLabel("Commands:")
+        
+        # Add search box for commands
+        search_layout = QHBoxLayout()
+        self.command_search = QLineEdit()
+        self.command_search.setPlaceholderText("Search commands...")
+        self.command_search.textChanged.connect(self._on_search_commands)
+        search_layout.addWidget(QLabel("Search:"))
+        search_layout.addWidget(self.command_search, 1)
+        
+        # Command table
         self.command_table = QTableWidget()
         self.command_table.setColumnCount(3)
         self.command_table.setHorizontalHeaderLabels(["Alias", "Command", "Description"])
@@ -374,9 +385,32 @@ class CommandDialog(QDialog):
         self.command_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.command_table.setSelectionMode(QTableWidget.MultiSelection)
         
+        # Custom command section
+        custom_command_group = QGroupBox("Custom Command")
+        custom_command_layout = QVBoxLayout(custom_command_group)
+        
+        self.custom_command = QLineEdit()
+        self.custom_command.setPlaceholderText("Enter a custom command (e.g., 'show version')")
+        
+        custom_btn_layout = QHBoxLayout()
+        self.run_custom_btn = QPushButton("Run Custom Command")
+        self.run_custom_btn.clicked.connect(self._on_run_custom)
+        
+        self.show_only_check = QCheckBox("Allow 'show' commands only")
+        self.show_only_check.setChecked(True)
+        self.show_only_check.setToolTip("When checked, only commands starting with 'show' will be allowed")
+        
+        custom_btn_layout.addWidget(self.run_custom_btn)
+        custom_btn_layout.addWidget(self.show_only_check)
+        
+        custom_command_layout.addWidget(self.custom_command)
+        custom_command_layout.addLayout(custom_btn_layout)
+        
         command_layout.addWidget(command_set_widget)
         command_layout.addWidget(command_label)
+        command_layout.addLayout(search_layout)
         command_layout.addWidget(self.command_table)
+        command_layout.addWidget(custom_command_group)
         
         # Add panels to splitter
         top_layout.addWidget(device_panel, 1)
@@ -1144,4 +1178,123 @@ class CommandDialog(QDialog):
                 self,
                 "Error Opening Command Batch Export",
                 f"An error occurred while opening the Command Batch Export: {str(e)}"
-            ) 
+            )
+
+    def _on_search_commands(self, text):
+        """Filter command table based on search text"""
+        search_text = text.lower().strip()
+        
+        # Show all rows if search is empty
+        if not search_text:
+            for row in range(self.command_table.rowCount()):
+                self.command_table.setRowHidden(row, False)
+            return
+        
+        # Hide rows that don't match the search
+        for row in range(self.command_table.rowCount()):
+            match_found = False
+            
+            # Check all columns
+            for col in range(self.command_table.columnCount()):
+                item = self.command_table.item(row, col)
+                if item and search_text in item.text().lower():
+                    match_found = True
+                    break
+            
+            # Show or hide the row
+            self.command_table.setRowHidden(row, not match_found)
+            
+    def _on_run_custom(self):
+        """Handle running a custom command"""
+        # Get the custom command
+        command_text = self.custom_command.text().strip()
+        
+        # Validate command
+        if not command_text:
+            QMessageBox.warning(
+                self,
+                "Empty Command",
+                "Please enter a command to run."
+            )
+            return
+        
+        # Check if it's a show command if the checkbox is checked
+        if self.show_only_check.isChecked() and not command_text.lower().startswith("show "):
+            # Ask for confirmation
+            result = QMessageBox.warning(
+                self,
+                "Non-Show Command",
+                f"The command '{command_text}' does not start with 'show'. "
+                f"Non-show commands may modify device configuration.\n\n"
+                f"Are you sure you want to run this command?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if result != QMessageBox.Yes:
+                return
+        
+        # Get selected target type
+        current_tab = self.target_tabs.currentWidget()
+        
+        # Get selected devices based on the active tab
+        selected_devices = []
+        if current_tab == self.target_tabs.widget(0):  # Devices tab
+            # Get selected devices
+            for item in self.device_table.selectedItems():
+                row = item.row()
+                device_item = self.device_table.item(row, 0)
+                if device_item and device_item.data(Qt.UserRole) not in selected_devices:
+                    selected_devices.append(device_item.data(Qt.UserRole))
+        elif current_tab == self.target_tabs.widget(1):  # Groups tab
+            # Get devices from selected groups
+            for item in self.group_table.selectedItems():
+                row = item.row()
+                group_item = self.group_table.item(row, 0)
+                if group_item:
+                    group = group_item.data(Qt.UserRole)
+                    if group:
+                        try:
+                            group_devices = []
+                            
+                            if hasattr(group, 'get_all_devices'):
+                                group_devices = group.get_all_devices()
+                            elif hasattr(group, 'devices'):
+                                group_devices = group.devices
+                            
+                            for device in group_devices:
+                                if device not in selected_devices:
+                                    selected_devices.append(device)
+                        except Exception as e:
+                            from loguru import logger
+                            logger.error(f"Error extracting devices from group: {e}")
+        elif current_tab == self.target_tabs.widget(2):  # Subnets tab
+            # Get devices from selected subnets
+            for item in self.subnet_table.selectedItems():
+                row = item.row()
+                subnet_item = self.subnet_table.item(row, 0)
+                if subnet_item:
+                    subnet_info = subnet_item.data(Qt.UserRole)
+                    if subnet_info and 'devices' in subnet_info:
+                        for device in subnet_info['devices']:
+                            if device not in selected_devices:
+                                selected_devices.append(device)
+        
+        if not selected_devices:
+            QMessageBox.warning(
+                self, 
+                "No Devices Selected", 
+                "Please select at least one device to run the command on."
+            )
+            return
+        
+        # Create a command object
+        custom_command = {
+            "command": command_text,
+            "alias": "Custom: " + command_text[:20] + ("..." if len(command_text) > 20 else ""),
+            "description": "Custom command entered manually",
+            "row": -1  # Custom commands don't have a row in the table
+        }
+        
+        # Run the command
+        self._run_commands(selected_devices, [custom_command], None) 

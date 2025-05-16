@@ -13,6 +13,8 @@ The Command Manager plugin provides a powerful interface for running commands on
 - Credential management for device access
 - Export command outputs to files
 - Support for running commands on device groups and subnets
+- Command search functionality to quickly find commands
+- Custom command execution with safety checks
 
 ## Credential Management
 
@@ -43,6 +45,24 @@ Each command in a command set can include:
 3. Choose the command set appropriate for your devices
 4. Select commands to run
 5. Click "Run Selected" or "Run All"
+
+### Searching Commands
+
+You can quickly find commands in the command table:
+
+1. Type any part of the command name, syntax, or description in the search box
+2. The command table will filter in real-time, showing only matching commands
+3. Clear the search box to show all commands again
+
+### Running Custom Commands
+
+You can also run custom commands without creating a command set:
+
+1. Enter your command in the custom command field at the bottom of the dialog
+2. Select the devices to run the command on
+3. Click "Run Custom Command"
+
+By default, a safety check is enabled that will warn you when attempting to run non-"show" commands that might modify device configuration.
 
 ### Device Groups and Subnets
 
