@@ -9,6 +9,7 @@ import os
 import datetime
 from pathlib import Path
 from loguru import logger
+import json
 
 from PySide6.QtCore import Qt, Signal, Slot, QObject
 from PySide6.QtWidgets import QMessageBox, QMenu, QDialog, QToolBar
@@ -106,8 +107,49 @@ class CommandManagerPlugin(PluginInterface):
         try:
             data_dir = Path(self.plugin_info.path) / "data"
             self.credential_store = CredentialStore(data_dir)
+            
+            # Log device manager state before setting
+            logger.debug(f"Device manager reference before setting: {self.device_manager}")
+            logger.debug(f"Device manager exists: {self.device_manager is not None}")
+            if self.device_manager:
+                logger.debug(f"Device manager has get_device method: {hasattr(self.device_manager, 'get_device')}")
+                logger.debug(f"Device manager type: {type(self.device_manager)}")
+            
             # Set the device manager reference in the credential store
+            # This will also set the current workspace name and migrate any
+            # credentials from legacy locations to workspace-specific directories
             self.credential_store.set_device_manager(self.device_manager)
+            
+            # Get the current workspace name for logging
+            workspace_dir = None
+            current_workspace = "default"
+            if hasattr(self.device_manager, 'get_current_workspace_name'):
+                try:
+                    current_workspace = self.device_manager.get_current_workspace_name()
+                    logger.debug(f"Current workspace is: {current_workspace}")
+                except Exception as e:
+                    logger.warning(f"Error getting current workspace name: {e}")
+            
+            # Try to get the workspace directory path
+            if hasattr(self.device_manager, 'get_workspace_dir'):
+                try:
+                    workspace_dir = self.device_manager.get_workspace_dir()
+                    logger.debug(f"Workspace directory is: {workspace_dir}")
+                except Exception as e:
+                    logger.warning(f"Error getting workspace directory: {e}")
+            
+            # Check actual app structure to find workspace directory if not provided
+            if not workspace_dir and hasattr(self.app, 'base_dir'):
+                try:
+                    # Construct workspace dir from app base dir
+                    workspace_dir = Path(self.app.base_dir) / "config" / "workspaces" / current_workspace
+                    if workspace_dir.exists():
+                        logger.debug(f"Using inferred workspace directory: {workspace_dir}")
+                    else:
+                        logger.debug(f"Inferred workspace directory does not exist: {workspace_dir}")
+                except Exception as e:
+                    logger.warning(f"Error inferring workspace directory: {e}")
+                    
             logger.debug(f"Credential store initialized with data_dir: {data_dir}")
         except Exception as e:
             logger.error(f"Error initializing credential store: {e}")
@@ -274,6 +316,41 @@ class CommandManagerPlugin(PluginInterface):
         self.output_dir = self.data_dir / "outputs"
         self.output_dir.mkdir(exist_ok=True)
         
+        # Legacy credentials directory - marked for migration
+        legacy_creds_dir = self.data_dir / "credentials"
+        if legacy_creds_dir.exists():
+            logger.debug("Legacy credentials directory exists, will be migrated to workspace directory")
+            
+    def get_current_workspace_dir(self):
+        """Get the current workspace directory
+        
+        Returns:
+            Path: Path to the current workspace directory
+        """
+        try:
+            # Try to get workspace directory from device manager
+            if hasattr(self.device_manager, 'get_workspace_dir'):
+                workspace_dir = self.device_manager.get_workspace_dir()
+                return Path(workspace_dir) if workspace_dir else None
+                
+            # If device manager doesn't have the method, try to get it from app
+            if hasattr(self.app, 'base_dir'):
+                # Try to get current workspace name
+                current_workspace = "default"
+                if hasattr(self.device_manager, 'get_current_workspace_name'):
+                    try:
+                        current_workspace = self.device_manager.get_current_workspace_name()
+                    except:
+                        pass
+                
+                # Construct workspace dir from app base dir
+                workspace_dir = Path(self.app.base_dir) / "config" / "workspaces" / current_workspace
+                return workspace_dir if workspace_dir.exists() else None
+                
+        except Exception as e:
+            logger.error(f"Error getting current workspace directory: {e}")
+            return None
+    
     def _connect_signals(self):
         """Connect signals to slots"""
         logger.debug("Connecting signals")
@@ -860,6 +937,148 @@ class CommandManagerPlugin(PluginInterface):
         if hasattr(self, 'command_handler') and self.command_handler:
             return self.command_handler.get_command_set(device_type, firmware_version)
         return None
+    
+    def get_saved_command_sets(self):
+        """Get saved custom command sets
+        
+        Returns:
+            dict: Dictionary of set name -> list of command indices
+        """
+        logger.debug("Getting saved command sets")
+        
+        # Try to get workspace directory
+        workspace_dir = self.get_current_workspace_dir()
+        
+        if workspace_dir and workspace_dir.exists():
+            # Path to saved command sets file in workspace
+            workspace_cmd_dir = workspace_dir / "command_manager"
+            workspace_cmd_dir.mkdir(parents=True, exist_ok=True)
+            saved_sets_path = workspace_cmd_dir / "command_sets.json"
+            
+            # Check if file exists in workspace directory
+            if saved_sets_path.exists():
+                try:
+                    with open(saved_sets_path, "r") as f:
+                        command_sets = json.load(f)
+                    logger.debug(f"Loaded command sets from workspace: {len(command_sets)} sets")
+                    return command_sets
+                except Exception as e:
+                    logger.error(f"Error loading command sets from workspace: {e}")
+                    # Fall back to plugin directory
+            else:
+                # Check if there's a file in the plugin directory to migrate
+                plugin_sets_path = self.data_dir / "command_sets.json"
+                if plugin_sets_path.exists():
+                    try:
+                        with open(plugin_sets_path, "r") as f:
+                            command_sets = json.load(f)
+                            
+                        # Save to workspace directory
+                        with open(saved_sets_path, "w") as f:
+                            json.dump(command_sets, f, indent=2)
+                        
+                        logger.debug(f"Migrated command sets to workspace: {len(command_sets)} sets")
+                        
+                        # Try to delete the old file
+                        try:
+                            plugin_sets_path.unlink()
+                            logger.debug("Deleted legacy command sets file")
+                        except Exception as e:
+                            logger.error(f"Error deleting legacy command sets file: {e}")
+                            
+                        return command_sets
+                    except Exception as e:
+                        logger.error(f"Error migrating command sets to workspace: {e}")
+        
+        # Legacy path (fallback)
+        plugin_sets_path = self.data_dir / "command_sets.json"
+        
+        # Check if file exists
+        if plugin_sets_path.exists():
+            try:
+                with open(plugin_sets_path, "r") as f:
+                    command_sets = json.load(f)
+                logger.debug(f"Loaded command sets from plugin directory: {len(command_sets)} sets")
+                return command_sets
+            except Exception as e:
+                logger.error(f"Error loading command sets from plugin directory: {e}")
+                return {}
+        else:
+            logger.debug("No saved command sets found")
+            return {}
+    
+    def save_command_set(self, name, command_indices):
+        """Save a command set
+        
+        Args:
+            name (str): Name of the command set
+            command_indices (list): List of command indices
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.debug(f"Saving command set '{name}' with {len(command_indices)} commands")
+        
+        try:
+            # First try to get workspace directory
+            workspace_dir = self.get_current_workspace_dir()
+            
+            if workspace_dir and workspace_dir.exists():
+                # Path to saved command sets file in workspace
+                workspace_cmd_dir = workspace_dir / "command_manager"
+                workspace_cmd_dir.mkdir(parents=True, exist_ok=True)
+                saved_sets_path = workspace_cmd_dir / "command_sets.json"
+                
+                # Load existing sets if file exists
+                saved_sets = {}
+                if saved_sets_path.exists():
+                    try:
+                        with open(saved_sets_path, "r") as f:
+                            saved_sets = json.load(f)
+                    except Exception as e:
+                        logger.error(f"Error loading existing command sets from workspace: {e}")
+                
+                # Add or update the set
+                saved_sets[name] = command_indices
+                
+                # Save to workspace file
+                with open(saved_sets_path, "w") as f:
+                    json.dump(saved_sets, f, indent=2)
+                    
+                logger.info(f"Command set '{name}' saved to workspace successfully")
+                return True
+            else:
+                # No workspace directory, fall back to plugin directory
+                logger.warning("No workspace directory found, falling back to plugin directory")
+                
+                # Ensure data directory exists
+                self.data_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Path to saved command sets file
+                saved_sets_path = self.data_dir / "command_sets.json"
+                
+                # Load existing sets
+                saved_sets = {}
+                if saved_sets_path.exists():
+                    try:
+                        with open(saved_sets_path, "r") as f:
+                            saved_sets = json.load(f)
+                    except Exception as e:
+                        logger.error(f"Error loading existing command sets: {e}")
+                
+                # Add or update the set
+                saved_sets[name] = command_indices
+                
+                # Save to file
+                with open(saved_sets_path, "w") as f:
+                    json.dump(saved_sets, f, indent=2)
+                    
+                logger.info(f"Command set '{name}' saved to plugin directory successfully")
+                return True
+        except Exception as e:
+            logger.error(f"Error saving command set '{name}': {e}")
+            logger.exception("Exception details:")
+            return False
     
     def get_command_outputs(self, device_id):
         """Get command outputs for a device

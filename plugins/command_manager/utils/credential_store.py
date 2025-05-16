@@ -21,92 +21,709 @@ class CredentialStore:
         """Initialize the credential store"""
         self.data_dir = data_dir
         
-        # Keep these directories for backward compatibility and group/subnet credentials
-        self.group_creds_dir = data_dir / "credentials" / "groups"
-        self.group_creds_dir.mkdir(parents=True, exist_ok=True)
+        # Define legacy paths for migration purposes only (don't create them)
+        self.plugin_creds_dir = data_dir / "credentials"
+        self.legacy_group_creds_dir = self.plugin_creds_dir / "groups"
+        self.legacy_subnet_creds_dir = self.plugin_creds_dir / "subnets"
+        self.device_creds_dir = self.plugin_creds_dir / "devices"
         
-        self.subnet_creds_dir = data_dir / "credentials" / "subnets"
-        self.subnet_creds_dir.mkdir(parents=True, exist_ok=True)
-        
-        # The device_creds_dir is maintained only for backward compatibility
-        self.device_creds_dir = data_dir / "credentials" / "devices"
-        self.device_creds_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Cache
-        self.device_credentials = {}  # Only used for backward compatibility now
-        self.group_credentials = {}
-        self.subnet_credentials = {}
+        # Main app workspace directory (will be set when device_manager is provided)
+        self.app_workspace_dir = None
+        self.workspace_name = "default"
+        self.previous_workspace_name = None
         
         # Device manager reference (will be set by the plugin)
         self.device_manager = None
         
-        # Load group and subnet credentials
-        self._load_credentials()
+        # Cache - make workspace-specific by using dictionaries with workspace as key
+        self.device_credentials = {}  # Only used for backward compatibility
+        self.workspace_credentials = {
+            "default": {
+                "groups": {},
+                "subnets": {}
+            }
+        }
+        
+        # Load device credentials initially
+        self._load_device_credentials()
         
     def set_device_manager(self, device_manager):
         """Set the device manager reference"""
         self.device_manager = device_manager
-        logger.debug(f"CredentialStore: Device manager reference set")
+        logger.debug(f"CredentialStore: Device manager reference set: {device_manager is not None}")
+        
+        if self.device_manager:
+            # Test device manager functionality
+            try:
+                device_count = len(self.device_manager.get_devices())
+                logger.debug(f"CredentialStore: Device manager has {device_count} devices")
+                
+                # Try to get a device to test functionality
+                if device_count > 0:
+                    first_device_id = self.device_manager.get_devices()[0].id
+                    test_device = self.device_manager.get_device(first_device_id)
+                    logger.debug(f"CredentialStore: Test get_device: {'Success' if test_device else 'Failed'}")
+                    
+                    # Test setting a property on a device
+                    if test_device:
+                        try:
+                            # Use a temporary property for testing
+                            test_device.set_property("_credential_store_test", True)
+                            logger.debug("CredentialStore: Test set_property: Success")
+                            # Remove the test property
+                            test_device.set_property("_credential_store_test", None)
+                        except Exception as e:
+                            logger.error(f"CredentialStore: Test set_property failed: {e}")
+            except Exception as e:
+                logger.error(f"CredentialStore: Error testing device manager: {e}")
+        
+        workspace_found = False
+        old_workspace_name = self.workspace_name
+        
+        # Update workspace name and directory if device_manager is available
+        if self.device_manager:
+            # Get workspace name
+            if hasattr(self.device_manager, 'get_current_workspace_name'):
+                try:
+                    self.workspace_name = self.device_manager.get_current_workspace_name()
+                    if old_workspace_name != self.workspace_name:
+                        logger.debug(f"CredentialStore: Workspace changed from {old_workspace_name} to {self.workspace_name}")
+                        self.previous_workspace_name = old_workspace_name
+                    logger.debug(f"CredentialStore: Current workspace set to {self.workspace_name}")
+                except Exception as e:
+                    logger.warning(f"Error getting current workspace name: {e}")
+            
+            # Get workspace directory
+            if hasattr(self.device_manager, 'get_workspace_dir'):
+                try:
+                    workspace_dir = self.device_manager.get_workspace_dir()
+                    if workspace_dir:
+                        self.app_workspace_dir = Path(workspace_dir)
+                        workspace_found = True
+                        logger.debug(f"CredentialStore: Using workspace directory: {self.app_workspace_dir}")
+                except Exception as e:
+                    logger.warning(f"Error getting workspace directory: {e}")
+                    
+            # If we still don't have a workspace directory, try to infer it
+            if not workspace_found:
+                try:
+                    # Try to get app base directory
+                    app_dir = None
+                    if hasattr(self.device_manager, 'app') and hasattr(self.device_manager.app, 'base_dir'):
+                        app_dir = Path(self.device_manager.app.base_dir)
+                    elif hasattr(self.device_manager, 'get_app_dir'):
+                        app_dir = Path(self.device_manager.get_app_dir())
+                        
+                    if app_dir and app_dir.exists():
+                        # Construct workspace dir from app dir
+                        self.app_workspace_dir = app_dir / "config" / "workspaces" / self.workspace_name
+                        if self.app_workspace_dir.exists():
+                            workspace_found = True
+                            logger.debug(f"CredentialStore: Inferred workspace directory: {self.app_workspace_dir}")
+                except Exception as e:
+                    logger.warning(f"Error inferring workspace directory: {e}")
+            
+            # Fallback if we still don't have a valid workspace directory
+            if not workspace_found:
+                # Try to find the config directory relative to the current directory
+                try:
+                    current_dir = Path.cwd()
+                    config_dir = current_dir / "config"
+                    if config_dir.exists():
+                        self.app_workspace_dir = config_dir / "workspaces" / self.workspace_name
+                        if self.app_workspace_dir.exists():
+                            workspace_found = True
+                            logger.debug(f"CredentialStore: Using fallback workspace directory: {self.app_workspace_dir}")
+                except Exception as e:
+                    logger.warning(f"Error setting fallback workspace directory: {e}")
+        
+        # Create the workspace directory if it doesn't exist
+        if self.app_workspace_dir:
+            try:
+                self.app_workspace_dir.mkdir(parents=True, exist_ok=True)
+                workspace_found = True
+            except Exception as e:
+                logger.error(f"Error creating workspace directory: {e}")
+        
+        # Last resort - use data directory as fallback
+        if not workspace_found:
+            logger.warning("No workspace directory found - using data directory as fallback")
+            try:
+                # Use a workspace-like structure within the data directory
+                self.app_workspace_dir = self.data_dir / "workspace_fallback" / self.workspace_name
+                self.app_workspace_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created fallback workspace directory: {self.app_workspace_dir}")
+            except Exception as e:
+                logger.error(f"Error creating fallback workspace directory: {e}")
+                # If we still can't create a workspace, use the data directory directly
+                self.app_workspace_dir = self.data_dir
+                logger.warning(f"Using data directory directly: {self.app_workspace_dir}")
+        
+        # Initialize workspace credentials cache if needed
+        if self.workspace_name not in self.workspace_credentials:
+            self.workspace_credentials[self.workspace_name] = {
+                "groups": {},
+                "subnets": {}
+            }
+            
+        # Only try to migrate if we have a valid workspace directory
+        if self.app_workspace_dir and self.app_workspace_dir.exists():
+            # Migrate any legacy credentials
+            try:
+                self._migrate_legacy_credentials()
+            except Exception as e:
+                logger.error(f"Error migrating legacy credentials: {e}")
+                
+            # Clean up legacy credentials
+            try:
+                self._cleanup_legacy_credentials()
+            except Exception as e:
+                logger.error(f"Error cleaning up legacy credentials: {e}")
+            
+            # Reload credentials
+            try:
+                self._load_credentials()
+            except Exception as e:
+                logger.error(f"Error loading credentials: {e}")
+        else:
+            logger.error("No valid workspace directory available - credential functionality will be limited")
+            
+    def _get_workspace_device_dir(self):
+        """Get the directory for the current workspace's device credentials"""
+        try:
+            # First try using the app_workspace_dir if it exists
+            if self.app_workspace_dir and self.app_workspace_dir.exists():
+                workspace_dir = self.app_workspace_dir / "command_manager" / "credentials" / "devices"
+                workspace_dir.mkdir(parents=True, exist_ok=True)
+                return workspace_dir
+                
+            # If not, try getting workspace from device_manager
+            if self.device_manager:
+                if hasattr(self.device_manager, 'get_workspace_dir'):
+                    try:
+                        workspace_path = Path(self.device_manager.get_workspace_dir())
+                        if workspace_path and workspace_path.exists():
+                            # Create credential directory structure
+                            workspace_dir = workspace_path / "command_manager" / "credentials" / "devices"
+                            workspace_dir.mkdir(parents=True, exist_ok=True)
+                            # Update our reference for future use
+                            self.app_workspace_dir = workspace_path
+                            return workspace_dir
+                    except Exception as e:
+                        logger.debug(f"Could not get workspace directory from device_manager: {e}")
+                
+            # Last resort: use fallback in data directory
+            fallback_dir = self.data_dir / "workspace_fallback" / self.workspace_name / "credentials" / "devices"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            logger.warning(f"Using fallback workspace directory: {fallback_dir}")
+            return fallback_dir
+            
+        except Exception as e:
+            logger.error(f"Error creating workspace device directory: {e}")
+            # Ultimate fallback - use plugin data directory
+            try:
+                fallback = self.data_dir / "credentials" / "devices"
+                fallback.mkdir(parents=True, exist_ok=True)
+                return fallback
+            except:
+                logger.error("Cannot get workspace device directory: app_workspace_dir is not set or doesn't exist")
+                return None
+        
+    def _get_workspace_group_dir(self):
+        """Get the directory for the current workspace's group credentials"""
+        if self.app_workspace_dir and self.app_workspace_dir.exists():
+            try:
+                # Use app workspace directory structure
+                workspace_dir = self.app_workspace_dir / "command_manager" / "credentials" / "groups"
+                workspace_dir.mkdir(parents=True, exist_ok=True)
+                return workspace_dir
+            except Exception as e:
+                logger.error(f"Error creating workspace group directory: {e}")
+                return None
+        else:
+            # If no workspace directory, log an error and return None
+            logger.error("Cannot get workspace group directory: app_workspace_dir is not set or doesn't exist")
+            return None
+        
+    def _get_workspace_subnet_dir(self):
+        """Get the directory for the current workspace's subnet credentials"""
+        if self.app_workspace_dir and self.app_workspace_dir.exists():
+            try:
+                # Use app workspace directory structure
+                workspace_dir = self.app_workspace_dir / "command_manager" / "credentials" / "subnets"
+                workspace_dir.mkdir(parents=True, exist_ok=True)
+                return workspace_dir
+            except Exception as e:
+                logger.error(f"Error creating workspace subnet directory: {e}")
+                return None
+        else:
+            # If no workspace directory, log an error and return None
+            logger.error("Cannot get workspace subnet directory: app_workspace_dir is not set or doesn't exist")
+            return None
+
+    def _cleanup_legacy_credentials(self):
+        """Delete all credential files from the legacy plugin directories"""
+        # Check if the plugin_creds_dir exists before trying to access it
+        if not self.plugin_creds_dir.exists():
+            logger.debug(f"Legacy credentials directory doesn't exist: {self.plugin_creds_dir}")
+            return
+            
+        # Remove legacy device credentials
+        if self.device_creds_dir.exists():
+            try:
+                for file_path in self.device_creds_dir.glob("*.json"):
+                    try:
+                        file_path.unlink()
+                        logger.debug(f"Deleted legacy credential file: {file_path}")
+                    except Exception as e:
+                        logger.error(f"Error deleting legacy credential file {file_path}: {e}")
+                
+                # Try to remove the directory
+                if not any(self.device_creds_dir.iterdir()):
+                    self.device_creds_dir.rmdir()
+                    logger.info("Removed empty legacy device credentials directory")
+            except Exception as e:
+                logger.error(f"Error cleaning up legacy device credentials: {e}")
+        
+        # Remove legacy group credentials
+        if self.legacy_group_creds_dir.exists():
+            try:
+                for file_path in self.legacy_group_creds_dir.glob("*.json"):
+                    try:
+                        file_path.unlink()
+                        logger.debug(f"Deleted legacy group credential file: {file_path}")
+                    except Exception as e:
+                        logger.error(f"Error deleting legacy group credential file {file_path}: {e}")
+                
+                # Try to remove the directory
+                if not any(self.legacy_group_creds_dir.iterdir()):
+                    self.legacy_group_creds_dir.rmdir()
+                    logger.info("Removed empty legacy group credentials directory")
+            except Exception as e:
+                logger.error(f"Error cleaning up legacy group credentials: {e}")
+        
+        # Remove legacy subnet credentials
+        if self.legacy_subnet_creds_dir.exists():
+            try:
+                for file_path in self.legacy_subnet_creds_dir.glob("*.json"):
+                    try:
+                        file_path.unlink()
+                        logger.debug(f"Deleted legacy subnet credential file: {file_path}")
+                    except Exception as e:
+                        logger.error(f"Error deleting legacy subnet credential file {file_path}: {e}")
+                
+                # Try to remove the directory
+                if not any(self.legacy_subnet_creds_dir.iterdir()):
+                    self.legacy_subnet_creds_dir.rmdir()
+                    logger.info("Removed empty legacy subnet credentials directory")
+            except Exception as e:
+                logger.error(f"Error cleaning up legacy subnet credentials: {e}")
+                
+        # Clean up any workspaces directory in plugin
+        workspaces_dir = self.plugin_creds_dir / "workspaces"
+        if workspaces_dir.exists():
+            try:
+                import shutil
+                shutil.rmtree(workspaces_dir)
+                logger.info("Removed legacy workspaces directory from plugin")
+            except Exception as e:
+                logger.error(f"Error removing legacy workspaces directory: {e}")
+                
+        # Try to remove the main credentials directory if empty
+        try:
+            if self.plugin_creds_dir.exists() and not any(self.plugin_creds_dir.iterdir()):
+                self.plugin_creds_dir.rmdir()
+                logger.info("Removed empty plugin credentials directory")
+        except Exception as e:
+            logger.error(f"Error removing plugin credentials directory: {e}")
+
+    def _migrate_legacy_credentials(self):
+        """Migrate any legacy credentials to workspace-specific directories"""
+        logger.debug("Checking for legacy credentials to migrate")
+        
+        # First migrate any legacy plugin-specific workspace credentials
+        legacy_plugin_workspace_dir = self.plugin_creds_dir / "workspaces"
+        if legacy_plugin_workspace_dir.exists():
+            for workspace_dir in legacy_plugin_workspace_dir.glob("*"):
+                if workspace_dir.is_dir():
+                    ws_name = workspace_dir.name
+                    logger.info(f"Migrating legacy workspace credentials: {ws_name}")
+                    
+                    # Migrate group credentials
+                    legacy_group_dir = workspace_dir / "groups"
+                    if legacy_group_dir.exists() and legacy_group_dir.is_dir():
+                        # Get target directory
+                        if ws_name == self.workspace_name:
+                            # Current workspace - use current methods
+                            target_group_dir = self._get_workspace_group_dir()
+                        else:
+                            # Other workspace - create target directory
+                            if self.app_workspace_dir and self.app_workspace_dir.parent:
+                                # Use parent of current workspace dir to get to config/workspaces
+                                target_group_dir = self.app_workspace_dir.parent / ws_name / "command_manager" / "credentials" / "groups"
+                            else:
+                                # Fallback
+                                continue
+                                
+                        target_group_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        # Migrate files
+                        for file_path in legacy_group_dir.glob("*.json"):
+                            try:
+                                with open(file_path, "r") as f:
+                                    creds = json.load(f)
+                                
+                                target_path = target_group_dir / file_path.name
+                                with open(target_path, "w") as f:
+                                    json.dump(creds, f, indent=2)
+                                
+                                logger.debug(f"Migrated group credentials from workspace {ws_name}: {file_path.name}")
+                                
+                                # Delete legacy file
+                                try:
+                                    file_path.unlink()
+                                except Exception as e:
+                                    logger.error(f"Error deleting legacy group credential file: {e}")
+                            except Exception as e:
+                                logger.error(f"Error migrating group credentials from {file_path}: {e}")
+                    
+                    # Migrate subnet credentials
+                    legacy_subnet_dir = workspace_dir / "subnets"
+                    if legacy_subnet_dir.exists() and legacy_subnet_dir.is_dir():
+                        # Get target directory
+                        if ws_name == self.workspace_name:
+                            # Current workspace - use current methods
+                            target_subnet_dir = self._get_workspace_subnet_dir()
+                        else:
+                            # Other workspace - create target directory
+                            if self.app_workspace_dir and self.app_workspace_dir.parent:
+                                # Use parent of current workspace dir to get to config/workspaces
+                                target_subnet_dir = self.app_workspace_dir.parent / ws_name / "command_manager" / "credentials" / "subnets"
+                            else:
+                                # Fallback
+                                continue
+                                
+                        target_subnet_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        # Migrate files
+                        for file_path in legacy_subnet_dir.glob("*.json"):
+                            try:
+                                with open(file_path, "r") as f:
+                                    creds = json.load(f)
+                                
+                                target_path = target_subnet_dir / file_path.name
+                                with open(target_path, "w") as f:
+                                    json.dump(creds, f, indent=2)
+                                
+                                logger.debug(f"Migrated subnet credentials from workspace {ws_name}: {file_path.name}")
+                                
+                                # Delete legacy file
+                                try:
+                                    file_path.unlink()
+                                except Exception as e:
+                                    logger.error(f"Error deleting legacy subnet credential file: {e}")
+                            except Exception as e:
+                                logger.error(f"Error migrating subnet credentials from {file_path}: {e}")
+                
+                # Try to clean up if directories are empty
+                try:
+                    if legacy_group_dir.exists() and not any(legacy_group_dir.iterdir()):
+                        legacy_group_dir.rmdir()
+                except Exception as e:
+                    logger.error(f"Error removing legacy group directory: {e}")
+                
+                try:
+                    if legacy_subnet_dir.exists() and not any(legacy_subnet_dir.iterdir()):
+                        legacy_subnet_dir.rmdir()
+                except Exception as e:
+                    logger.error(f"Error removing legacy subnet directory: {e}")
+                    
+                try:
+                    if workspace_dir.exists() and not any(workspace_dir.iterdir()):
+                        workspace_dir.rmdir()
+                except Exception as e:
+                    logger.error(f"Error removing legacy workspace directory: {e}")
+        
+        # Migrate legacy group credentials
+        if self.legacy_group_creds_dir.exists():
+            logger.info(f"Migrating legacy group credentials to workspace '{self.workspace_name}'")
+            workspace_group_dir = self._get_workspace_group_dir()
+            
+            # Iterate through credential files
+            for file_path in self.legacy_group_creds_dir.glob("*.json"):
+                try:
+                    # Read credentials
+                    with open(file_path, "r") as f:
+                        creds = json.load(f)
+                    
+                    # Extract group name from filename
+                    group_name = file_path.stem
+                    
+                    # Save to workspace directory
+                    target_path = workspace_group_dir / file_path.name
+                    with open(target_path, "w") as f:
+                        json.dump(creds, f, indent=2)
+                    
+                    logger.debug(f"Migrated group credentials for '{group_name}' to workspace")
+                    
+                    # Delete legacy file
+                    try:
+                        file_path.unlink()
+                    except Exception as e:
+                        logger.error(f"Error deleting legacy group credential file: {e}")
+                        
+                except Exception as e:
+                    logger.error(f"Error migrating group credentials from {file_path}: {e}")
+            
+            # Try to remove legacy directory if empty
+            try:
+                if not any(self.legacy_group_creds_dir.iterdir()):
+                    self.legacy_group_creds_dir.rmdir()
+                    logger.info("Removed empty legacy group credentials directory")
+            except Exception as e:
+                logger.error(f"Error removing legacy group credentials directory: {e}")
+        
+        # Migrate legacy subnet credentials
+        if self.legacy_subnet_creds_dir.exists():
+            logger.info(f"Migrating legacy subnet credentials to workspace '{self.workspace_name}'")
+            workspace_subnet_dir = self._get_workspace_subnet_dir()
+            
+            # Iterate through credential files
+            for file_path in self.legacy_subnet_creds_dir.glob("*.json"):
+                try:
+                    # Read credentials
+                    with open(file_path, "r") as f:
+                        creds = json.load(f)
+                    
+                    # Extract subnet from filename
+                    subnet = file_path.stem
+                    
+                    # Save to workspace directory
+                    target_path = workspace_subnet_dir / file_path.name
+                    with open(target_path, "w") as f:
+                        json.dump(creds, f, indent=2)
+                    
+                    logger.debug(f"Migrated subnet credentials for '{subnet}' to workspace")
+                    
+                    # Delete legacy file
+                    try:
+                        file_path.unlink()
+                    except Exception as e:
+                        logger.error(f"Error deleting legacy subnet credential file: {e}")
+                        
+                except Exception as e:
+                    logger.error(f"Error migrating subnet credentials from {file_path}: {e}")
+            
+            # Try to remove legacy directory if empty
+            try:
+                if not any(self.legacy_subnet_creds_dir.iterdir()):
+                    self.legacy_subnet_creds_dir.rmdir()
+                    logger.info("Removed empty legacy subnet credentials directory")
+            except Exception as e:
+                logger.error(f"Error removing legacy subnet credentials directory: {e}")
+                
+        # Try cleaning up the workspaces directory if empty
+        try:
+            if legacy_plugin_workspace_dir.exists() and not any(legacy_plugin_workspace_dir.iterdir()):
+                legacy_plugin_workspace_dir.rmdir()
+                logger.info("Removed empty legacy workspaces directory")
+        except Exception as e:
+            logger.error(f"Error removing legacy workspaces directory: {e}")
+            
+        # Try cleaning up the plugin credentials directory if empty
+        try:
+            plugin_workspaces_dir = self.plugin_creds_dir / "workspaces"
+            if plugin_workspaces_dir.exists() and not any(plugin_workspaces_dir.iterdir()):
+                plugin_workspaces_dir.rmdir()
+                logger.info("Removed empty plugin workspaces directory")
+                
+            # Check if the main plugin credentials directory is empty except for device credentials
+            non_device_dirs = [d for d in self.plugin_creds_dir.iterdir() if d != self.device_creds_dir]
+            if not non_device_dirs:
+                logger.info("Plugin credentials directory contains only device credentials")
+        except Exception as e:
+            logger.error(f"Error cleaning up plugin workspaces directory: {e}")
         
     def _load_credentials(self):
         """Load all credentials from disk"""
-        self._load_device_credentials()  # For backward compatibility
+        if not self.app_workspace_dir:
+            logger.error("Cannot load credentials: No workspace directory available")
+            logger.error("Current workspace name: " + self.workspace_name)
+            logger.error("Device manager available: " + str(self.device_manager is not None))
+            if self.device_manager:
+                logger.error("Device manager type: " + str(type(self.device_manager)))
+                logger.error("Has get_workspace_dir: " + str(hasattr(self.device_manager, 'get_workspace_dir')))
+                if hasattr(self.device_manager, 'get_workspace_dir'):
+                    logger.error("get_workspace_dir returns: " + str(self.device_manager.get_workspace_dir()))
+                logger.error("Has get_current_workspace_name: " + str(hasattr(self.device_manager, 'get_current_workspace_name')))
+                if hasattr(self.device_manager, 'get_current_workspace_name'):
+                    logger.error("get_current_workspace_name returns: " + str(self.device_manager.get_current_workspace_name()))
+            return
+            
+        logger.debug(f"Loading credentials from workspace: {self.app_workspace_dir}")
+        
+        self._load_device_credentials()
         self._load_group_credentials()
         self._load_subnet_credentials()
         
+        # Ensure no credentials remain in plugin directory
+        self._cleanup_legacy_credentials()
+        
     def _load_device_credentials(self):
         """
-        Load device credentials from disk for backward compatibility
-        Note: These will be migrated to device properties when accessed
+        Load device credentials from disk
+        Note: Legacy credentials will be migrated to device properties or workspace
         """
         self.device_credentials = {}
         
-        # Check if the credentials directory exists
-        if not self.device_creds_dir.exists():
+        # Get workspace directory
+        workspace_device_dir = self._get_workspace_device_dir()
+        if not workspace_device_dir:
+            logger.error("Cannot load device credentials: No workspace directory available")
             return
         
-        # Iterate through credential files
+        # Load from workspace directory
+        if workspace_device_dir.exists():
+            logger.debug(f"Loading device credentials from workspace directory: {workspace_device_dir}")
+            # Iterate through credential files in workspace directory
+            for file_path in workspace_device_dir.glob("*.json"):
+                try:
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
+                        
+                    # Extract device ID from filename
+                    device_id = file_path.stem
+                    
+                    # Store credentials
+                    self.device_credentials[device_id] = data
+                    
+                    # Decrypt password (if needed)
+                    if "password" in data and data["password"]:
+                        try:
+                            data["password"] = decrypt_password(data["password"])
+                        except:
+                            # If decryption fails, keep encrypted
+                            pass
+                    
+                    # Decrypt enable password (if needed)
+                    if "enable_password" in data and data["enable_password"]:
+                        try:
+                            data["enable_password"] = decrypt_password(data["enable_password"])
+                        except:
+                            # If decryption fails, keep encrypted
+                            pass
+                    
+                    # Migrate to device properties if device manager is available
+                    if self.device_manager:
+                        device = self.device_manager.get_device(device_id)
+                        if device:
+                            self._migrate_credentials_to_device(device, data)
+                            # Delete the file after migration to device properties
+                            try:
+                                file_path.unlink()
+                                logger.debug(f"Migrated workspace credentials to device properties for {device_id}")
+                            except Exception as e:
+                                logger.error(f"Error deleting workspace credential file after migration: {e}")
+                    
+                except Exception as e:
+                    logger.error(f"Error loading device credentials from workspace {file_path}: {e}")
+        
+        # Migrate any legacy credentials to workspace
+        self._migrate_legacy_device_credentials()
+        
+    def _migrate_legacy_device_credentials(self):
+        """Migrate device credentials from legacy location to workspace"""
+        # Get workspace directory
+        workspace_device_dir = self._get_workspace_device_dir()
+        if not workspace_device_dir:
+            logger.error("Cannot migrate legacy device credentials: No workspace directory available")
+            return
+        
+        # Check if legacy directory exists
+        if not self.device_creds_dir.exists():
+            return
+            
+        logger.info("Migrating legacy device credentials to workspace")
+        
+        # Iterate through legacy credential files
         for file_path in self.device_creds_dir.glob("*.json"):
             try:
+                # Read legacy credentials
                 with open(file_path, "r") as f:
                     data = json.load(f)
                     
                 # Extract device ID from filename
                 device_id = file_path.stem
                 
-                # Store credentials
-                self.device_credentials[device_id] = data
-                
-                # Decrypt password (if needed)
-                if "password" in data and data["password"]:
-                    try:
-                        data["password"] = decrypt_password(data["password"])
-                    except:
-                        # If decryption fails, keep encrypted
-                        pass
-                
-                # Decrypt enable password (if needed)
-                if "enable_password" in data and data["enable_password"]:
-                    try:
-                        data["enable_password"] = decrypt_password(data["enable_password"])
-                    except:
-                        # If decryption fails, keep encrypted
-                        pass
-                
-                # Migrate to device properties if device manager is available
+                # First try to migrate to device properties
                 if self.device_manager:
                     device = self.device_manager.get_device(device_id)
                     if device:
-                        self._migrate_credentials_to_device(device, data)
-                        # Delete the file after migration
+                        # Create a copy with decrypted values
+                        decrypted_data = data.copy()
+                        
+                        # Decrypt password (if needed)
+                        if "password" in decrypted_data and decrypted_data["password"]:
+                            try:
+                                decrypted_data["password"] = decrypt_password(decrypted_data["password"])
+                            except:
+                                # If decryption fails, keep encrypted
+                                pass
+                        
+                        # Decrypt enable password (if needed)
+                        if "enable_password" in decrypted_data and decrypted_data["enable_password"]:
+                            try:
+                                decrypted_data["enable_password"] = decrypt_password(decrypted_data["enable_password"])
+                            except:
+                                # If decryption fails, keep encrypted
+                                pass
+                                
+                        # Migrate to device properties
+                        self._migrate_credentials_to_device(device, decrypted_data)
+                        
+                        # Add to in-memory cache (decrypted)
+                        self.device_credentials[device_id] = decrypted_data
+                        
+                        logger.debug(f"Migrated legacy credentials to device properties for {device_id}")
+                        
+                        # Delete legacy file
                         try:
                             file_path.unlink()
-                            logger.debug(f"Migrated and deleted credential file for device {device_id}")
+                            logger.debug(f"Deleted legacy credential file after migration: {file_path}")
                         except Exception as e:
-                            logger.error(f"Error deleting credential file for device {device_id}: {e}")
+                            logger.error(f"Error deleting legacy credential file {file_path}: {e}")
+                            
+                        # Continue to next file
+                        continue
+                
+                # If device not found or no device manager, save to workspace
+                # Save to workspace directory
+                target_path = workspace_device_dir / file_path.name
+                with open(target_path, "w") as f:
+                    json.dump(data, f, indent=2)
+                
+                logger.debug(f"Migrated legacy device credentials to workspace for {device_id}")
+                
+                # Add to in-memory cache (encrypted, will be decrypted when accessed)
+                self.device_credentials[device_id] = data
+                
+                # Delete legacy file
+                try:
+                    file_path.unlink()
+                    logger.debug(f"Deleted legacy credential file after migration: {file_path}")
+                except Exception as e:
+                    logger.error(f"Error deleting legacy credential file {file_path}: {e}")
                 
             except Exception as e:
-                logger.error(f"Error loading device credentials from {file_path}: {e}")
+                logger.error(f"Error migrating legacy device credentials from {file_path}: {e}")
+        
+        # Try to remove the legacy directory if empty
+        try:
+            if not any(self.device_creds_dir.iterdir()):
+                self.device_creds_dir.rmdir()
+                logger.info("Removed empty legacy device credentials directory")
+        except Exception as e:
+            logger.error(f"Error removing legacy device credentials directory: {e}")
     
     def _migrate_credentials_to_device(self, device, credentials):
         """Migrate credentials from file to device properties"""
@@ -125,14 +742,21 @@ class CredentialStore:
     
     def _load_group_credentials(self):
         """Load group credentials from disk"""
-        self.group_credentials = {}
+        # Clear current workspace's group credentials
+        self.workspace_credentials[self.workspace_name]["groups"] = {}
+        
+        # Get workspace directory
+        workspace_group_dir = self._get_workspace_group_dir()
+        if not workspace_group_dir:
+            logger.error("Cannot load group credentials: No workspace directory available")
+            return
         
         # Check if the credentials directory exists
-        if not self.group_creds_dir.exists():
+        if not workspace_group_dir.exists():
             return
         
         # Iterate through credential files
-        for file_path in self.group_creds_dir.glob("*.json"):
+        for file_path in workspace_group_dir.glob("*.json"):
             try:
                 with open(file_path, "r") as f:
                     data = json.load(f)
@@ -140,8 +764,8 @@ class CredentialStore:
                 # Extract group name from filename
                 group_name = file_path.stem
                 
-                # Store credentials
-                self.group_credentials[group_name] = data
+                # Store credentials in workspace-specific cache
+                self.workspace_credentials[self.workspace_name]["groups"][group_name] = data
                 
                 # Decrypt password (if needed)
                 if "password" in data and data["password"]:
@@ -161,17 +785,27 @@ class CredentialStore:
                 
             except Exception as e:
                 logger.error(f"Error loading group credentials from {file_path}: {e}")
+        
+        # If any legacy group credentials exist, migrate them
+        self._migrate_legacy_group_credentials()
     
     def _load_subnet_credentials(self):
         """Load subnet credentials from disk"""
-        self.subnet_credentials = {}
+        # Clear current workspace's subnet credentials
+        self.workspace_credentials[self.workspace_name]["subnets"] = {}
+        
+        # Get workspace directory
+        workspace_subnet_dir = self._get_workspace_subnet_dir()
+        if not workspace_subnet_dir:
+            logger.error("Cannot load subnet credentials: No workspace directory available")
+            return
         
         # Check if the credentials directory exists
-        if not self.subnet_creds_dir.exists():
+        if not workspace_subnet_dir.exists():
             return
         
         # Iterate through credential files
-        for file_path in self.subnet_creds_dir.glob("*.json"):
+        for file_path in workspace_subnet_dir.glob("*.json"):
             try:
                 with open(file_path, "r") as f:
                     data = json.load(f)
@@ -179,8 +813,8 @@ class CredentialStore:
                 # Extract subnet from filename
                 subnet = file_path.stem
                 
-                # Store credentials
-                self.subnet_credentials[subnet] = data
+                # Store credentials in workspace-specific cache
+                self.workspace_credentials[self.workspace_name]["subnets"][subnet] = data
                 
                 # Decrypt password (if needed)
                 if "password" in data and data["password"]:
@@ -200,6 +834,143 @@ class CredentialStore:
                 
             except Exception as e:
                 logger.error(f"Error loading subnet credentials from {file_path}: {e}")
+        
+        # If any legacy subnet credentials exist, migrate them
+        self._migrate_legacy_subnet_credentials()
+        
+    def _migrate_legacy_group_credentials(self):
+        """Migrate group credentials from legacy location to workspace"""
+        # Check if legacy directory exists
+        if not self.legacy_group_creds_dir.exists():
+            return
+            
+        # Get workspace directory
+        workspace_group_dir = self._get_workspace_group_dir()
+        if not workspace_group_dir:
+            logger.error("Cannot migrate legacy group credentials: No workspace directory available")
+            return
+            
+        logger.info("Migrating legacy group credentials to workspace")
+        
+        # Iterate through credential files
+        for file_path in self.legacy_group_creds_dir.glob("*.json"):
+            try:
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                    
+                # Extract group name from filename
+                group_name = file_path.stem
+                
+                # Save to workspace directory
+                target_path = workspace_group_dir / file_path.name
+                with open(target_path, "w") as f:
+                    json.dump(data, f, indent=2)
+                
+                # Store in memory
+                if group_name not in self.workspace_credentials[self.workspace_name]["groups"]:
+                    # Decrypt passwords for in-memory use
+                    data_copy = data.copy()
+                    
+                    if "password" in data_copy and data_copy["password"]:
+                        try:
+                            data_copy["password"] = decrypt_password(data_copy["password"])
+                        except:
+                            pass
+                            
+                    if "enable_password" in data_copy and data_copy["enable_password"]:
+                        try:
+                            data_copy["enable_password"] = decrypt_password(data_copy["enable_password"])
+                        except:
+                            pass
+                            
+                    self.workspace_credentials[self.workspace_name]["groups"][group_name] = data_copy
+                
+                logger.debug(f"Migrated group credentials for '{group_name}' to workspace")
+                
+                # Delete legacy file
+                try:
+                    file_path.unlink()
+                    logger.debug(f"Deleted legacy group credential file: {file_path}")
+                except Exception as e:
+                    logger.error(f"Error deleting legacy group credential file: {e}")
+                    
+            except Exception as e:
+                logger.error(f"Error migrating group credentials from {file_path}: {e}")
+        
+        # Try to remove the legacy directory if empty
+        try:
+            if not any(self.legacy_group_creds_dir.iterdir()):
+                self.legacy_group_creds_dir.rmdir()
+                logger.info("Removed empty legacy group credentials directory")
+        except Exception as e:
+            logger.error(f"Error removing legacy group credentials directory: {e}")
+            
+    def _migrate_legacy_subnet_credentials(self):
+        """Migrate subnet credentials from legacy location to workspace"""
+        # Check if legacy directory exists
+        if not self.legacy_subnet_creds_dir.exists():
+            return
+            
+        # Get workspace directory
+        workspace_subnet_dir = self._get_workspace_subnet_dir()
+        if not workspace_subnet_dir:
+            logger.error("Cannot migrate legacy subnet credentials: No workspace directory available")
+            return
+            
+        logger.info("Migrating legacy subnet credentials to workspace")
+        
+        # Iterate through credential files
+        for file_path in self.legacy_subnet_creds_dir.glob("*.json"):
+            try:
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                    
+                # Extract subnet from filename
+                subnet = file_path.stem
+                
+                # Save to workspace directory
+                target_path = workspace_subnet_dir / file_path.name
+                with open(target_path, "w") as f:
+                    json.dump(data, f, indent=2)
+                
+                # Store in memory
+                if subnet not in self.workspace_credentials[self.workspace_name]["subnets"]:
+                    # Decrypt passwords for in-memory use
+                    data_copy = data.copy()
+                    
+                    if "password" in data_copy and data_copy["password"]:
+                        try:
+                            data_copy["password"] = decrypt_password(data_copy["password"])
+                        except:
+                            pass
+                            
+                    if "enable_password" in data_copy and data_copy["enable_password"]:
+                        try:
+                            data_copy["enable_password"] = decrypt_password(data_copy["enable_password"])
+                        except:
+                            pass
+                            
+                    self.workspace_credentials[self.workspace_name]["subnets"][subnet] = data_copy
+                
+                logger.debug(f"Migrated subnet credentials for '{subnet}' to workspace")
+                
+                # Delete legacy file
+                try:
+                    file_path.unlink()
+                    logger.debug(f"Deleted legacy subnet credential file: {file_path}")
+                except Exception as e:
+                    logger.error(f"Error deleting legacy subnet credential file: {e}")
+                    
+            except Exception as e:
+                logger.error(f"Error migrating subnet credentials from {file_path}: {e}")
+        
+        # Try to remove the legacy directory if empty
+        try:
+            if not any(self.legacy_subnet_creds_dir.iterdir()):
+                self.legacy_subnet_creds_dir.rmdir()
+                logger.info("Removed empty legacy subnet credentials directory")
+        except Exception as e:
+            logger.error(f"Error removing legacy subnet credentials directory: {e}")
     
     def save_credentials(self):
         """Save all credentials to disk"""
@@ -241,12 +1012,17 @@ class CredentialStore:
 
     def _save_group_credentials(self):
         """Save group credentials to disk"""
-        # Check if the credentials directory exists
-        if not self.group_creds_dir.exists():
-            self.group_creds_dir.mkdir(parents=True, exist_ok=True)
+        # Get workspace directory
+        workspace_group_dir = self._get_workspace_group_dir()
+        if not workspace_group_dir:
+            logger.error("Cannot save group credentials: No workspace directory available")
+            return False
+        
+        # Get credentials for current workspace
+        ws_groups = self.workspace_credentials.get(self.workspace_name, {}).get("groups", {})
         
         # Iterate through credentials
-        for group_name, creds in self.group_credentials.items():
+        for group_name, creds in ws_groups.items():
             try:
                 # Create a copy of the credentials
                 creds_copy = creds.copy()
@@ -260,21 +1036,29 @@ class CredentialStore:
                     creds_copy["enable_password"] = encrypt_password(creds_copy["enable_password"])
                 
                 # Save to file
-                file_path = self.group_creds_dir / f"{group_name}.json"
+                file_path = workspace_group_dir / f"{group_name}.json"
                 with open(file_path, "w") as f:
                     json.dump(creds_copy, f, indent=2)
-            
+                
+                logger.debug(f"Saved credentials for group {group_name} to workspace {self.workspace_name}")
             except Exception as e:
                 logger.error(f"Error saving credentials for group {group_name}: {e}")
+        
+        return True
     
     def _save_subnet_credentials(self):
         """Save subnet credentials to disk"""
-        # Check if the credentials directory exists
-        if not self.subnet_creds_dir.exists():
-            self.subnet_creds_dir.mkdir(parents=True, exist_ok=True)
+        # Get workspace directory
+        workspace_subnet_dir = self._get_workspace_subnet_dir()
+        if not workspace_subnet_dir:
+            logger.error("Cannot save subnet credentials: No workspace directory available")
+            return False
+        
+        # Get credentials for current workspace
+        ws_subnets = self.workspace_credentials.get(self.workspace_name, {}).get("subnets", {})
         
         # Iterate through credentials
-        for subnet, creds in self.subnet_credentials.items():
+        for subnet, creds in ws_subnets.items():
             try:
                 # Create a copy of the credentials
                 creds_copy = creds.copy()
@@ -288,12 +1072,15 @@ class CredentialStore:
                     creds_copy["enable_password"] = encrypt_password(creds_copy["enable_password"])
                 
                 # Save to file
-                file_path = self.subnet_creds_dir / f"{subnet}.json"
+                file_path = workspace_subnet_dir / f"{subnet}.json"
                 with open(file_path, "w") as f:
                     json.dump(creds_copy, f, indent=2)
-            
+                
+                logger.debug(f"Saved credentials for subnet {subnet} to workspace {self.workspace_name}")
             except Exception as e:
                 logger.error(f"Error saving credentials for subnet {subnet}: {e}")
+        
+        return True
     
     def get_device_credentials(self, device_id, device_ip=None, groups=None):
         """Get credentials for a device
@@ -317,11 +1104,32 @@ class CredentialStore:
             if device:
                 creds = self._get_credentials_from_device(device)
                 if creds:
+                    logger.debug(f"Found credentials in device properties for {device_id}")
                     return creds
         
         # For backward compatibility, check the legacy storage
+        # but migrate to device properties if found
         if device_id in self.device_credentials:
-            return self.device_credentials[device_id]
+            logger.debug(f"Found credentials in legacy storage for {device_id}")
+            creds = self.device_credentials[device_id]
+            
+            # Try to migrate to device properties
+            if self.device_manager:
+                device = self.device_manager.get_device(device_id)
+                if device:
+                    self._migrate_credentials_to_device(device, creds)
+                    # Remove from legacy storage after migration
+                    del self.device_credentials[device_id]
+                    # Delete legacy file
+                    file_path = self.device_creds_dir / f"{device_id}.json"
+                    if file_path.exists():
+                        try:
+                            file_path.unlink()
+                            logger.debug(f"Migrated and deleted legacy credential file for device {device_id}")
+                        except Exception as e:
+                            logger.error(f"Error deleting legacy credential file for device {device_id}: {e}")
+                
+            return creds
         
         # No credentials found for this device
         return None
@@ -335,10 +1143,16 @@ class CredentialStore:
         Returns:
             dict: Credentials or None if not found
         """
-        logger.debug(f"Getting credentials for group {group_name}")
+        logger.debug(f"Getting credentials for group {group_name} in workspace {self.workspace_name}")
         
-        if group_name in self.group_credentials:
-            return self.group_credentials[group_name]
+        # Ensure group credentials are loaded from workspace
+        if not self.workspace_credentials.get(self.workspace_name, {}).get("groups"):
+            self._load_group_credentials()
+            
+        # Get from workspace-specific cache
+        ws_groups = self.workspace_credentials.get(self.workspace_name, {}).get("groups", {})
+        if group_name in ws_groups:
+            return ws_groups[group_name]
         
         return None
     
@@ -351,17 +1165,22 @@ class CredentialStore:
         Returns:
             dict: Credentials or None if not found
         """
-        logger.debug(f"Getting credentials for subnet {subnet}")
+        logger.debug(f"Getting credentials for subnet {subnet} in workspace {self.workspace_name}")
         
+        # Ensure subnet credentials are loaded from workspace
+        if not self.workspace_credentials.get(self.workspace_name, {}).get("subnets"):
+            self._load_subnet_credentials()
+            
         # First, try exact match
-        if subnet in self.subnet_credentials:
-            return self.subnet_credentials[subnet]
+        ws_subnets = self.workspace_credentials.get(self.workspace_name, {}).get("subnets", {})
+        if subnet in ws_subnets:
+            return ws_subnets[subnet]
         
         # Try to match by IP network
         try:
             target_network = ipaddress.ip_network(subnet, strict=False)
             
-            for network_str, creds in self.subnet_credentials.items():
+            for network_str, creds in ws_subnets.items():
                 try:
                     network = ipaddress.ip_network(network_str, strict=False)
                     # Check if networks match (same network address and prefix)
@@ -380,8 +1199,10 @@ class CredentialStore:
         """Set credentials for a device"""
         # Check if we have a device manager reference
         if self.device_manager:
+            logger.debug(f"Device manager exists, attempting to get device {device_id}")
             device = self.device_manager.get_device(device_id)
             if device:
+                logger.debug(f"Found device {device_id}, attempting to save credentials to device properties")
                 # Create a copy of the credentials
                 creds_copy = credentials.copy()
                 
@@ -393,16 +1214,35 @@ class CredentialStore:
                 if "enable_password" in creds_copy and creds_copy["enable_password"]:
                     creds_copy["enable_password"] = encrypt_password(creds_copy["enable_password"])
                 
-                # Save to device property
-                device.set_property("credentials", creds_copy)
-                logger.debug(f"Saved credentials to device properties for device {device_id}")
-                return True
+                try:
+                    # Save to device property
+                    device.set_property("credentials", creds_copy)
+                    logger.debug(f"Saved credentials to device properties for device {device_id}")
+                    
+                    # Update in-memory cache
+                    self.device_credentials[device_id] = credentials
+                    
+                    return True
+                except Exception as e:
+                    logger.error(f"Error saving to device properties for {device_id}: {e}")
+            else:
+                logger.warning(f"Device {device_id} not found via device manager")
+        else:
+            logger.warning(f"Device manager not available in credential store")
         
-        # Fall back to legacy file-based storage
-        logger.warning(f"Falling back to legacy credential storage for device {device_id}")
+        # Get workspace directory
+        workspace_device_dir = self._get_workspace_device_dir()
+        if not workspace_device_dir:
+            logger.error(f"Cannot save credentials for device {device_id}: No workspace directory available")
+            return False
+            
+        # Fall back to workspace file-based storage
+        logger.warning(f"Falling back to workspace file-based storage for device {device_id}")
+        
+        # Update in-memory cache
         self.device_credentials[device_id] = credentials
         
-        # Save to file for backward compatibility
+        # Save to file for backup
         try:
             # Create a copy of the credentials
             creds_copy = credentials.copy()
@@ -415,11 +1255,12 @@ class CredentialStore:
             if "enable_password" in creds_copy and creds_copy["enable_password"]:
                 creds_copy["enable_password"] = encrypt_password(creds_copy["enable_password"])
             
-            # Save to file
-            file_path = self.device_creds_dir / f"{device_id}.json"
+            # Save to workspace file
+            file_path = workspace_device_dir / f"{device_id}.json"
             with open(file_path, "w") as f:
                 json.dump(creds_copy, f, indent=2)
                 
+            logger.debug(f"Saved credentials to workspace file for device {device_id}")
             return True
         except Exception as e:
             logger.error(f"Error saving credentials for device {device_id}: {e}")
@@ -437,40 +1278,63 @@ class CredentialStore:
                 logger.debug(f"Deleted credentials from device properties for device {device_id}")
                 success = True
         
-        # Also delete from legacy storage if it exists
+        # Delete from workspace directory if exists
+        workspace_device_dir = self._get_workspace_device_dir()
+        if workspace_device_dir:
+            workspace_file_path = workspace_device_dir / f"{device_id}.json"
+            if workspace_file_path.exists():
+                try:
+                    workspace_file_path.unlink()
+                    logger.debug(f"Deleted credential file from workspace for device {device_id}")
+                    success = True
+                except Exception as e:
+                    logger.error(f"Error deleting workspace credential file for device {device_id}: {e}")
+        
+        # Remove from memory cache if exists
         if device_id in self.device_credentials:
             del self.device_credentials[device_id]
             success = True
-            
-            # Remove file if it exists
-            file_path = self.device_creds_dir / f"{device_id}.json"
-            if file_path.exists():
-                try:
-                    file_path.unlink()
-                    logger.debug(f"Deleted credential file for device {device_id}")
-                except Exception as e:
-                    logger.error(f"Error deleting credential file for device {device_id}: {e}")
         
         return success
     
     def set_group_credentials(self, group_name, credentials):
         """Set credentials for a group"""
-        self.group_credentials[group_name] = credentials
+        # Ensure workspace exists in cache
+        if self.workspace_name not in self.workspace_credentials:
+            self.workspace_credentials[self.workspace_name] = {
+                "groups": {},
+                "subnets": {}
+            }
+            
+        # Store credentials in workspace-specific memory cache
+        self.workspace_credentials[self.workspace_name]["groups"][group_name] = credentials
+        logger.debug(f"Setting credentials for group {group_name} in workspace {self.workspace_name}")
+        
+        # Save to workspace
         self._save_group_credentials()
+        
         return True
     
     def delete_group_credentials(self, group_name):
         """Delete credentials for a group"""
-        if group_name in self.group_credentials:
-            del self.group_credentials[group_name]
+        # Check if group exists in current workspace
+        ws_data = self.workspace_credentials.get(self.workspace_name, {})
+        ws_groups = ws_data.get("groups", {})
+        
+        if group_name in ws_groups:
+            # Remove from memory
+            del self.workspace_credentials[self.workspace_name]["groups"][group_name]
             
-            # Remove file if it exists
-            file_path = self.group_creds_dir / f"{group_name}.json"
-            if file_path.exists():
-                try:
-                    file_path.unlink()
-                except Exception as e:
-                    logger.error(f"Error deleting credential file for group {group_name}: {e}")
+            # Remove file from workspace if it exists
+            workspace_group_dir = self._get_workspace_group_dir()
+            if workspace_group_dir:
+                file_path = workspace_group_dir / f"{group_name}.json"
+                if file_path.exists():
+                    try:
+                        file_path.unlink()
+                        logger.debug(f"Deleted credential file for group {group_name}")
+                    except Exception as e:
+                        logger.error(f"Error deleting credential file for group {group_name}: {e}")
             
             return True
         
@@ -484,23 +1348,43 @@ class CredentialStore:
         except ValueError:
             logger.error(f"Invalid subnet: {subnet}")
             return False
+        
+        # Ensure workspace exists in cache
+        if self.workspace_name not in self.workspace_credentials:
+            self.workspace_credentials[self.workspace_name] = {
+                "groups": {},
+                "subnets": {}
+            }
             
-        self.subnet_credentials[subnet] = credentials
+        # Store credentials in workspace-specific memory cache
+        self.workspace_credentials[self.workspace_name]["subnets"][subnet] = credentials
+        logger.debug(f"Setting credentials for subnet {subnet} in workspace {self.workspace_name}")
+        
+        # Save to workspace
         self._save_subnet_credentials()
+        
         return True
     
     def delete_subnet_credentials(self, subnet):
         """Delete credentials for a subnet"""
-        if subnet in self.subnet_credentials:
-            del self.subnet_credentials[subnet]
+        # Check if subnet exists in current workspace
+        ws_data = self.workspace_credentials.get(self.workspace_name, {})
+        ws_subnets = ws_data.get("subnets", {})
+        
+        if subnet in ws_subnets:
+            # Remove from memory
+            del self.workspace_credentials[self.workspace_name]["subnets"][subnet]
             
-            # Remove file if it exists
-            file_path = self.subnet_creds_dir / f"{subnet}.json"
-            if file_path.exists():
-                try:
-                    file_path.unlink()
-                except Exception as e:
-                    logger.error(f"Error deleting credential file for subnet {subnet}: {e}")
+            # Remove file from workspace if it exists
+            workspace_subnet_dir = self._get_workspace_subnet_dir()
+            if workspace_subnet_dir:
+                file_path = workspace_subnet_dir / f"{subnet}.json"
+                if file_path.exists():
+                    try:
+                        file_path.unlink()
+                        logger.debug(f"Deleted credential file for subnet {subnet}")
+                    except Exception as e:
+                        logger.error(f"Error deleting credential file for subnet {subnet}: {e}")
             
             return True
         
@@ -522,8 +1406,19 @@ class CredentialStore:
     
     def get_all_group_credentials(self):
         """Get all group credentials"""
-        return self.group_credentials
+        # Ensure credentials are loaded for current workspace
+        if not self.workspace_credentials.get(self.workspace_name, {}).get("groups"):
+            self._load_group_credentials()
+            
+        # Return group credentials for current workspace
+        return self.workspace_credentials.get(self.workspace_name, {}).get("groups", {})
     
     def get_all_subnet_credentials(self):
         """Get all subnet credentials"""
-        return self.subnet_credentials 
+        # Ensure credentials are loaded for current workspace
+        if not self.workspace_credentials.get(self.workspace_name, {}).get("subnets"):
+            self._load_subnet_credentials()
+            
+        # Return subnet credentials for current workspace
+        return self.workspace_credentials.get(self.workspace_name, {}).get("subnets", {}) 
+        return self.workspace_credentials.get(self.workspace_name, {}).get("subnets", {}) 

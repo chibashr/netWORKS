@@ -250,24 +250,11 @@ class MainWindow(QMainWindow):
         self.plugin_menus = {}
         
     def _create_toolbar(self):
-        """Create toolbar"""
-        self.toolbar = QToolBar("Main Toolbar")
-        self.toolbar.setMovable(False)
-        self.toolbar.setIconSize(QSize(20, 20))  # Reduced from 24x24
-        
-        # Make the toolbar more compact
-        self.toolbar.setStyleSheet("""
-            QToolBar {
-                spacing: 2px;
-                padding: 1px;
-                margin: 0px;
-            }
-            QToolButton {
-                padding: 2px;
-                margin: 0px;
-            }
-        """)
-        
+        """Create the main toolbar"""
+        self.toolbar = QToolBar("Main Toolbar", self)
+        self.toolbar.setObjectName("MainToolbar")
+        self.toolbar.setMovable(True)
+        self.toolbar.setIconSize(QSize(24, 24))
         self.addToolBar(self.toolbar)
         
         # Add actions to toolbar
@@ -318,6 +305,7 @@ class MainWindow(QMainWindow):
         """Create dock widgets"""
         # Device tree dock widget (left panel)
         self.dock_device_tree = QDockWidget("Devices", self)
+        self.dock_device_tree.setObjectName("DevicesTreeDock")
         self.dock_device_tree.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         
         # Create device tree
@@ -330,6 +318,7 @@ class MainWindow(QMainWindow):
         
         # Properties dock widget (right panel)
         self.dock_properties = QDockWidget("Properties", self)
+        self.dock_properties.setObjectName("PropertiesDock")
         self.dock_properties.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         
         # Create properties panel
@@ -409,6 +398,7 @@ class MainWindow(QMainWindow):
         
         # Log dock widget (bottom panel)
         self.dock_log = QDockWidget("Log", self)
+        self.dock_log.setObjectName("LogDock")
         self.dock_log.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
         
         # Use LogPanel in the dock widget
@@ -497,6 +487,9 @@ class MainWindow(QMainWindow):
         dock_widgets = plugin.get_dock_widgets()
         for widget_name, widget, area in dock_widgets:
             dock = QDockWidget(widget_name, self)
+            # Set object name to ensure proper state saving/restoring
+            safe_name = widget_name.replace(" ", "")
+            dock.setObjectName(f"{plugin_info.id}_{safe_name}Dock")
             dock.setWidget(widget)
             self.addDockWidget(area, dock)
             # Store for later removal

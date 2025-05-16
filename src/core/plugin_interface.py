@@ -372,4 +372,14 @@ class PluginInterface(six.with_metaclass(ABCQObjectMeta, QObject, ABC)):
         
     def __str__(self):
         """String representation of the plugin"""
-        return f"{self.__class__.__name__} ({'initialized' if self._initialized else 'not initialized'}, {'running' if self._running else 'not running'})" 
+        return f"{self.__class__.__name__} ({'initialized' if self._initialized else 'not initialized'}, {'running' if self._running else 'not running'})"
+        
+    def track_signal_connection(self, signal_name):
+        """Track that a signal has been connected for later disconnection
+        
+        Args:
+            signal_name (str): Name of the signal that was connected
+        """
+        if not hasattr(self, '_connected_signals'):
+            self._connected_signals = set()
+        self._connected_signals.add(signal_name) 

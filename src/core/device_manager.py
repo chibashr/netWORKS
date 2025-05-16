@@ -1129,6 +1129,11 @@ class DeviceManager(QObject):
             with open(info_file, 'r') as f:
                 workspace_info = json.load(f)
                 
+            # Unload all existing plugins first to prevent duplicates
+            if hasattr(self.app, 'plugin_manager'):
+                logger.debug("Unloading all plugins before switching workspace")
+                self.app.plugin_manager.unload_all_plugins()
+                
             # Clear current state
             self.clear_current_state()
             
@@ -1143,59 +1148,83 @@ class DeviceManager(QObject):
                     # First, discover all available plugins to ensure we have a complete list
                     plugin_manager.discover_plugins()
                     
-                    # Then enable plugins based on the workspace configuration
-                    for plugin_id in enabled_plugins:
-                        try:
-                            if plugin_id in plugin_manager.plugins:
-                                if not plugin_manager.plugins[plugin_id].state.is_enabled:
-                                    logger.debug(f"Enabling plugin {plugin_id} from workspace configuration")
-                                    plugin_manager.enable_plugin(plugin_id)
+                    # Enable all plugins marked as enabled in the workspace
+                    all_plugins = plugin_manager.get_plugins()
+                    for plugin_info in all_plugins:
+                        plugin_id = plugin_info.id
+                        should_be_enabled = plugin_id in enabled_plugins
+                        
+                        if should_be_enabled:
+                            logger.debug(f"Enabling plugin {plugin_id} for workspace {name}")
+                            # Only enable if not already enabled
+                            if not plugin_info.state.is_enabled:
+                                # Update plugin state in registry first
+                                plugin_info.enabled = True
+                                plugin_manager._registry_dirty = True
                                 
-                                # Ensure the plugin is loaded if enabled
-                                if (not plugin_manager.plugins[plugin_id].state.is_loaded and 
-                                    plugin_manager.plugins[plugin_id].state.is_enabled):
-                                    logger.debug(f"Loading plugin {plugin_id} from workspace configuration")
-                                    plugin_manager.load_plugin(plugin_id)
-                            else:
-                                logger.warning(f"Plugin {plugin_id} specified in workspace configuration not found")
-                        except Exception as e:
-                            logger.error(f"Error enabling/loading plugin {plugin_id}: {e}", exc_info=True)
-                            # Continue with other plugins even if one fails
+                            # Then load the plugin if it's not already loaded
+                            if not plugin_info.state.is_loaded:
+                                logger.debug(f"Loading plugin {plugin_id} for workspace {name}")
+                                plugin_manager.load_plugin(plugin_id)
+                        else:
+                            # Disable any plugins not in the enabled list but currently enabled
+                            if plugin_info.state.is_enabled:
+                                logger.debug(f"Disabling plugin {plugin_id} for workspace {name}")
+                                # Unload if currently loaded
+                                if plugin_info.state.is_loaded:
+                                    plugin_manager.unload_plugin(plugin_id)
+                                
+                                # Update state in registry
+                                plugin_info.enabled = False
+                                plugin_manager._registry_dirty = True
+                    
+                    # Sync the plugin registry to save changes
+                    plugin_manager._sync_registry()
                 except Exception as e:
-                    logger.error(f"Error during plugin discovery/loading: {e}", exc_info=True)
-                    # Continue with workspace loading even if plugins fail
+                    logger.error(f"Error restoring plugin states: {e}", exc_info=True)
             
-            # Load devices from workspace directory
-            workspace_devices_dir = os.path.join(workspace_dir, "devices")
-            if os.path.exists(workspace_devices_dir):
-                for device_id in os.listdir(workspace_devices_dir):
-                    device_dir = os.path.join(workspace_devices_dir, device_id)
-                    if os.path.isdir(device_dir):
-                        device_file = os.path.join(device_dir, "device.json")
-                        if os.path.exists(device_file):
-                            try:
-                                with open(device_file, 'r') as f:
-                                    device_data = json.load(f)
+            # Now load the devices
+            devices_path = os.path.join(workspace_dir, "devices")
+            if os.path.exists(devices_path):
+                for device_id in os.listdir(devices_path):
+                    device_data_file = os.path.join(devices_path, device_id, "device.json")
+                    
+                    if os.path.exists(device_data_file):
+                        try:
+                            with open(device_data_file, 'r') as f:
+                                device_data = json.load(f)
                                 
-                                # Check if it's a recycle bin device
-                                in_recycle_bin = device_data.pop("_in_recycle_bin", False)
-                                
-                                device = Device.from_dict(device_data)
-                                
-                                if in_recycle_bin:
-                                    # Add to recycle bin
-                                    self.recycle_bin[device.id] = device
-                                else:
-                                    # Add to active devices
-                                    self.devices[device.id] = device
-                                    device.changed.connect(lambda d=device: self.device_changed.emit(d))
-                                    
-                                    # Emit signal for each loaded device
-                                    self.device_added.emit(device)
-                            except Exception as e:
-                                logger.error(f"Error loading device {device_id}: {e}")
+                            # Create device from data
+                            device = Device.from_dict(device_data)
+                            
+                            # Add to device manager
+                            self.devices[device.id] = device
+                            
+                            # Connect signals
+                            device.changed.connect(lambda d=device: self.device_changed.emit(d))
+                            
+                            # Emit signal for each loaded device
+                            self.device_added.emit(device)
+                        except Exception as e:
+                            logger.error(f"Error loading device {device_id}: {e}")
             
-            # Load groups directly from workspace
+            # Load the recycle bin if it exists
+            recycle_bin_file = os.path.join(workspace_dir, "recycle_bin.json")
+            if os.path.exists(recycle_bin_file):
+                try:
+                    with open(recycle_bin_file, 'r') as f:
+                        data = json.load(f)
+                        
+                    for device_data in data.get("devices", []):
+                        try:
+                            device = Device.from_dict(device_data)
+                            self.recycle_bin[device.id] = device
+                        except Exception as e:
+                            logger.error(f"Error loading recycled device: {e}")
+                except Exception as e:
+                    logger.error(f"Error loading recycle bin: {e}")
+            
+            # Load groups
             groups_file = os.path.join(workspace_dir, "groups.json")
             if os.path.exists(groups_file):
                 try:
@@ -1258,3 +1287,19 @@ class DeviceManager(QObject):
             self.device_changed.emit(device)
             
         return True 
+
+    def get_workspace_dir(self):
+        """Get the current workspace directory path
+        
+        Returns:
+            str: Path to the current workspace directory
+        """
+        return os.path.join(self.workspaces_dir, self.current_workspace)
+    
+    def get_current_workspace_name(self):
+        """Get the current workspace name
+        
+        Returns:
+            str: Name of the current workspace
+        """
+        return self.current_workspace 

@@ -1,6 +1,6 @@
 {
   "name": "NetWORKS",
-  "version": "0.9.0",
+  "version": "0.9.4",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -9,12 +9,12 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-  "version_string": "0.9.0",
+  "version_string": "0.9.4",
   "version_info": {
     "major": 0,
     "minor": 9,
-    "patch": 0,
-    "build": 217
+    "patch": 4,
+    "build": 221
   },
   "app_directory": "src",
   "main_module": "main",
@@ -37,7 +37,7 @@
   "telemetry_enabled": false,
   "analytics_enabled": false,
   "build_date": "2025-05-29",
-  "release_notes": "Improved IP address sorting in device tables to properly handle octets in numerical order.",
+  "release_notes": "Improved plugin signal connection tracking and command manager credential storage fallback.",
   "release_type": "stable",
   "versioning_scheme": "semver",
   "update_channel": "stable"

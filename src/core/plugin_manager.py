@@ -1183,43 +1183,50 @@ class PluginManager(QObject):
                 
                 if "device_added" in connected_signals and hasattr(instance, 'on_device_added'):
                     try:
-                        self.app.device_manager.device_added.disconnect(instance.on_device_added)
-                        logger.debug(f"Successfully disconnected device_added signal for {plugin_info.id}")
+                        # Check if the signal is valid and callable before disconnecting
+                        if hasattr(self.app.device_manager, 'device_added') and callable(instance.on_device_added):
+                            self.app.device_manager.device_added.disconnect(instance.on_device_added)
+                            logger.debug(f"Successfully disconnected device_added signal for {plugin_info.id}")
                     except Exception as e:
                         logger.debug(f"Error disconnecting device_added signal: {e}")
                 
                 if "device_removed" in connected_signals and hasattr(instance, 'on_device_removed'):
                     try:
-                        self.app.device_manager.device_removed.disconnect(instance.on_device_removed)
-                        logger.debug(f"Successfully disconnected device_removed signal for {plugin_info.id}")
+                        if hasattr(self.app.device_manager, 'device_removed') and callable(instance.on_device_removed):
+                            self.app.device_manager.device_removed.disconnect(instance.on_device_removed)
+                            logger.debug(f"Successfully disconnected device_removed signal for {plugin_info.id}")
                     except Exception as e:
                         logger.debug(f"Error disconnecting device_removed signal: {e}")
                 
                 if "device_changed" in connected_signals and hasattr(instance, 'on_device_changed'):
                     try:
-                        self.app.device_manager.device_changed.disconnect(instance.on_device_changed)
-                        logger.debug(f"Successfully disconnected device_changed signal for {plugin_info.id}")
+                        if hasattr(self.app.device_manager, 'device_changed') and callable(instance.on_device_changed):
+                            self.app.device_manager.device_changed.disconnect(instance.on_device_changed)
+                            logger.debug(f"Successfully disconnected device_changed signal for {plugin_info.id}")
                     except Exception as e:
                         logger.debug(f"Error disconnecting device_changed signal: {e}")
                 
                 if "group_added" in connected_signals and hasattr(instance, 'on_group_added'):
                     try:
-                        self.app.device_manager.group_added.disconnect(instance.on_group_added)
-                        logger.debug(f"Successfully disconnected group_added signal for {plugin_info.id}")
+                        if hasattr(self.app.device_manager, 'group_added') and callable(instance.on_group_added):
+                            self.app.device_manager.group_added.disconnect(instance.on_group_added)
+                            logger.debug(f"Successfully disconnected group_added signal for {plugin_info.id}")
                     except Exception as e:
                         logger.debug(f"Error disconnecting group_added signal: {e}")
                 
                 if "group_removed" in connected_signals and hasattr(instance, 'on_group_removed'):
                     try:
-                        self.app.device_manager.group_removed.disconnect(instance.on_group_removed)
-                        logger.debug(f"Successfully disconnected group_removed signal for {plugin_info.id}")
+                        if hasattr(self.app.device_manager, 'group_removed') and callable(instance.on_group_removed):
+                            self.app.device_manager.group_removed.disconnect(instance.on_group_removed)
+                            logger.debug(f"Successfully disconnected group_removed signal for {plugin_info.id}")
                     except Exception as e:
                         logger.debug(f"Error disconnecting group_removed signal: {e}")
                 
                 if "selection_changed" in connected_signals and hasattr(instance, 'on_device_selected'):
                     try:
-                        self.app.device_manager.selection_changed.disconnect(instance.on_device_selected)
-                        logger.debug(f"Successfully disconnected selection_changed signal for {plugin_info.id}")
+                        if hasattr(self.app.device_manager, 'selection_changed') and callable(instance.on_device_selected):
+                            self.app.device_manager.selection_changed.disconnect(instance.on_device_selected)
+                            logger.debug(f"Successfully disconnected selection_changed signal for {plugin_info.id}")
                     except Exception as e:
                         logger.debug(f"Error disconnecting selection_changed signal: {e}")
             else:
@@ -1298,14 +1305,41 @@ class PluginManager(QObject):
                     # Only attempt disconnect if it's actually a Signal object
                     if hasattr(signal, 'disconnect'):
                         try:
-                            # Check if the signal has any connections
-                            # Use a safer approach to determine if it can be disconnected
+                            # Check if the signal has any receivers
+                            # We need to carefully handle the disconnect to avoid warnings
                             logger.debug(f"Attempting safe disconnect of {signal_name}")
                             
-                            # In PySide6, we can safely disconnect without arguments to disconnect all connections
-                            # But this will fail if there are no receivers, so we need to catch exceptions
-                            signal.disconnect()
-                            logger.debug(f"Successfully disconnected signal {signal_name}")
+                            # Try to check if the signal has any connections
+                            has_connections = False
+                            try:
+                                # PySide6 doesn't provide a direct way to check if a signal has connections
+                                # so we'll use a more careful approach
+                                if hasattr(signal, 'isSignalConnected'):
+                                    has_connections = signal.isSignalConnected()
+                                else:
+                                    # Alternative approach - try a dummy test connection
+                                    # If we can connect, there's a slot available
+                                    dummy_func = lambda: None
+                                    signal.connect(dummy_func)
+                                    signal.disconnect(dummy_func)
+                                    has_connections = True
+                            except Exception:
+                                # If we can't determine, assume it might have connections
+                                has_connections = True
+                            
+                            # Only try to disconnect if we think there might be connections
+                            if has_connections:
+                                try:
+                                    # Disconnect all connections to be safe
+                                    signal.disconnect()
+                                except TypeError:
+                                    # TypeError often means no connections
+                                    logger.debug(f"No connections to disconnect for {signal_name}")
+                                except RuntimeError as re:
+                                    # Runtime errors might mean invalid connections
+                                    logger.debug(f"Error disconnecting {signal_name}: {re}")
+                            
+                            logger.debug(f"Successfully handled disconnection of signal {signal_name}")
                         except Exception as e:
                             # Downgrade to debug level since this is not a critical error
                             logger.debug(f"Signal {signal_name} disconnection error: {e}")
@@ -1848,3 +1882,46 @@ class PluginManager(QObject):
         self._sync_registry()
         
         return True 
+
+    def _connect_device_manager_signals(self, plugin_info):
+        """Connect device manager signals to plugin"""
+        if not plugin_info.instance:
+            return
+        
+        instance = plugin_info.instance
+        logger.debug(f"Connecting device manager signals for plugin: {plugin_info.id}")
+        
+        try:
+            if hasattr(instance, 'on_device_added'):
+                self.app.device_manager.device_added.connect(instance.on_device_added)
+                if hasattr(instance, 'track_signal_connection'):
+                    instance.track_signal_connection('device_added')
+                
+            if hasattr(instance, 'on_device_removed'):
+                self.app.device_manager.device_removed.connect(instance.on_device_removed)
+                if hasattr(instance, 'track_signal_connection'):
+                    instance.track_signal_connection('device_removed')
+                
+            if hasattr(instance, 'on_device_changed'):
+                self.app.device_manager.device_changed.connect(instance.on_device_changed)
+                if hasattr(instance, 'track_signal_connection'):
+                    instance.track_signal_connection('device_changed')
+                
+            if hasattr(instance, 'on_group_added'):
+                self.app.device_manager.group_added.connect(instance.on_group_added)
+                if hasattr(instance, 'track_signal_connection'):
+                    instance.track_signal_connection('group_added')
+                
+            if hasattr(instance, 'on_group_removed'):
+                self.app.device_manager.group_removed.connect(instance.on_group_removed)
+                if hasattr(instance, 'track_signal_connection'):
+                    instance.track_signal_connection('group_removed')
+                
+            if hasattr(instance, 'on_device_selected'):
+                self.app.device_manager.selection_changed.connect(instance.on_device_selected)
+                if hasattr(instance, 'track_signal_connection'):
+                    instance.track_signal_connection('selection_changed')
+                
+            logger.debug(f"Successfully connected device manager signals for plugin: {plugin_info.id}")
+        except Exception as e:
+            logger.error(f"Error connecting device manager signals for plugin {plugin_info.id}: {e}", exc_info=True) 
