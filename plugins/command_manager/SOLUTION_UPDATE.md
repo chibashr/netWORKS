@@ -59,4 +59,65 @@ Added better error handling throughout the plugin:
 - Graceful handling of missing device group methods
 - Improved credential store error handling
 - Better error reporting for command failures
-- Friendly error messages for UI operations 
+- Friendly error messages for UI operations
+
+# Command Manager Plugin Update Notes
+
+## Credential Storage Improvements
+
+### Changes Made
+
+1. **Device-Property-Based Credential Storage**:
+   - Credentials are now stored directly in device properties using the `credentials` property
+   - This ensures credentials are properly associated with their devices
+   - Credentials are saved and loaded with the device configuration
+
+2. **Backward Compatibility**:
+   - Legacy file-based credentials are automatically migrated to device properties
+   - Fallback to file-based credentials if device manager is not available
+   - Group and subnet credentials still use the file-based approach
+
+3. **Improved Security**:
+   - Credentials are encrypted before storage in device properties
+   - Decryption happens only when credentials are needed
+
+4. **Migration Process**:
+   - When the plugin loads, it checks for existing credential files
+   - If a file exists for a device, the credentials are migrated to the device properties
+   - The original file is removed after successful migration
+
+### Benefits
+
+1. **Data Integrity**: 
+   - Credentials are now directly attached to their associated devices
+   - No risk of orphaned credential files when devices are deleted
+   - Credentials move with devices when exported/imported
+
+2. **Simplified Code**:
+   - No need to maintain separate file paths and IDs
+   - Direct access to credentials through device properties
+
+3. **Better User Experience**:
+   - More intuitive credential management
+   - Credentials are maintained with the devices they belong to
+
+## Implementation Details
+
+The core changes were made in the following files:
+
+1. `utils/credential_store.py`: 
+   - Modified to store/retrieve credentials from device properties
+   - Added migration logic for legacy credentials
+
+2. `core/command_manager.py`: 
+   - Updated to pass the device_manager to the credential store
+   - Ensures proper access to device objects
+
+3. `API.md` and `README.md`: 
+   - Updated documentation to reflect the new storage mechanism
+
+## Future Considerations
+
+1. Group and subnet credentials could also benefit from being stored in the main application's configuration, but this would require changes to the core application structure.
+
+2. Consider adding a migration utility for batch conversion of file-based credentials to device properties. 

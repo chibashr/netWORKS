@@ -221,4 +221,55 @@ class PluginInterface:
     def on_plugin_unloaded(self, plugin_info)  # Called when a plugin is unloaded
 ```
 
-For more detailed information about specific components, refer to the API documentation in the respective module directories. 
+For more detailed information about specific components, refer to the API documentation in the respective module directories.
+
+# Device Properties
+
+## Core Properties
+
+NetWORKS devices have the following core properties that are managed by the application:
+
+- `id`: Unique identifier for the device
+- `alias`: Human-readable name for the device
+- `hostname`: Network hostname
+- `ip_address`: IP address
+- `mac_address`: MAC address
+- `status`: Current status (up, down, unknown, etc.)
+- `notes`: User notes
+- `tags`: List of tags for categorizing devices
+
+Core properties are always displayed at the top of the properties panel.
+
+## Plugin Properties
+
+Plugins should use a naming convention for their properties to ensure they appear in the "Plugin Properties" section:
+
+```python
+# Set a plugin property
+device.set_property("plugin_id:property_name", "value")
+
+# Examples
+device.set_property("scanner:last_scan", "2023-05-15")
+device.set_property("monitor.alarm_threshold", 95)
+device.set_property("backup_tool_backup_path", "/backups/device1")
+```
+
+Plugin properties can use any of these prefixes:
+- `plugin_id:property_name` (colon separator)
+- `plugin_id.property_name` (dot separator)
+- `plugin_id_property_name` (underscore separator)
+
+Where `plugin_id` matches the plugin's ID exactly.
+
+## Custom Properties
+
+Any properties not matching core or plugin naming patterns are considered custom properties and appear in the "Custom Properties" section.
+
+```python
+# Set a custom property
+device.set_property("location", "Server Room 3")
+```
+
+# Device API
+
+// ... rest of the existing documentation 

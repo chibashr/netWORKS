@@ -83,3 +83,4 @@ coverage.xml
 
 workspaces/
 config/backups/
+tests/

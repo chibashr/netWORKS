@@ -1,64 +1,64 @@
-# Command Manager Plugin
+# Command Manager Plugin for NetWORKS
 
-A tool to run commands and store the retrieved information per network device, for quickly getting information on one, or a group, of devices.
+## Overview
+
+The Command Manager plugin provides a powerful interface for running commands on network devices. It supports SSH and Telnet connections, command templates, credential management, and output storage.
 
 ## Features
 
-- Run commands on network devices via SSH or Telnet
-- Securely store credentials per device or group
-- Create and edit command sets for different device types and firmware versions
-- Import and export command sets via JSON
-- View command output history per device
-- Run multiple commands on a group of devices
-- Generate and download reports from command outputs
+- Run pre-defined or custom commands on network devices
+- Store and manage command outputs for later reference
+- Secure credential management for device access
+- Command templates with variable substitution
+- Export command outputs to files
+- Command sets for different device types and firmware versions
+
+## Credential Management
+
+The plugin provides a secure way to manage network device credentials:
+
+- **Device-specific credentials**: Stored directly in device properties
+- **Group-based credentials**: Credentials for groups of devices
+- **Subnet-based credentials**: Credentials for IP subnets
+
+> **Security Note**: All credentials are encrypted before storage. Device credentials are saved directly to the device properties to ensure they are properly associated with devices.
+
+## Command Sets
+
+Command sets are collections of pre-defined commands organized by device type and firmware version. The plugin includes default command sets for common network devices, but you can also create and customize your own.
+
+Each command in a command set can include:
+- Name and description
+- Command text (with variable substitution)
+- Expected output format
+- Error detection patterns
 
 ## Usage
 
-### Command Manager Dialog
+### Running Commands
 
-1. Click on the "Command Manager" button in the toolbar to open the main dialog
-2. Select devices and commands to run
-3. View and manage command outputs
+1. Select one or more devices in the device table
+2. Right-click and select "Run Commands" or use the toolbar button
+3. Select commands from the available command sets
+4. Click "Run" to execute the commands on the selected devices
 
-### Quick Run Commands
+### Managing Credentials
 
-1. Right-click on a device in the device table
-2. Select "Run Commands" from the context menu
-3. Choose a command set to run on the selected devices
+1. Select a device in the device table
+2. Right-click and select "Manage Credentials"
+3. Enter credentials for the selected device
 
-### Command Sets
+### Viewing Command Output
 
-Command sets are organized by device type and firmware version. Each command has:
-- Command: The actual command to run (e.g., "sh ver")
-- Alias: A friendly name for the command (e.g., "Show Version")
-- Description: A detailed description of what the command does
+1. Select a device in the device table
+2. Open the "Command Output" panel
+3. View past command outputs for the selected device
 
-### Credentials Management
+## Integration
 
-The plugin provides secure storage for device credentials:
-- Credentials can be set per device or inherited from groups
-- Credentials are encrypted before being stored
-- Mass modification of credentials for multiple devices
+The Command Manager plugin integrates with the main NetWORKS application:
 
-## Command Set Format (JSON)
-
-Command sets can be imported and exported in JSON format:
-
-```json
-{
-  "device_type": "cisco_ios",
-  "firmware_version": "15.x",
-  "commands": [
-    {
-      "command": "sh ver",
-      "alias": "Show Version",
-      "description": "Shows version of device"
-    },
-    {
-      "command": "sh run",
-      "alias": "Show Running Config",
-      "description": "Shows running configuration"
-    }
-  ]
-}
-``` 
+- Adds toolbar buttons for quick access
+- Adds context menu items for devices
+- Provides panels for device details
+- Registers custom settings 

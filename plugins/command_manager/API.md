@@ -57,26 +57,56 @@ def delete_command_set(self, device_type, firmware)
 ```
 Deletes a command set.
 
-## Credential Management API
+## Credential Management
 
-```python
-def get_device_credentials(self, device_id)
-```
-Returns the credentials for a specific device.
+### Overview
 
-```python
-def set_device_credentials(self, device_id, credentials)
-```
-Sets credentials for a device. Credentials are a dictionary with keys:
-- `username`: Username for authentication
-- `password`: Password for authentication
-- `enable_password`: Enable mode password (optional)
-- `connection_type`: "ssh" or "telnet"
+The Command Manager plugin provides a secure way to store and manage device credentials. Credentials are stored using the following methods:
 
-```python
-def delete_device_credentials(self, device_id)
+1. **Device Credentials**: Stored directly in device properties using the `credentials` property, which contains an encrypted credentials object
+2. **Group Credentials**: Stored in JSON files in the plugin's data directory
+3. **Subnet Credentials**: Stored in JSON files in the plugin's data directory
+
+The plugin uses a fallback mechanism to find credentials:
+1. First, it checks device-specific credentials
+2. If not found, it checks credentials for any groups the device belongs to
+3. Finally, it checks if the device's IP address falls within any subnets with credentials
+
+### Credential Storage
+
+Device credentials are stored directly in the device properties to ensure they are properly associated with the device and saved/loaded with the device configuration. The credentials are stored as an encrypted object in the `credentials` property of the device.
+
+Group and subnet credentials are still stored in separate files within the plugin's data directory.
+
+### Credential Methods
+
+| Method | Description |
+|--------|-------------|
+| `get_device_credentials(device_id, device_ip=None, groups=None)` | Get credentials for a device with fallback to group/subnet |
+| `set_device_credentials(device_id, credentials)` | Store credentials for a device in its properties |
+| `delete_device_credentials(device_id)` | Remove credentials from a device |
+| `set_group_credentials(group_name, credentials)` | Store credentials for a device group |
+| `delete_group_credentials(group_name)` | Remove credentials for a device group |
+| `set_subnet_credentials(subnet, credentials)` | Store credentials for a subnet |
+| `delete_subnet_credentials(subnet)` | Remove credentials for a subnet |
+| `get_all_device_credentials()` | Get all device credentials |
+| `get_all_group_credentials()` | Get all group credentials |
+| `get_all_subnet_credentials()` | Get all subnet credentials |
+
+### Credentials Format
+
+All credentials are stored in a standard dictionary format:
+
+```json
+{
+  "connection_type": "ssh",
+  "username": "admin",
+  "password": "<encrypted>",
+  "enable_password": "<encrypted>"
+}
 ```
-Deletes credentials for a device.
+
+Passwords are encrypted before storage and decrypted when retrieved.
 
 ## Command Execution API
 

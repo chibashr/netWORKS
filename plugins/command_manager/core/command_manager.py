@@ -106,6 +106,8 @@ class CommandManagerPlugin(PluginInterface):
         try:
             data_dir = Path(self.plugin_info.path) / "data"
             self.credential_store = CredentialStore(data_dir)
+            # Set the device manager reference in the credential store
+            self.credential_store.set_device_manager(self.device_manager)
             logger.debug(f"Credential store initialized with data_dir: {data_dir}")
         except Exception as e:
             logger.error(f"Error initializing credential store: {e}")
@@ -370,15 +372,20 @@ class CommandManagerPlugin(PluginInterface):
             self.output_panel.refresh()
     
     def _on_selection_changed(self, devices):
-        """Handle selection changed event"""
-        # Update the output panel with the selected device
-        if self.output_panel and devices:
-            self.output_panel.set_device(devices[0])
+        """Handle device selection changed"""
+        # Update commands and output panels if available
+        try:
+            # Update the output panel with the selected device
+            if self.output_panel and devices:
+                self.output_panel.set_device(devices[0])
             
-        # Update the commands panel if it exists
-        if hasattr(self, 'commands_panel_widget') and self.commands_panel_widget and devices:
-            self.output_handler.update_commands_panel(devices[0])
-            
+            # Update the commands panel if it exists
+            if hasattr(self, 'commands_panel_widget') and self.commands_panel_widget and devices:
+                self.output_handler.update_commands_panel(devices[0])
+        except Exception as e:
+            logger.error(f"Error updating panels: {e}")
+            logger.exception("Exception details:")
+    
     # Plugin API methods - to be called by other components
     
     def get_toolbar_actions(self):
