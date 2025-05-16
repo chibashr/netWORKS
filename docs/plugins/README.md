@@ -852,4 +852,38 @@ For more details, see the [Network Scanner Plugin API documentation](../plugins/
 
 1. Use unique identifiers for your plugin's resources
 2. Check if other plugins are modifying the same resources
-3. Use plugin dependencies to ensure proper loading order 
+3. Use plugin dependencies to ensure proper loading order
+
+## Device Properties
+
+### Property Naming Convention
+
+When adding properties to devices from your plugin, use one of the following naming conventions to have them appear in the "Plugin Properties" section of the device properties panel:
+
+```python
+# Use any of these formats:
+device.set_property("your_plugin_id:property_name", value)
+device.set_property("your_plugin_id.property_name", value)
+device.set_property("your_plugin_id_property_name", value)
+
+# Examples for a plugin with id "backup":
+device.set_property("backup:last_backup", "2023-05-15")
+device.set_property("backup.next_scheduled", "2023-05-22")
+device.set_property("backup_error_count", 0)
+```
+
+Where `your_plugin_id` must match your plugin's ID exactly as defined in your plugin.yaml file.
+
+Properties that don't follow this convention will appear in the "Custom Properties" section instead.
+
+### Documenting Properties
+
+Document all properties your plugin adds to devices in your plugin's API.md file:
+
+```markdown
+### Device Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| your_plugin_id:property_name | string | Description of the property |
+``` 

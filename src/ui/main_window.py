@@ -585,6 +585,13 @@ class MainWindow(QMainWindow):
             # Get all properties
             device_props = device.get_properties()
             
+            # Get loaded plugin IDs for property categorization
+            plugin_ids = []
+            if hasattr(self.app, 'plugin_manager'):
+                for plugin_info in self.app.plugin_manager.get_plugins():
+                    if plugin_info.state and plugin_info.state.is_loaded and plugin_info.id:
+                        plugin_ids.append(plugin_info.id)
+            
             # Add core properties first (in a specific order)
             core_props = ["id", "alias", "hostname", "ip_address", "mac_address", "status", "notes", "tags"]
             for prop in core_props:
@@ -592,16 +599,42 @@ class MainWindow(QMainWindow):
                     value = device_props[prop]
                     formatted_value = self._format_property_value(value)
                     self._add_property_row(prop, value, formatted_value)
-                    
-            # Add a separator row
-            self._add_separator_row("Custom Properties")
-                    
+            
+            # Separate remaining properties into plugin and custom
+            plugin_props = {}
+            custom_props = {}
+            
+            # Identify plugin properties using common separators (plugin_id:prop, plugin_id.prop, plugin_id_prop)
+            for key in sorted([k for k in device_props.keys() if k not in core_props]):
+                is_plugin_prop = False
+                for plugin_id in plugin_ids:
+                    # Check common separator patterns
+                    if (key.startswith(f"{plugin_id}:") or 
+                        key.startswith(f"{plugin_id}.") or 
+                        key.startswith(f"{plugin_id}_")):
+                        plugin_props[key] = device_props[key]
+                        is_plugin_prop = True
+                        break
+                
+                # If not a plugin property, it's a custom property
+                if not is_plugin_prop:
+                    custom_props[key] = device_props[key]
+            
+            # Add plugin properties if any exist
+            if plugin_props:
+                self._add_separator_row("Plugin Properties")
+                for key in sorted(plugin_props.keys()):
+                    value = plugin_props[key]
+                    formatted_value = self._format_property_value(value)
+                    self._add_property_row(key, value, formatted_value)
+            
             # Add custom properties
-            custom_props = sorted([k for k in device_props.keys() if k not in core_props])
-            for key in custom_props:
-                value = device_props[key]
-                formatted_value = self._format_property_value(value)
-                self._add_property_row(key, value, formatted_value)
+            if custom_props:
+                self._add_separator_row("Custom Properties")
+                for key in sorted(custom_props.keys()):
+                    value = custom_props[key]
+                    formatted_value = self._format_property_value(value)
+                    self._add_property_row(key, value, formatted_value)
                 
         else:
             # Multiple device selection - show common properties
@@ -638,18 +671,54 @@ class MainWindow(QMainWindow):
                     else:
                         self._add_property_row(prop, values, "<Multiple values>")
             
-            # Add a separator for custom properties
-            self._add_separator_row("Custom Properties")
+            # Get loaded plugin IDs for property categorization
+            plugin_ids = []
+            if hasattr(self.app, 'plugin_manager'):
+                for plugin_info in self.app.plugin_manager.get_plugins():
+                    if plugin_info.state and plugin_info.state.is_loaded and plugin_info.id:
+                        plugin_ids.append(plugin_info.id)
             
-            # Add custom properties (excluding core properties)
-            custom_props = sorted([k for k in all_properties.keys() if k not in core_props])
-            for key in custom_props:
-                values = all_properties[key]
-                if len(set(str(v) for v in values)) == 1:
-                    formatted_value = self._format_property_value(values[0])
-                    self._add_property_row(key, values[0], formatted_value)
-                else:
-                    self._add_property_row(key, values, "<Multiple values>")
+            # Separate remaining properties into plugin and custom
+            plugin_props = {}
+            custom_props = {}
+            
+            # Identify plugin properties
+            for key in sorted([k for k in all_properties.keys() if k not in core_props]):
+                is_plugin_prop = False
+                for plugin_id in plugin_ids:
+                    # Check common separator patterns
+                    if (key.startswith(f"{plugin_id}:") or 
+                        key.startswith(f"{plugin_id}.") or 
+                        key.startswith(f"{plugin_id}_")):
+                        plugin_props[key] = all_properties[key]
+                        is_plugin_prop = True
+                        break
+                
+                # If not a plugin property, it's a custom property
+                if not is_plugin_prop:
+                    custom_props[key] = all_properties[key]
+            
+            # Add plugin properties if any exist
+            if plugin_props:
+                self._add_separator_row("Plugin Properties")
+                for key in sorted(plugin_props.keys()):
+                    values = plugin_props[key]
+                    if len(set(str(v) for v in values)) == 1:
+                        formatted_value = self._format_property_value(values[0])
+                        self._add_property_row(key, values[0], formatted_value)
+                    else:
+                        self._add_property_row(key, values, "<Multiple values>")
+            
+            # Add custom properties
+            if custom_props:
+                self._add_separator_row("Custom Properties")
+                for key in sorted(custom_props.keys()):
+                    values = custom_props[key]
+                    if len(set(str(v) for v in values)) == 1:
+                        formatted_value = self._format_property_value(values[0])
+                        self._add_property_row(key, values[0], formatted_value)
+                    else:
+                        self._add_property_row(key, values, "<Multiple values>")
                     
         # Resize rows to contents
         self.properties_table.resizeRowsToContents()
