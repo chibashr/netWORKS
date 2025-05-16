@@ -1,7 +1,7 @@
 {
   "id": "command_manager",
   "name": "Command Manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Run and manage commands on network devices",
   "author": "NetWORKS",
   "entry_point": "command_manager.py",
@@ -15,6 +15,15 @@
     "system": []
   },
   "changelog": [
+    {
+      "version": "1.0.1",
+      "date": "2025-05-16",
+      "changes": [
+        "Fixed device groups display in Command Manager",
+        "Improved group handling with more robust device group detection",
+        "Better error handling for different group structures"
+      ]
+    },
     {
       "version": "1.0.0",
       "changes": [

@@ -614,6 +614,62 @@ class DeviceManager(QObject):
         """Get all groups"""
         return list(self.groups.values())
     
+    def get_device_groups_for_device(self, device_id):
+        """Get all groups that contain the specified device
+        
+        Args:
+            device_id: The device ID or Device object
+            
+        Returns:
+            list: List of DeviceGroup objects that contain the device
+        """
+        # Handle different input types
+        if isinstance(device_id, Device):
+            device = device_id
+            device_id = device.id
+        else:
+            device = self.get_device(device_id)
+            
+        if not device:
+            logger.warning(f"Device not found with ID: {device_id}")
+            return []
+            
+        # Find all groups that contain this device
+        device_groups = []
+        for group in self.groups.values():
+            # Check if device is in this group
+            if device in group.devices:
+                device_groups.append(group)
+            
+            # Check if device is in any subgroup
+            for subgroup in group.subgroups:
+                if self._check_device_in_group(device, subgroup):
+                    device_groups.append(subgroup)
+                    
+        logger.debug(f"Found {len(device_groups)} groups for device: {device_id}")
+        return device_groups
+        
+    def _check_device_in_group(self, device, group):
+        """Check if a device is in a group or any of its subgroups
+        
+        Args:
+            device: Device object
+            group: DeviceGroup object
+            
+        Returns:
+            bool: True if device is in the group or any subgroup, False otherwise
+        """
+        # Check if device is directly in this group
+        if device in group.devices:
+            return True
+            
+        # Check subgroups recursively
+        for subgroup in group.subgroups:
+            if self._check_device_in_group(device, subgroup):
+                return True
+                
+        return False
+    
     def add_device_to_group(self, device, group):
         """Add a device to a group"""
         if isinstance(device, str):

@@ -551,42 +551,41 @@ class CommandManagerPlugin(PluginInterface):
             # Get all devices from the selected groups
             all_devices = []
             for group in groups:
-                if 'devices' in group:
-                    for device in group['devices']:
+                try:
+                    # Get all devices in this group (more reliable now with DeviceGroup class)
+                    if hasattr(group, 'get_all_devices'):
+                        group_devices = group.get_all_devices()
+                    elif hasattr(group, 'devices'):
+                        group_devices = group.devices
+                    else:
+                        logger.warning(f"Unknown group structure, cannot get devices: {group}")
+                        continue
+                        
+                    # Add to all devices list, avoiding duplicates
+                    for device in group_devices:
                         if device not in all_devices:
                             all_devices.append(device)
+                            
+                except Exception as e:
+                    logger.error(f"Error getting devices from group: {e}")
             
             if not all_devices:
+                logger.warning("No devices found in selected groups")
                 QMessageBox.warning(
                     self.main_window,
                     "No Devices",
-                    "The selected groups do not contain any devices."
+                    "No devices found in the selected groups."
                 )
                 return
+                
+            logger.debug(f"Found {len(all_devices)} unique devices in selected groups")
             
             # Open command dialog with these devices
             from plugins.command_manager.ui.command_dialog import CommandDialog
-            if not hasattr(self, 'command_dialog') or not self.command_dialog:
-                self.command_dialog = CommandDialog(self, all_devices, self.main_window)
-            else:
-                self.command_dialog.set_selected_devices(all_devices)
-                
+            self.command_dialog = CommandDialog(self, devices=all_devices, parent=self.main_window)
             self.command_dialog.show()
-            self.command_dialog.raise_()
-            self.command_dialog.activateWindow()
-            
-            # Switch to the Groups tab and select the groups
-            self.command_dialog.target_tabs.setCurrentIndex(1)
-            
-            # Select the groups in the group table
-            self.command_dialog.group_table.clearSelection()
-            for row in range(self.command_dialog.group_table.rowCount()):
-                group_item = self.command_dialog.group_table.item(row, 0)
-                if group_item and group_item.data(Qt.UserRole) in groups:
-                    self.command_dialog.group_table.selectRow(row)
-            
         except Exception as e:
-            logger.error(f"Error opening command dialog for groups: {e}")
+            logger.error(f"Error opening command dialog for group: {e}")
             logger.exception("Exception details:")
             
             # Show error dialog
@@ -719,7 +718,7 @@ class CommandManagerPlugin(PluginInterface):
         Args:
             device_id: The device ID
             device_ip: The device IP address (for subnet matching)
-            groups: List of group names the device belongs to
+            groups: Optional list of group names the device belongs to
             
         Returns:
             dict: Credentials dictionary or None if not found
@@ -729,8 +728,48 @@ class CommandManagerPlugin(PluginInterface):
         if not self.credential_store:
             logger.error("Credential store is not available")
             return None
+        
+        # 1. First try device-specific credentials
+        device_credentials = self.credential_store.get_device_credentials(device_id)
+        if device_credentials:
+            logger.debug(f"Found device-specific credentials for {device_id}")
+            return device_credentials
             
-        return self.credential_store.get_device_credentials(device_id)
+        # 2. If no device credentials, try group credentials
+        if self.device_manager:
+            try:
+                # Get all groups this device belongs to using new method
+                device_groups = self.device_manager.get_device_groups_for_device(device_id)
+                
+                if device_groups:
+                    logger.debug(f"Found {len(device_groups)} groups for device {device_id}")
+                    
+                    # Try each group's credentials
+                    for group in device_groups:
+                        group_name = group.name if hasattr(group, 'name') else str(group)
+                        group_credentials = self.credential_store.get_group_credentials(group_name)
+                        if group_credentials:
+                            logger.debug(f"Using credentials from group '{group_name}' for device {device_id}")
+                            return group_credentials
+            except Exception as e:
+                logger.error(f"Error getting group credentials for device {device_id}: {e}")
+                
+        # 3. If still no credentials, try subnet matching
+        if device_ip:
+            try:
+                # Extract subnet from IP
+                parts = device_ip.split('.')
+                if len(parts) == 4:
+                    subnet = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+                    subnet_credentials = self.credential_store.get_subnet_credentials(subnet)
+                    if subnet_credentials:
+                        logger.debug(f"Using credentials from subnet {subnet} for device {device_id}")
+                        return subnet_credentials
+            except Exception as e:
+                logger.error(f"Error getting subnet credentials: {e}")
+                
+        logger.debug(f"No credentials found for device {device_id}")
+        return None
         
     def get_group_credentials(self, group_name):
         """Get credentials for a device group

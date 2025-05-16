@@ -55,18 +55,30 @@ class CommandWorker(QObject):
                 break
                 
             # Get device properties for better logging
-            device_name = device.get_property("alias", "Unnamed Device")
+            device_name = device.get_property("alias", device.get_property("hostname", "Unknown Device"))
             device_ip = device.get_property("ip_address", "Unknown IP")
             logger.debug(f"Processing device: {device_name} ({device_ip})")
             
             # Get device groups if available
             device_groups = []
-            if hasattr(self.plugin.device_manager, 'get_device_groups_for_device'):
-                try:
-                    device_groups = self.plugin.device_manager.get_device_groups_for_device(device.id)
-                    logger.debug(f"Device {device_name} is in groups: {[g['name'] for g in device_groups]}")
-                except Exception as e:
-                    logger.error(f"Error getting device groups for device {device_name}: {e}")
+            try:
+                device_groups = self.plugin.device_manager.get_device_groups_for_device(device.id)
+                
+                # Extract group names for logging
+                group_names = []
+                for group in device_groups:
+                    if isinstance(group, dict) and 'name' in group:
+                        group_names.append(group['name'])
+                    elif hasattr(group, 'name'):
+                        group_names.append(group.name)
+                    elif hasattr(group, 'get_name'):
+                        group_names.append(group.get_name())
+                    else:
+                        group_names.append(str(group))
+                
+                logger.debug(f"Device {device_name} is in groups: {group_names}")
+            except Exception as e:
+                logger.error(f"Error getting device groups for device {device_name}: {e}")
             
             # Try to get credentials in this order:
             # 1. Device-specific credentials
@@ -79,11 +91,26 @@ class CommandWorker(QObject):
             # If no device credentials, try group credentials
             if not credentials and device_groups:
                 for group in device_groups:
-                    group_credentials = self.plugin.get_group_credentials(group['name'])
-                    if group_credentials:
-                        logger.debug(f"Using group credentials from '{group['name']}' for device: {device_name}")
-                        credentials = group_credentials
-                        break
+                    try:
+                        # Get group name based on structure
+                        group_name = None
+                        if isinstance(group, dict) and 'name' in group:
+                            group_name = group['name']
+                        elif hasattr(group, 'name'):
+                            group_name = group.name
+                        elif hasattr(group, 'get_name'):
+                            group_name = group.get_name()
+                        else:
+                            group_name = str(group)
+                            
+                        # Get credentials for this group
+                        group_credentials = self.plugin.get_group_credentials(group_name)
+                        if group_credentials:
+                            logger.debug(f"Using group credentials from '{group_name}' for device: {device_name}")
+                            credentials = group_credentials
+                            break
+                    except Exception as e:
+                        logger.error(f"Error getting credentials for group: {e}")
             
             # If still no credentials, try subnet credentials
             if not credentials and device_ip:
@@ -455,22 +482,61 @@ class CommandDialog(QDialog):
             self.device_table.setItem(i, 1, ip_item)
         
         # Add device groups
-        if hasattr(self.plugin.device_manager, 'get_device_groups'):
-            try:
-                device_groups = self.plugin.device_manager.get_device_groups()
+        try:
+            # Always use the get_groups method directly now that we know it exists
+            device_groups = self.plugin.device_manager.get_groups()
+            logger.debug(f"Retrieved {len(device_groups)} device groups")
+            
+            if device_groups:
                 self.group_table.setRowCount(len(device_groups))
                 
                 for i, group in enumerate(device_groups):
-                    # Group name
-                    name_item = QTableWidgetItem(group['name'])
-                    name_item.setData(Qt.UserRole, group)  # Store group object in the item
-                    self.group_table.setItem(i, 0, name_item)
-                    
-                    # Device count
-                    count_item = QTableWidgetItem(str(len(group['devices'])))
-                    self.group_table.setItem(i, 1, count_item)
-            except Exception as e:
-                logger.error(f"Error getting device groups: {e}")
+                    try:
+                        # Handle different possible group structures
+                        group_name = None
+                        device_count = 0
+                        
+                        # Try to get group name
+                        if isinstance(group, dict) and 'name' in group:
+                            group_name = group['name']
+                        elif hasattr(group, 'name'):
+                            group_name = group.name
+                        elif hasattr(group, 'get_name'):
+                            group_name = group.get_name()
+                        else:
+                            # Use string representation as fallback
+                            group_name = str(group)
+                            logger.warning(f"Group missing name attribute, using {group_name}")
+                        
+                        # Try to get device count
+                        if isinstance(group, dict) and 'devices' in group:
+                            device_count = len(group['devices'])
+                        elif hasattr(group, 'devices'):
+                            device_count = len(group.devices)
+                        elif hasattr(group, 'get_devices'):
+                            device_count = len(group.get_devices())
+                        elif hasattr(group, 'device_count'):
+                            device_count = group.device_count
+                        elif hasattr(group, 'get_device_count'):
+                            device_count = group.get_device_count()
+                        else:
+                            logger.warning(f"Could not determine device count for group {group_name}")
+                        
+                        # Create table items
+                        name_item = QTableWidgetItem(group_name)
+                        name_item.setData(Qt.UserRole, group)  # Store group object in the item
+                        self.group_table.setItem(i, 0, name_item)
+                        
+                        count_item = QTableWidgetItem(str(device_count))
+                        self.group_table.setItem(i, 1, count_item)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing group at index {i}: {e}")
+            else:
+                logger.debug("No device groups found")
+        except Exception as e:
+            logger.error(f"Error getting device groups: {e}")
+            logger.exception("Exception details:")
         
         # Add subnets (group devices by subnet)
         try:
@@ -711,10 +777,29 @@ class CommandDialog(QDialog):
                 group_item = self.group_table.item(row, 0)
                 if group_item:
                     group = group_item.data(Qt.UserRole)
-                    if group and 'devices' in group:
-                        for device in group['devices']:
-                            if device not in selected_devices:
-                                selected_devices.append(device)
+                    if group:
+                        # Extract devices from the group based on its structure
+                        try:
+                            group_devices = []
+                            
+                            # Handle different group structure types
+                            if isinstance(group, dict) and 'devices' in group:
+                                group_devices = group['devices']
+                            elif hasattr(group, 'devices'):
+                                group_devices = group.devices
+                            elif hasattr(group, 'get_devices'):
+                                group_devices = group.get_devices()
+                            
+                            # Add devices to selected_devices list
+                            if group_devices:
+                                logger.debug(f"Adding {len(group_devices)} devices from group")
+                                for device in group_devices:
+                                    if device not in selected_devices:
+                                        selected_devices.append(device)
+                            else:
+                                logger.warning(f"No devices found in group")
+                        except Exception as e:
+                            logger.error(f"Error extracting devices from group: {e}")
         elif current_tab == self.target_tabs.widget(2):  # Subnets tab
             # Get devices from selected subnets
             for item in self.subnet_table.selectedItems():
@@ -778,10 +863,29 @@ class CommandDialog(QDialog):
                 group_item = self.group_table.item(row, 0)
                 if group_item:
                     group = group_item.data(Qt.UserRole)
-                    if group and 'devices' in group:
-                        for device in group['devices']:
-                            if device not in selected_devices:
-                                selected_devices.append(device)
+                    if group:
+                        # Extract devices from the group based on its structure
+                        try:
+                            group_devices = []
+                            
+                            # Handle different group structure types
+                            if isinstance(group, dict) and 'devices' in group:
+                                group_devices = group['devices']
+                            elif hasattr(group, 'devices'):
+                                group_devices = group.devices
+                            elif hasattr(group, 'get_devices'):
+                                group_devices = group.get_devices()
+                            
+                            # Add devices to selected_devices list
+                            if group_devices:
+                                logger.debug(f"Adding {len(group_devices)} devices from group")
+                                for device in group_devices:
+                                    if device not in selected_devices:
+                                        selected_devices.append(device)
+                            else:
+                                logger.warning(f"No devices found in group")
+                        except Exception as e:
+                            logger.error(f"Error extracting devices from group: {e}")
         elif current_tab == self.target_tabs.widget(2):  # Subnets tab
             # Get devices from selected subnets
             for item in self.subnet_table.selectedItems():

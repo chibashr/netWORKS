@@ -411,18 +411,48 @@ class CredentialManager(QDialog):
         self.group_list.clear()
         
         # Get all device groups if available
-        if hasattr(self.plugin.device_manager, 'get_device_groups'):
-            try:
-                device_groups = self.plugin.device_manager.get_device_groups()
-                
-                for group in device_groups:
+        try:
+            device_groups = self.plugin.device_manager.get_groups()
+            logger.debug(f"Retrieved {len(device_groups)} device groups")
+            
+            for group in device_groups:
+                try:
+                    # Handle different possible group structures
+                    group_name = None
+                    device_count = 0
+                    
+                    # Try to get group name
+                    if isinstance(group, dict) and 'name' in group:
+                        group_name = group['name']
+                    elif hasattr(group, 'name'):
+                        group_name = group.name
+                    elif hasattr(group, 'get_name'):
+                        group_name = group.get_name()
+                    else:
+                        # Use string representation as fallback
+                        group_name = str(group)
+                        logger.warning(f"Group missing name attribute, using {group_name}")
+                    
+                    # Try to get device count
+                    if isinstance(group, dict) and 'devices' in group:
+                        device_count = len(group['devices'])
+                    elif hasattr(group, 'devices'):
+                        device_count = len(group.devices)
+                    elif hasattr(group, 'get_devices'):
+                        device_count = len(group.get_devices())
+                    elif hasattr(group, 'device_count'):
+                        device_count = group.device_count
+                    elif hasattr(group, 'get_device_count'):
+                        device_count = group.get_device_count()
+                    else:
+                        logger.warning(f"Could not determine device count for group {group_name}")
+                    
                     # Create list item with group info
-                    device_count = len(group['devices']) if 'devices' in group else 0
-                    item = QListWidgetItem(f"{group['name']} ({device_count} devices)")
+                    item = QListWidgetItem(f"{group_name} ({device_count} devices)")
                     item.setData(Qt.UserRole, group)
                     
                     # Check if credentials exist for this group
-                    has_creds = bool(self.plugin.credential_store.get_group_credentials(group['name']))
+                    has_creds = bool(self.plugin.credential_store.get_group_credentials(group_name))
                     
                     # Set font weight based on credential status
                     font = item.font()
@@ -431,23 +461,50 @@ class CredentialManager(QDialog):
                     
                     # Add to list
                     self.group_list.addItem(item)
-                
-                # Select the first group if any are available
-                if self.group_list.count() > 0 and not self.selected_groups:
-                    self.group_list.setCurrentRow(0)
-                
-                # If specific groups were provided, select the first one
-                if self.selected_groups:
-                    # Find and select the item
-                    for i in range(self.group_list.count()):
-                        item = self.group_list.item(i)
-                        group_data = item.data(Qt.UserRole)
-                        if group_data['name'] == self.selected_groups[0]['name']:
-                            self.group_list.setCurrentItem(item)
-                            break
-            except Exception as e:
-                from loguru import logger
-                logger.error(f"Error loading device groups: {e}")
+                except Exception as e:
+                    logger.error(f"Error processing group: {e}")
+            
+            # Select the first group if any are available
+            if self.group_list.count() > 0 and not self.selected_groups:
+                self.group_list.setCurrentRow(0)
+            
+            # If specific groups were provided, select the first one
+            if self.selected_groups:
+                # Find and select the item
+                for i in range(self.group_list.count()):
+                    item = self.group_list.item(i)
+                    group_data = item.data(Qt.UserRole)
+                    
+                    # Compare based on group name which is more reliable than object reference
+                    selected_group = self.selected_groups[0]
+                    selected_group_name = None
+                    
+                    if isinstance(selected_group, dict) and 'name' in selected_group:
+                        selected_group_name = selected_group['name']
+                    elif hasattr(selected_group, 'name'):
+                        selected_group_name = selected_group.name
+                    elif hasattr(selected_group, 'get_name'):
+                        selected_group_name = selected_group.get_name()
+                        
+                    # Get name of the current group item
+                    current_group = group_data
+                    current_group_name = None
+                    
+                    if isinstance(current_group, dict) and 'name' in current_group:
+                        current_group_name = current_group['name']
+                    elif hasattr(current_group, 'name'):
+                        current_group_name = current_group.name
+                    elif hasattr(current_group, 'get_name'):
+                        current_group_name = current_group.get_name()
+                        
+                    # Compare names
+                    if selected_group_name and current_group_name and selected_group_name == current_group_name:
+                        self.group_list.setCurrentItem(item)
+                        break
+        except Exception as e:
+            from loguru import logger
+            logger.error(f"Error loading device groups: {e}")
+            logger.exception("Exception details:")
     
     def _load_subnets(self):
         """Load subnets into the list"""

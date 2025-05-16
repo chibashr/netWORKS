@@ -46,12 +46,14 @@ Each command in a command set can include:
 
 ### Device Groups and Subnets
 
-You can now run commands on device groups and subnets as well:
+You can now run commands on device groups and subnets:
 
 1. Use the "Groups" or "Subnets" tab in the Command Dialog
 2. Select the groups or subnets you want to target
-3. Choose the commands to run
+3. Choose the command set and commands to run
 4. Click "Run Selected" or "Run All"
+
+The Command Manager now uses the DeviceManager's `get_device_groups_for_device()` method to determine which groups a device belongs to, providing more reliable detection of group membership. This enables more accurate credential fallback from device to group to subnet.
 
 ### Managing Credentials
 

@@ -303,4 +303,36 @@ The plugin also adds the following context menu items to the device group and su
 - "Run Commands on Group" - Open the Command Dialog for devices in the selected groups
 - "Manage Group Credentials" - Open the Credential Manager for the selected groups
 - "Run Commands on Subnet" - Open the Command Dialog for devices in the selected subnets
-- "Manage Subnet Credentials" - Open the Credential Manager for the selected subnets 
+- "Manage Subnet Credentials" - Open the Credential Manager for the selected subnets
+
+## Device Groups Integration
+
+The Command Manager plugin can now work with device groups in the following ways:
+
+1. **Running Commands on Groups**: You can select a device group and run commands on all devices in that group.
+
+2. **Group Credentials**: You can set credentials at the group level, which will be used for any device in the group that doesn't have its own credentials.
+
+3. **Group-to-Device Fallback**: When running commands, the plugin will check for credentials in the following order:
+   - Device-specific credentials
+   - Group credentials (for any groups the device belongs to)
+   - Subnet credentials (based on the device's IP address)
+
+The plugin uses the device manager's `get_device_groups_for_device()` method to determine which groups a device belongs to.
+
+### Using Device Groups in Your Plugin
+
+To implement similar functionality in your plugin, you can use:
+
+```python
+# Get all groups a device belongs to
+device_groups = self.device_manager.get_device_groups_for_device(device.id)
+
+# Check if a device is in a specific group
+is_in_group = any(group.name == "MyGroup" for group in device_groups)
+
+# Get all devices in a group
+group = self.device_manager.get_group("MyGroup")
+if group:
+    devices = group.get_all_devices()  # Includes devices in subgroups
+``` 
