@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, 
     QSplitter, QTextEdit, QMenu, QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QProgressBar, QWidget,
-    QCheckBox, QGroupBox, QFormLayout, QDialogButtonBox
+    QCheckBox, QGroupBox, QFormLayout, QDialogButtonBox, QTabWidget
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QTextCursor
 
@@ -59,8 +59,42 @@ class CommandWorker(QObject):
             device_ip = device.get_property("ip_address", "Unknown IP")
             logger.debug(f"Processing device: {device_name} ({device_ip})")
             
-            # Get credentials for the device - include IP for subnet matching
+            # Get device groups if available
+            device_groups = []
+            if hasattr(self.plugin.device_manager, 'get_device_groups_for_device'):
+                try:
+                    device_groups = self.plugin.device_manager.get_device_groups_for_device(device.id)
+                    logger.debug(f"Device {device_name} is in groups: {[g['name'] for g in device_groups]}")
+                except Exception as e:
+                    logger.error(f"Error getting device groups for device {device_name}: {e}")
+            
+            # Try to get credentials in this order:
+            # 1. Device-specific credentials
+            # 2. Group credentials (if device is in any groups)
+            # 3. Subnet credentials
+            
+            # Get device-specific credentials
             credentials = self.plugin.get_device_credentials(device.id, device_ip)
+            
+            # If no device credentials, try group credentials
+            if not credentials and device_groups:
+                for group in device_groups:
+                    group_credentials = self.plugin.get_group_credentials(group['name'])
+                    if group_credentials:
+                        logger.debug(f"Using group credentials from '{group['name']}' for device: {device_name}")
+                        credentials = group_credentials
+                        break
+            
+            # If still no credentials, try subnet credentials
+            if not credentials and device_ip:
+                # Extract subnet
+                parts = device_ip.split('.')
+                if len(parts) == 4:
+                    subnet = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+                    subnet_credentials = self.plugin.get_subnet_credentials(subnet)
+                    if subnet_credentials:
+                        logger.debug(f"Using subnet credentials from '{subnet}' for device: {device_name}")
+                        credentials = subnet_credentials
             
             if not credentials:
                 logger.warning(f"No credentials found for device: {device_name} ({device_ip})")
@@ -193,6 +227,14 @@ class CommandDialog(QDialog):
         device_layout = QVBoxLayout(device_panel)
         device_layout.setContentsMargins(0, 0, 0, 0)
         
+        # Add target selection tabs
+        self.target_tabs = QTabWidget()
+        
+        # Device tab
+        device_tab = QWidget()
+        device_tab_layout = QVBoxLayout(device_tab)
+        device_tab_layout.setContentsMargins(5, 5, 5, 5)
+        
         device_label = QLabel("Devices:")
         self.device_table = QTableWidget()
         self.device_table.setColumnCount(2)
@@ -201,6 +243,48 @@ class CommandDialog(QDialog):
         self.device_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.device_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.device_table.setSelectionMode(QTableWidget.MultiSelection)
+        
+        device_tab_layout.addWidget(device_label)
+        device_tab_layout.addWidget(self.device_table)
+        
+        # Group tab
+        group_tab = QWidget()
+        group_tab_layout = QVBoxLayout(group_tab)
+        group_tab_layout.setContentsMargins(5, 5, 5, 5)
+        
+        group_label = QLabel("Device Groups:")
+        self.group_table = QTableWidget()
+        self.group_table.setColumnCount(2)
+        self.group_table.setHorizontalHeaderLabels(["Group Name", "Device Count"])
+        self.group_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.group_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.group_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.group_table.setSelectionMode(QTableWidget.MultiSelection)
+        
+        group_tab_layout.addWidget(group_label)
+        group_tab_layout.addWidget(self.group_table)
+        
+        # Subnet tab
+        subnet_tab = QWidget()
+        subnet_tab_layout = QVBoxLayout(subnet_tab)
+        subnet_tab_layout.setContentsMargins(5, 5, 5, 5)
+        
+        subnet_label = QLabel("Subnets:")
+        self.subnet_table = QTableWidget()
+        self.subnet_table.setColumnCount(2)
+        self.subnet_table.setHorizontalHeaderLabels(["Subnet", "Device Count"])
+        self.subnet_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.subnet_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.subnet_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.subnet_table.setSelectionMode(QTableWidget.MultiSelection)
+        
+        subnet_tab_layout.addWidget(subnet_label)
+        subnet_tab_layout.addWidget(self.subnet_table)
+        
+        # Add tabs to tab widget
+        self.target_tabs.addTab(device_tab, "Devices")
+        self.target_tabs.addTab(group_tab, "Groups")
+        self.target_tabs.addTab(subnet_tab, "Subnets")
         
         # Add Credential Manager button below the device list
         device_cred_layout = QHBoxLayout()
@@ -217,8 +301,7 @@ class CommandDialog(QDialog):
         device_cred_layout.addWidget(self.batch_export_btn)
         device_cred_layout.addStretch()
         
-        device_layout.addWidget(device_label)
-        device_layout.addWidget(self.device_table)
+        device_layout.addWidget(self.target_tabs)
         device_layout.addLayout(device_cred_layout)
         
         # Command list panel
@@ -343,28 +426,81 @@ class CommandDialog(QDialog):
         
     def refresh_devices(self):
         """Refresh the device list"""
-        # Clear existing devices
+        from loguru import logger
+        logger.debug("Refreshing device list")
+        
+        # Clear existing items
         self.device_table.setRowCount(0)
+        self.group_table.setRowCount(0)
+        self.subnet_table.setRowCount(0)
         
-        # Get all devices
+        if not self.plugin.device_manager:
+            logger.error("Device manager not available")
+            return
+        
+        # Add devices
         devices = self.plugin.device_manager.get_devices()
+        self.device_table.setRowCount(len(devices))
         
-        # Add devices to table
-        for device in devices:
-            row = self.device_table.rowCount()
-            self.device_table.insertRow(row)
+        for i, device in enumerate(devices):
+            # Device name (use alias if available, otherwise hostname, otherwise name)
+            name = device.get_property("alias", device.get_property("hostname", device.name))
+            name_item = QTableWidgetItem(name)
+            name_item.setData(Qt.UserRole, device)  # Store device object in the item
+            self.device_table.setItem(i, 0, name_item)
             
-            # Device info
-            alias = QTableWidgetItem(device.get_property("alias", "Unnamed Device"))
-            ip_address = QTableWidgetItem(device.get_property("ip_address", ""))
+            # IP address
+            ip = device.get_property("ip_address", "")
+            ip_item = QTableWidgetItem(ip)
+            self.device_table.setItem(i, 1, ip_item)
+        
+        # Add device groups
+        if hasattr(self.plugin.device_manager, 'get_device_groups'):
+            try:
+                device_groups = self.plugin.device_manager.get_device_groups()
+                self.group_table.setRowCount(len(device_groups))
+                
+                for i, group in enumerate(device_groups):
+                    # Group name
+                    name_item = QTableWidgetItem(group['name'])
+                    name_item.setData(Qt.UserRole, group)  # Store group object in the item
+                    self.group_table.setItem(i, 0, name_item)
+                    
+                    # Device count
+                    count_item = QTableWidgetItem(str(len(group['devices'])))
+                    self.group_table.setItem(i, 1, count_item)
+            except Exception as e:
+                logger.error(f"Error getting device groups: {e}")
+        
+        # Add subnets (group devices by subnet)
+        try:
+            subnets = {}
+            for device in devices:
+                ip = device.get_property("ip_address", "")
+                if ip:
+                    # Extract subnet (first three octets)
+                    parts = ip.split('.')
+                    if len(parts) == 4:
+                        subnet = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+                        if subnet not in subnets:
+                            subnets[subnet] = []
+                        subnets[subnet].append(device)
             
-            # Store device ID
-            alias.setData(Qt.UserRole, device.id)
+            self.subnet_table.setRowCount(len(subnets))
             
-            # Add to table
-            self.device_table.setItem(row, 0, alias)
-            self.device_table.setItem(row, 1, ip_address)
-            
+            for i, (subnet, subnet_devices) in enumerate(subnets.items()):
+                # Subnet
+                subnet_item = QTableWidgetItem(subnet)
+                subnet_info = {'subnet': subnet, 'devices': subnet_devices}
+                subnet_item.setData(Qt.UserRole, subnet_info)
+                self.subnet_table.setItem(i, 0, subnet_item)
+                
+                # Device count
+                count_item = QTableWidgetItem(str(len(subnet_devices)))
+                self.subnet_table.setItem(i, 1, count_item)
+        except Exception as e:
+            logger.error(f"Error grouping devices by subnet: {e}")
+        
     def refresh_command_sets(self):
         """Refresh the command set selectors"""
         # Block signals
@@ -536,95 +672,140 @@ class CommandDialog(QDialog):
             )
             
     def _on_run_selected(self):
-        """Handle run selected commands button"""
-        # Get selected devices
-        selected_devices = []
-        for item in self.device_table.selectedItems():
-            # Make sure we only count each row once
-            if item.column() == 0:
-                device_id = item.data(Qt.UserRole)
-                device = self.plugin.device_manager.get_device(device_id)
-                if device and device not in selected_devices:
-                    selected_devices.append(device)
+        """Run selected commands on selected devices"""
+        from loguru import logger
         
-        # Check if any devices are selected
-        if not selected_devices:
-            QMessageBox.warning(
-                self,
-                "No Devices Selected",
-                "Please select one or more devices to run commands on."
-            )
-            return
-            
+        # Get selected target type
+        current_tab = self.target_tabs.currentWidget()
+        
         # Get selected commands
         selected_commands = []
         for item in self.command_table.selectedItems():
-            # Make sure we only count each row once
-            if item.column() == 0:
-                command_data = item.data(Qt.UserRole)
-                if command_data and command_data not in selected_commands:
-                    selected_commands.append(command_data)
+            row = item.row()
+            # Only process each row once (in case multiple cells in the row are selected)
+            if row not in [command["row"] for command in selected_commands]:
+                command_item = self.command_table.item(row, 0)
+                if command_item:
+                    command_data = command_item.data(Qt.UserRole)
+                    if command_data:
+                        command_data["row"] = row
+                        selected_commands.append(command_data)
         
-        # Check if any commands are selected
         if not selected_commands:
-            QMessageBox.warning(
-                self,
-                "No Commands Selected",
-                "Please select one or more commands to run."
-            )
+            QMessageBox.warning(self, "No Commands Selected", "Please select at least one command to run.")
             return
-            
-        # Get command set
+        
+        # Get selected target devices based on the active tab
+        selected_devices = []
+        if current_tab == self.target_tabs.widget(0):  # Devices tab
+            # Get selected devices
+            for item in self.device_table.selectedItems():
+                row = item.row()
+                device_item = self.device_table.item(row, 0)
+                if device_item and device_item.data(Qt.UserRole) not in selected_devices:
+                    selected_devices.append(device_item.data(Qt.UserRole))
+        elif current_tab == self.target_tabs.widget(1):  # Groups tab
+            # Get devices from selected groups
+            for item in self.group_table.selectedItems():
+                row = item.row()
+                group_item = self.group_table.item(row, 0)
+                if group_item:
+                    group = group_item.data(Qt.UserRole)
+                    if group and 'devices' in group:
+                        for device in group['devices']:
+                            if device not in selected_devices:
+                                selected_devices.append(device)
+        elif current_tab == self.target_tabs.widget(2):  # Subnets tab
+            # Get devices from selected subnets
+            for item in self.subnet_table.selectedItems():
+                row = item.row()
+                subnet_item = self.subnet_table.item(row, 0)
+                if subnet_item:
+                    subnet_info = subnet_item.data(Qt.UserRole)
+                    if subnet_info and 'devices' in subnet_info:
+                        for device in subnet_info['devices']:
+                            if device not in selected_devices:
+                                selected_devices.append(device)
+        
+        if not selected_devices:
+            QMessageBox.warning(self, "No Devices Selected", "Please select at least one device to run commands on.")
+            return
+        
+        # Get current command set
         device_type = self.device_type_combo.currentText()
         firmware = self.firmware_combo.currentText()
-        command_set = self.plugin.get_command_set(device_type, firmware)
+        command_set = None
+        if device_type and firmware:
+            command_set = self.plugin.get_command_set(device_type, firmware)
         
-        # Run commands
+        # Run the commands
         self._run_commands(selected_devices, selected_commands, command_set)
-        
+
     def _on_run_all(self):
-        """Handle run all commands button"""
-        # Get selected devices
-        selected_devices = []
-        for item in self.device_table.selectedItems():
-            # Make sure we only count each row once
-            if item.column() == 0:
-                device_id = item.data(Qt.UserRole)
-                device = self.plugin.device_manager.get_device(device_id)
-                if device and device not in selected_devices:
-                    selected_devices.append(device)
+        """Run all commands on selected devices"""
+        from loguru import logger
         
-        # Check if any devices are selected
-        if not selected_devices:
-            QMessageBox.warning(
-                self,
-                "No Devices Selected",
-                "Please select one or more devices to run commands on."
-            )
-            return
-            
+        # Get selected target type
+        current_tab = self.target_tabs.currentWidget()
+        
         # Get all commands
         all_commands = []
         for row in range(self.command_table.rowCount()):
-            command_data = self.command_table.item(row, 0).data(Qt.UserRole)
-            if command_data:
-                all_commands.append(command_data)
+            command_item = self.command_table.item(row, 0)
+            if command_item:
+                command_data = command_item.data(Qt.UserRole)
+                if command_data:
+                    command_data["row"] = row
+                    all_commands.append(command_data)
         
-        # Check if any commands are available
         if not all_commands:
-            QMessageBox.warning(
-                self,
-                "No Commands Available",
-                "No commands are available in the selected command set."
-            )
+            QMessageBox.warning(self, "No Commands Available", "There are no commands available to run.")
             return
-            
-        # Get command set
+        
+        # Get selected target devices based on the active tab
+        selected_devices = []
+        if current_tab == self.target_tabs.widget(0):  # Devices tab
+            # Get selected devices
+            for item in self.device_table.selectedItems():
+                row = item.row()
+                device_item = self.device_table.item(row, 0)
+                if device_item and device_item.data(Qt.UserRole) not in selected_devices:
+                    selected_devices.append(device_item.data(Qt.UserRole))
+        elif current_tab == self.target_tabs.widget(1):  # Groups tab
+            # Get devices from selected groups
+            for item in self.group_table.selectedItems():
+                row = item.row()
+                group_item = self.group_table.item(row, 0)
+                if group_item:
+                    group = group_item.data(Qt.UserRole)
+                    if group and 'devices' in group:
+                        for device in group['devices']:
+                            if device not in selected_devices:
+                                selected_devices.append(device)
+        elif current_tab == self.target_tabs.widget(2):  # Subnets tab
+            # Get devices from selected subnets
+            for item in self.subnet_table.selectedItems():
+                row = item.row()
+                subnet_item = self.subnet_table.item(row, 0)
+                if subnet_item:
+                    subnet_info = subnet_item.data(Qt.UserRole)
+                    if subnet_info and 'devices' in subnet_info:
+                        for device in subnet_info['devices']:
+                            if device not in selected_devices:
+                                selected_devices.append(device)
+        
+        if not selected_devices:
+            QMessageBox.warning(self, "No Devices Selected", "Please select at least one device to run commands on.")
+            return
+        
+        # Get current command set
         device_type = self.device_type_combo.currentText()
         firmware = self.firmware_combo.currentText()
-        command_set = self.plugin.get_command_set(device_type, firmware)
+        command_set = None
+        if device_type and firmware:
+            command_set = self.plugin.get_command_set(device_type, firmware)
         
-        # Run commands
+        # Run the commands
         self._run_commands(selected_devices, all_commands, command_set)
         
     def _run_commands(self, devices, commands, command_set=None):
@@ -785,22 +966,21 @@ class CommandDialog(QDialog):
             )
             
     def set_selected_devices(self, devices):
-        """Set the selected devices"""
-        # Clear existing selections
+        """Set the selected devices in the table
+        
+        Args:
+            devices: List of device objects to select
+        """
+        # Switch to the Devices tab
+        self.target_tabs.setCurrentIndex(0)
+        
+        # Select the devices in the table
         self.device_table.clearSelection()
         
-        # Fix: Ensure devices is a list
-        if not isinstance(devices, list):
-            # Convert to a list with a single device
-            devices = [devices]
-        
-        # Select devices
-        for device in devices:
-            for row in range(self.device_table.rowCount()):
-                device_id = self.device_table.item(row, 0).data(Qt.UserRole)
-                if device_id == device.id:
-                    self.device_table.selectRow(row)
-                    break
+        for row in range(self.device_table.rowCount()):
+            device_item = self.device_table.item(row, 0)
+            if device_item and device_item.data(Qt.UserRole) in devices:
+                self.device_table.selectRow(row)
                     
     def closeEvent(self, event):
         """Handle dialog close event"""

@@ -178,6 +178,44 @@ def register_context_menu(plugin):
             logger.debug("Context menu actions registered successfully")
         else:
             logger.warning("device_table not found in main_window")
+        
+        # Register context menu actions for device groups if available
+        if hasattr(plugin.main_window, 'device_group_table'):
+            logger.debug("Registering context menu actions with device group table")
+            # Register command manager action for groups
+            plugin.main_window.device_group_table.register_context_menu_action(
+                "Run Commands on Group",
+                plugin._on_group_context_run_commands,
+                priority=550
+            )
+            
+            # Register credential manager action for groups
+            plugin.main_window.device_group_table.register_context_menu_action(
+                "Manage Group Credentials",
+                plugin._on_group_context_credentials,
+                priority=560
+            )
+            
+            logger.debug("Group context menu actions registered successfully")
+        
+        # Register context menu actions for subnets view if available
+        if hasattr(plugin.main_window, 'subnet_table'):
+            logger.debug("Registering context menu actions with subnet table")
+            # Register command manager action for subnets
+            plugin.main_window.subnet_table.register_context_menu_action(
+                "Run Commands on Subnet",
+                plugin._on_subnet_context_run_commands,
+                priority=550
+            )
+            
+            # Register credential manager action for subnets
+            plugin.main_window.subnet_table.register_context_menu_action(
+                "Manage Subnet Credentials",
+                plugin._on_subnet_context_credentials,
+                priority=560
+            )
+            
+            logger.debug("Subnet context menu actions registered successfully")
     except Exception as e:
         logger.error(f"Error registering context menu actions: {e}")
         logger.exception("Exception details:")

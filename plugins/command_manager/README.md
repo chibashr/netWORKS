@@ -6,12 +6,13 @@ The Command Manager plugin provides a powerful interface for running commands on
 
 ## Features
 
-- Run pre-defined or custom commands on network devices
-- Store and manage command outputs for later reference
-- Secure credential management for device access
-- Command templates with variable substitution
+- Run commands on multiple devices in parallel
+- Save command output for later analysis
+- Organize commands into reusable sets
+- Syntax highlighting for command output
+- Credential management for device access
 - Export command outputs to files
-- Command sets for different device types and firmware versions
+- Support for running commands on device groups and subnets
 
 ## Credential Management
 
@@ -37,10 +38,20 @@ Each command in a command set can include:
 
 ### Running Commands
 
-1. Select one or more devices in the device table
-2. Right-click and select "Run Commands" or use the toolbar button
-3. Select commands from the available command sets
-4. Click "Run" to execute the commands on the selected devices
+1. Select one or more devices in the main application
+2. Right-click and select "Run Commands"
+3. Choose the command set appropriate for your devices
+4. Select commands to run
+5. Click "Run Selected" or "Run All"
+
+### Device Groups and Subnets
+
+You can now run commands on device groups and subnets as well:
+
+1. Use the "Groups" or "Subnets" tab in the Command Dialog
+2. Select the groups or subnets you want to target
+3. Choose the commands to run
+4. Click "Run Selected" or "Run All"
 
 ### Managing Credentials
 

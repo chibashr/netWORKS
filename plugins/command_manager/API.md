@@ -227,4 +227,80 @@ def get_menu_actions(self):
             self.credential_manager_action
         ]
     }
-``` 
+```
+
+## Public API
+
+The Command Manager Plugin provides the following API methods:
+
+### Credentials
+
+- `get_device_credentials(device_id, device_ip=None, groups=None)` - Get credentials for a device
+- `set_device_credentials(device_id, credentials)` - Set credentials for a device
+- `delete_device_credentials(device_id)` - Delete credentials for a device
+- `get_group_credentials(group_name)` - Get credentials for a device group
+- `set_group_credentials(group_name, credentials)` - Set credentials for a device group
+- `delete_group_credentials(group_name)` - Delete credentials for a device group
+- `get_subnet_credentials(subnet)` - Get credentials for a subnet
+- `set_subnet_credentials(subnet, credentials)` - Set credentials for a subnet
+- `delete_subnet_credentials(subnet)` - Delete credentials for a subnet
+- `get_all_device_credentials()` - Get all device credentials
+- `get_all_group_credentials()` - Get all group credentials
+- `get_all_subnet_credentials()` - Get all subnet credentials
+
+### Commands
+
+- `get_device_types()` - Get all available device types
+- `get_firmware_versions(device_type)` - Get all available firmware versions for a device type
+- `get_commands(device_type, firmware_version)` - Get all commands for a device type and firmware version
+- `get_command_set(device_type, firmware_version)` - Get a command set for a device type and firmware version
+- `run_command(device, command, credentials=None)` - Run a command on a device
+
+### Command Outputs
+
+- `get_command_outputs(device_id)` - Get all command outputs for a device
+- `add_command_output(device_id, command_id, output, command_text=None)` - Add a command output for a device
+
+## Credential Format
+
+Credentials are stored in a dictionary with the following keys:
+
+```json
+{
+  "connection_type": "ssh|telnet",
+  "username": "username",
+  "password": "password",
+  "enable_password": "enable_password"
+}
+```
+
+## UI Components
+
+The plugin provides the following UI components:
+
+### Command Dialog
+
+The Command Dialog allows running commands on devices. It has the following features:
+
+- Run commands on individual devices, device groups, or subnets
+- Select commands from command sets
+- Syntax highlighting for command output
+- Export command outputs to files
+
+### Credential Manager
+
+The Credential Manager allows managing credentials for devices, device groups, and subnets.
+
+## Context Menu Integration
+
+The plugin adds the following context menu items to the device table:
+
+- "Run Commands" - Open the Command Dialog for the selected devices
+- "Manage Credentials" - Open the Credential Manager for the selected devices
+
+The plugin also adds the following context menu items to the device group and subnet views (if available):
+
+- "Run Commands on Group" - Open the Command Dialog for devices in the selected groups
+- "Manage Group Credentials" - Open the Credential Manager for the selected groups
+- "Run Commands on Subnet" - Open the Command Dialog for devices in the selected subnets
+- "Manage Subnet Credentials" - Open the Credential Manager for the selected subnets 

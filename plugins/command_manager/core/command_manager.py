@@ -517,77 +517,255 @@ class CommandManagerPlugin(PluginInterface):
         dialog.exec()
         
     def _on_device_context_credentials(self, devices):
-        """Handle manage credentials context menu item"""
-        # Fix: Ensure devices is a list
-        if not isinstance(devices, list):
-            # Convert to a list with a single device
-            devices = [devices]
+        """Handle credential manager context menu action
         
-        logger.info(f"Opening Credential Manager for {len(devices)} selected devices")
+        Args:
+            devices: List of selected devices
+        """
+        logger.debug(f"Opening credential manager for {len(devices)} devices")
         
         try:
+            from plugins.command_manager.ui.credential_manager import CredentialManager
             dialog = CredentialManager(self, devices, self.main_window)
-            logger.debug("Credential Manager dialog created successfully")
-            
-            # Set window title to be more descriptive
-            dialog.setWindowTitle("Device Credential Manager")
-            
-            # Make the dialog a bit larger for better usability
-            dialog.resize(700, 550)
-            
-            # Execute the dialog
-            result = dialog.exec()
-            
-            if result == QDialog.Accepted:
-                logger.info("Credential changes saved")
-            else:
-                logger.info("Credential Manager closed without saving")
-                
+            dialog.exec()
         except Exception as e:
-            logger.error(f"Error opening Credential Manager: {e}")
+            logger.error(f"Error opening credential manager: {e}")
             logger.exception("Exception details:")
+            
+            # Show error dialog
             QMessageBox.critical(
                 self.main_window,
-                "Error Opening Credential Manager",
-                f"An error occurred while opening the Credential Manager: {str(e)}"
+                "Error",
+                f"An error occurred while opening the credential manager: {str(e)}"
+            )
+    
+    def _on_group_context_run_commands(self, groups):
+        """Handle run commands on group context menu action
+        
+        Args:
+            groups: List of selected device groups
+        """
+        logger.debug(f"Opening command dialog for {len(groups)} device groups")
+        
+        try:
+            # Get all devices from the selected groups
+            all_devices = []
+            for group in groups:
+                if 'devices' in group:
+                    for device in group['devices']:
+                        if device not in all_devices:
+                            all_devices.append(device)
+            
+            if not all_devices:
+                QMessageBox.warning(
+                    self.main_window,
+                    "No Devices",
+                    "The selected groups do not contain any devices."
+                )
+                return
+            
+            # Open command dialog with these devices
+            from plugins.command_manager.ui.command_dialog import CommandDialog
+            if not hasattr(self, 'command_dialog') or not self.command_dialog:
+                self.command_dialog = CommandDialog(self, all_devices, self.main_window)
+            else:
+                self.command_dialog.set_selected_devices(all_devices)
+                
+            self.command_dialog.show()
+            self.command_dialog.raise_()
+            self.command_dialog.activateWindow()
+            
+            # Switch to the Groups tab and select the groups
+            self.command_dialog.target_tabs.setCurrentIndex(1)
+            
+            # Select the groups in the group table
+            self.command_dialog.group_table.clearSelection()
+            for row in range(self.command_dialog.group_table.rowCount()):
+                group_item = self.command_dialog.group_table.item(row, 0)
+                if group_item and group_item.data(Qt.UserRole) in groups:
+                    self.command_dialog.group_table.selectRow(row)
+            
+        except Exception as e:
+            logger.error(f"Error opening command dialog for groups: {e}")
+            logger.exception("Exception details:")
+            
+            # Show error dialog
+            QMessageBox.critical(
+                self.main_window,
+                "Error",
+                f"An error occurred while opening the command dialog: {str(e)}"
+            )
+    
+    def _on_group_context_credentials(self, groups):
+        """Handle credential manager context menu action for groups
+        
+        Args:
+            groups: List of selected device groups
+        """
+        logger.debug(f"Opening credential manager for {len(groups)} device groups")
+        
+        try:
+            from plugins.command_manager.ui.credential_manager import CredentialManager
+            dialog = CredentialManager(self, groups=groups, parent=self.main_window)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening credential manager for groups: {e}")
+            logger.exception("Exception details:")
+            
+            # Show error dialog
+            QMessageBox.critical(
+                self.main_window,
+                "Error",
+                f"An error occurred while opening the credential manager: {str(e)}"
+            )
+    
+    def _on_subnet_context_run_commands(self, subnets):
+        """Handle run commands on subnet context menu action
+        
+        Args:
+            subnets: List of selected subnets
+        """
+        logger.debug(f"Opening command dialog for {len(subnets)} subnets")
+        
+        try:
+            # Get all devices from the selected subnets
+            all_devices = []
+            for subnet in subnets:
+                if 'devices' in subnet:
+                    for device in subnet['devices']:
+                        if device not in all_devices:
+                            all_devices.append(device)
+            
+            if not all_devices:
+                QMessageBox.warning(
+                    self.main_window,
+                    "No Devices",
+                    "The selected subnets do not contain any devices."
+                )
+                return
+            
+            # Open command dialog with these devices
+            from plugins.command_manager.ui.command_dialog import CommandDialog
+            if not hasattr(self, 'command_dialog') or not self.command_dialog:
+                self.command_dialog = CommandDialog(self, all_devices, self.main_window)
+            else:
+                self.command_dialog.set_selected_devices(all_devices)
+                
+            self.command_dialog.show()
+            self.command_dialog.raise_()
+            self.command_dialog.activateWindow()
+            
+            # Switch to the Subnets tab and select the subnets
+            self.command_dialog.target_tabs.setCurrentIndex(2)
+            
+            # Select the subnets in the subnet table
+            self.command_dialog.subnet_table.clearSelection()
+            for row in range(self.command_dialog.subnet_table.rowCount()):
+                subnet_item = self.command_dialog.subnet_table.item(row, 0)
+                if subnet_item and subnet_item.data(Qt.UserRole)['subnet'] in [s['subnet'] for s in subnets]:
+                    self.command_dialog.subnet_table.selectRow(row)
+            
+        except Exception as e:
+            logger.error(f"Error opening command dialog for subnets: {e}")
+            logger.exception("Exception details:")
+            
+            # Show error dialog
+            QMessageBox.critical(
+                self.main_window,
+                "Error",
+                f"An error occurred while opening the command dialog: {str(e)}"
+            )
+    
+    def _on_subnet_context_credentials(self, subnets):
+        """Handle credential manager context menu action for subnets
+        
+        Args:
+            subnets: List of selected subnets
+        """
+        logger.debug(f"Opening credential manager for {len(subnets)} subnets")
+        
+        try:
+            from plugins.command_manager.ui.credential_manager import CredentialManager
+            dialog = CredentialManager(self, subnets=subnets, parent=self.main_window)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening credential manager for subnets: {e}")
+            logger.exception("Exception details:")
+            
+            # Show error dialog
+            QMessageBox.critical(
+                self.main_window,
+                "Error",
+                f"An error occurred while opening the credential manager: {str(e)}"
             )
     
     # Methods for credential handling
     
     def get_all_device_credentials(self):
         """Get all device credentials"""
-        if hasattr(self, 'credential_store') and self.credential_store:
-            return self.credential_store.get_all_device_credentials()
-        return {}
+        return self.credential_store.get_all_device_credentials() if self.credential_store else {}
         
     def get_all_group_credentials(self):
         """Get all group credentials"""
-        if hasattr(self, 'credential_store') and self.credential_store:
-            return self.credential_store.get_all_group_credentials()
-        return {}
+        return self.credential_store.get_all_group_credentials() if self.credential_store else {}
         
     def get_all_subnet_credentials(self):
         """Get all subnet credentials"""
-        if hasattr(self, 'credential_store') and self.credential_store:
-            return self.credential_store.get_all_subnet_credentials()
-        return {}
+        return self.credential_store.get_all_subnet_credentials() if self.credential_store else {}
         
     def get_device_credentials(self, device_id, device_ip=None, groups=None):
-        """
-        Get credentials for a device with fallback to group or subnet credentials
+        """Get credentials for a device
         
         Args:
             device_id: The device ID
             device_ip: The device IP address (for subnet matching)
-            groups: List of groups the device belongs to
+            groups: List of group names the device belongs to
             
         Returns:
-            dict: Credentials dictionary or empty dict if no credentials found
+            dict: Credentials dictionary or None if not found
         """
-        if hasattr(self, 'credential_store') and self.credential_store:
-            return self.credential_store.get_device_credentials(device_id, device_ip, groups)
-        return {}
+        logger.debug(f"Getting credentials for device {device_id}")
         
+        if not self.credential_store:
+            logger.error("Credential store is not available")
+            return None
+            
+        return self.credential_store.get_device_credentials(device_id)
+        
+    def get_group_credentials(self, group_name):
+        """Get credentials for a device group
+        
+        Args:
+            group_name: Name of the device group
+            
+        Returns:
+            dict: Credentials dictionary or None if not found
+        """
+        logger.debug(f"Getting credentials for group {group_name}")
+        
+        if not self.credential_store:
+            logger.error("Credential store is not available")
+            return None
+            
+        return self.credential_store.get_group_credentials(group_name)
+    
+    def get_subnet_credentials(self, subnet):
+        """Get credentials for a subnet
+        
+        Args:
+            subnet: Subnet in CIDR notation (e.g. 192.168.1.0/24)
+            
+        Returns:
+            dict: Credentials dictionary or None if not found
+        """
+        logger.debug(f"Getting credentials for subnet {subnet}")
+        
+        if not self.credential_store:
+            logger.error("Credential store is not available")
+            return None
+            
+        return self.credential_store.get_subnet_credentials(subnet)
+    
     def set_device_credentials(self, device_id, credentials):
         """Set credentials for a device"""
         if hasattr(self, 'credential_store') and self.credential_store:
