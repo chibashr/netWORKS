@@ -332,70 +332,277 @@ class Application(QApplication):
             }
 
     def init_application(self):
-        """Initialize the application components"""
+        """Initialize application components"""
+        self.logger.info("Initializing application")
+        
+        # Show splash screen
+        splash = SplashScreen()
+        splash.show()
+        
+        # Check environment for data directories
+        self._ensure_data_directories()
+        
+        # Load configuration
+        splash.update_progress(20, "Loading configuration...")
+        self.config = Config(self)
+        self.config.load()
+        
+        # Initialize device manager
+        splash.update_progress(40, "Initializing device manager...")
+        self.device_manager = DeviceManager(self)
+        
+        # Initialize plugin manager
+        splash.update_progress(60, "Loading plugins...")
+        self.plugin_manager = PluginManager(self)
+        
+        # Initialize issue reporter
+        splash.update_progress(80, "Initializing issue reporting system...")
+        from .core.issue_reporter import IssueReporter
+        self.issue_reporter = IssueReporter(self.config, self)
+        
+        # Update logging configuration based on settings
         try:
-            # Load configuration
-            self.splash.update_progress(20, "Loading configuration...")
-            self.config.load()
+            logging_level = self.config.get("logging.level", "INFO")
+            diagnose = self.config.get("logging.diagnose", True)
+            backtrace = self.config.get("logging.backtrace", True)
             
-            # Initialize device manager
-            self.splash.update_progress(40, "Initializing device manager...")
-            self.device_manager.initialize()
-            
-            # Discover plugins
-            self.splash.update_progress(60, "Discovering plugins...")
-            self.plugin_manager.discover_plugins()
-
-            # Extra validation step: ensure all disabled plugins are truly marked as disabled
-            # and all LOADED plugins are reset to just ENABLED state (they'll be loaded explicitly later)
-            for plugin_id, plugin_info in list(self.plugin_manager.plugins.items()):
-                if plugin_info.state == plugin_info.state.DISABLED:
-                    self.logger.debug(f"Ensuring plugin {plugin_id} is properly marked as disabled at startup")
-                    # Double-check that it's not loaded
-                    if plugin_info.instance is not None:
-                        self.logger.warning(f"Plugin {plugin_id} is disabled but has an instance - clearing it")
-                        plugin_info.instance = None
-                elif plugin_info.state == plugin_info.state.LOADED:
-                    # Reset to ENABLED state since nothing is actually loaded yet
-                    self.logger.debug(f"Resetting plugin {plugin_id} from LOADED to ENABLED state at startup")
-                    plugin_info.state = plugin_info.state.ENABLED
-                    plugin_info.instance = None
-            
-            # Create main window but don't show it yet
-            self.splash.update_progress(80, "Initializing main window...")
-            self.main_window = MainWindow(self)
-            
-            # Now load ONLY enabled plugins since the main window is accessible
-            self.splash.update_progress(90, "Loading plugins...")
-            self.plugin_manager.load_all_plugins()
-            
-            # Final verification: ensure that any disabled plugins are truly not loaded
-            for plugin_id, plugin_info in list(self.plugin_manager.plugins.items()):
-                if not plugin_info.state.is_enabled and plugin_info.instance is not None:
-                    self.logger.warning(f"Plugin {plugin_id} is disabled but has an instance - forcing unload during startup")
-                    # Force unload and clear the instance
-                    if plugin_info.state.is_loaded:
-                        self.plugin_manager.unload_plugin(plugin_id)
-                    else:
-                        plugin_info.instance = None
-            
-            # Now show the main window
-            self.splash.update_progress(100, "Starting application...")
-            self.main_window.show()
-            
-            # Close splash screen
-            self.splash.finish(self.main_window)
-            
-            # Optional: show first-run dialog
-            if self.config.is_first_run():
-                self.on_first_run()
-                
-            self.logger.info("Application initialized successfully")
+            self.logger.info(f"Updating logging configuration: level={logging_level}, diagnose={diagnose}, backtrace={backtrace}")
+            if hasattr(self.logging_manager, 'update_configuration'):
+                self.logging_manager.update_configuration(logging_level, diagnose, backtrace)
+            else:
+                self.logger.warning("LoggingManager does not have update_configuration method, skipping configuration update")
         except Exception as e:
-            self.logger.exception("Error during application initialization")
-            self.splash.hide()  # Hide splash screen before showing error
-            show_crash_dialog("Application Initialization Error", e, {"stage": "init_application"})
-            sys.exit(1)
+            self.logger.warning(f"Failed to update logging configuration: {e}")
+        
+        # Create main window
+        splash.update_progress(90, "Creating main window...")
+        self.main_window = MainWindow(self)
+        
+        # Complete progress and close splash screen
+        splash.update_progress(100, "Startup complete...")
+        splash.close()
+        
+        # Show workspace selection dialog before displaying the main window
+        self.show_workspace_selection()
+        
+        # Now display the main window
+        self.main_window.show()
+        
+        # Check for first run
+        if self.config.is_first_run():
+            self.logger.info("First run detected")
+            # Mark as having been run to prevent showing on next startup
+            self.config.mark_as_run()
+            
+            # Show first run dialog after a short delay to ensure main window is visible
+            QTimer.singleShot(500, self.on_first_run)
+            
+        # Check for queued issues if we have a token
+        if hasattr(self, 'issue_reporter') and self.issue_reporter.github_token:
+            QTimer.singleShot(10000, self._check_issue_queue)
+            
+    def show_workspace_selection(self):
+        """Show workspace selection dialog at startup"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, QGroupBox, QRadioButton, QLineEdit, QTextEdit
+        
+        self.logger.info("Showing workspace selection dialog")
+        
+        # Get list of workspaces
+        workspaces = self.device_manager.list_workspaces()
+        
+        # Create dialog
+        dialog = QDialog()
+        dialog.setWindowTitle("Workspace Selection")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Header section
+        header_label = QLabel("Select a workspace to open or create a new one:")
+        header_label.setStyleSheet("font-size: 12pt; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header_label)
+        
+        # Radio button options
+        option_group = QGroupBox("Options")
+        option_layout = QVBoxLayout(option_group)
+        
+        open_radio = QRadioButton("Open existing workspace")
+        create_radio = QRadioButton("Create new workspace")
+        
+        # Default to "Open existing" if workspaces exist, otherwise default to "Create new"
+        if workspaces:
+            open_radio.setChecked(True)
+        else:
+            create_radio.setChecked(True)
+            
+        option_layout.addWidget(open_radio)
+        option_layout.addWidget(create_radio)
+        layout.addWidget(option_group)
+        
+        # Existing workspaces section
+        existing_group = QGroupBox("Existing Workspaces")
+        existing_layout = QVBoxLayout(existing_group)
+        
+        workspaces_list = QListWidget()
+        
+        # Default workspace should be first in the list
+        default_idx = -1
+        
+        # Add workspaces to the list
+        for i, workspace in enumerate(workspaces):
+            name = workspace.get("name", "Unknown")
+            description = workspace.get("description", "")
+            display_text = f"{name} - {description}" if description else name
+            workspaces_list.addItem(display_text)
+            
+            # Remember index of default workspace
+            if name == "default":
+                default_idx = i
+        
+        # Select default workspace if it exists
+        if default_idx >= 0:
+            workspaces_list.setCurrentRow(default_idx)
+            
+        existing_layout.addWidget(workspaces_list)
+        layout.addWidget(existing_group)
+        
+        # New workspace section
+        new_group = QGroupBox("New Workspace")
+        new_layout = QVBoxLayout(new_group)
+        
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Name:"))
+        name_edit = QLineEdit()
+        name_layout.addWidget(name_edit)
+        new_layout.addLayout(name_layout)
+        
+        desc_layout = QVBoxLayout()
+        desc_layout.addWidget(QLabel("Description:"))
+        desc_edit = QTextEdit()
+        desc_edit.setMaximumHeight(80)
+        desc_layout.addWidget(desc_edit)
+        new_layout.addLayout(desc_layout)
+        
+        layout.addWidget(new_group)
+        
+        # Show/hide appropriate sections based on radio button selection
+        def update_sections():
+            existing_group.setVisible(open_radio.isChecked())
+            new_group.setVisible(create_radio.isChecked())
+            dialog.adjustSize()
+            
+        open_radio.toggled.connect(update_sections)
+        create_radio.toggled.connect(update_sections)
+        
+        # Initial update
+        update_sections()
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        # If no workspaces exist, don't show the Skip button
+        if workspaces:
+            skip_button = QPushButton("Skip (Use Default)")
+            button_layout.addWidget(skip_button)
+            
+            def on_skip():
+                self.device_manager.load_workspace("default")
+                self.main_window.refresh_workspace_ui()
+                dialog.accept()
+                
+            skip_button.clicked.connect(on_skip)
+        
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Handle OK button
+        def on_ok():
+            if open_radio.isChecked():
+                # Open selected workspace
+                selected_item = workspaces_list.currentItem()
+                if selected_item:
+                    workspace_name = selected_item.text().split(" - ")[0]
+                    success = self.device_manager.load_workspace(workspace_name)
+                    if success:
+                        self.logger.info(f"Loaded workspace: {workspace_name}")
+                        self.main_window.refresh_workspace_ui()
+                        dialog.accept()
+                    else:
+                        from PySide6.QtWidgets import QMessageBox
+                        QMessageBox.critical(dialog, "Error", f"Failed to load workspace: {workspace_name}")
+                else:
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.warning(dialog, "No Selection", "Please select a workspace to open.")
+            else:
+                # Create new workspace
+                name = name_edit.text().strip()
+                description = desc_edit.toPlainText().strip()
+                
+                if not name:
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.warning(dialog, "Invalid Name", "Please enter a name for the workspace.")
+                    return
+                    
+                # Check if workspace already exists
+                for ws in workspaces:
+                    if ws.get("name") == name:
+                        from PySide6.QtWidgets import QMessageBox
+                        QMessageBox.warning(dialog, "Workspace Exists", f"A workspace named '{name}' already exists.")
+                        return
+                
+                # Create the new workspace
+                success = self.device_manager.create_workspace(name, description)
+                if success:
+                    # Load the new workspace
+                    self.device_manager.load_workspace(name)
+                    self.logger.info(f"Created and loaded workspace: {name}")
+                    self.main_window.refresh_workspace_ui()
+                    dialog.accept()
+                else:
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.critical(dialog, "Error", f"Failed to create workspace: {name}")
+        
+        # Handle Cancel button (use default workspace)
+        def on_cancel():
+            self.device_manager.load_workspace("default")
+            self.main_window.refresh_workspace_ui()
+            dialog.reject()
+            
+        ok_button.clicked.connect(on_ok)
+        cancel_button.clicked.connect(on_cancel)
+        
+        # Make dialog modal to block until user makes a choice
+        dialog.setModal(True)
+        dialog.exec()
+
+    def _ensure_data_directories(self):
+        """Ensure data directories exist"""
+        data_dirs = [
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "workspaces"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "downloads"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "backups"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "screenshots"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "issue_queue")
+        ]
+        
+        for directory in data_dirs:
+            os.makedirs(directory, exist_ok=True)
+
+    def _check_issue_queue(self):
+        """Check for queued issues and try to process them"""
+        if hasattr(self, 'issue_reporter'):
+            queue_size, is_processing = self.issue_reporter.get_queue_status()
+            if queue_size > 0 and not is_processing:
+                self.logger.info(f"Found {queue_size} queued issues. Attempting to process...")
+                self.issue_reporter.process_queue()
 
     def run(self):
         """Run the application"""

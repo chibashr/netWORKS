@@ -7,7 +7,7 @@ Device table model and view for NetWORKS
 
 from loguru import logger
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Signal, Slot
-from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, QMenu, QApplication, QWidget, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QTextEdit, QPushButton, QHBoxLayout, QComboBox, QTabWidget, QListWidget, QListWidgetItem, QMessageBox, QGroupBox, QCheckBox, QTableWidget, QTableWidgetItem, QFileDialog, QWizard, QWizardPage, QScrollArea)
+from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, QMenu, QApplication, QWidget, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QTextEdit, QPushButton, QHBoxLayout, QComboBox, QTabWidget, QListWidget, QListWidgetItem, QMessageBox, QGroupBox, QCheckBox, QTableWidget, QTableWidgetItem, QFileDialog, QWizard, QWizardPage, QScrollArea, QRadioButton)
 from PySide6.QtGui import QColor, QBrush, QFont, QIcon, QAction
 from ..core.device_manager import Device
 import csv
@@ -403,6 +403,12 @@ class DeviceTableView(QTableView):
         self.columns_button.clicked.connect(self.show_column_selector)
         self.filter_layout.addWidget(self.columns_button)
         
+        # Create a button for deduplication
+        self.deduplicate_button = QPushButton("Deduplicate")
+        self.deduplicate_button.setToolTip("Identify and manage duplicate devices based on column values")
+        self.deduplicate_button.clicked.connect(self.show_deduplicate_dialog)
+        self.filter_layout.addWidget(self.deduplicate_button)
+        
         # Add select all/none buttons
         self.select_all_button = QPushButton("Select All")
         self.select_all_button.clicked.connect(self._on_action_select_all)
@@ -429,6 +435,7 @@ class DeviceTableView(QTableView):
         self.register_context_menu_action("Edit Properties", self._on_action_edit_properties, 200)
         self.register_context_menu_action("Add to Group", self._on_action_add_to_group, 300)
         self.register_context_menu_action("Create New Group", self._on_action_create_group, 310)
+        self.register_context_menu_action("Deduplicate Devices", self.show_deduplicate_dialog, 350)
         self.register_context_menu_action("Select All", self._on_action_select_all, 400)
         self.register_context_menu_action("Deselect All", self._on_action_deselect_all, 410)
         self.register_context_menu_action("Delete", self._on_action_delete, 900)
@@ -590,6 +597,358 @@ class DeviceTableView(QTableView):
             # Update model
             self.table_model.set_visible_headers(selected_columns)
             
+    def show_deduplicate_dialog(self):
+        """Show dialog to deduplicate devices based on a selected column"""
+        # Check if there are enough devices to deduplicate
+        current_devices = self.table_model._devices
+        if len(current_devices) < 2:
+            QMessageBox.information(
+                self,
+                "Deduplication",
+                "At least two devices are required for deduplication."
+            )
+            return
+            
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Deduplicate Devices")
+        dialog.setMinimumWidth(500)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Instructions
+        instructions = QLabel("Select a column to identify duplicate devices. Devices with the same value in this column will be detected as duplicates.")
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+        
+        # Column selection
+        form_layout = QFormLayout()
+        
+        # Get column options for deduplication
+        column_combo = QComboBox()
+        
+        # Add standard columns that make sense for deduplication
+        dedup_columns = ["MAC Address", "IP Address", "Hostname"]
+        
+        # Also add any custom columns that might be useful
+        all_headers = (
+            self.table_model._headers + 
+            self.table_model._custom_prop_headers + 
+            [header for header, _, _ in self.table_model._plugin_columns]
+        )
+        
+        # Add unique columns to the combo box
+        unique_columns = []
+        for column in dedup_columns + all_headers:
+            if column not in unique_columns:
+                unique_columns.append(column)
+                column_combo.addItem(column)
+        
+        # Only allow meaningful columns for deduplication
+        if column_combo.count() == 0:
+            QMessageBox.warning(
+                self,
+                "Deduplication",
+                "No suitable columns found for deduplication."
+            )
+            return
+            
+        form_layout.addRow("Deduplicate by:", column_combo)
+        layout.addLayout(form_layout)
+        
+        # Options for handling duplicates
+        options_group = QGroupBox("Duplicate Handling Options")
+        options_layout = QVBoxLayout(options_group)
+        
+        select_radio = QRadioButton("Select duplicates (for manual handling)")
+        select_radio.setChecked(True)
+        options_layout.addWidget(select_radio)
+        
+        merge_radio = QRadioButton("Merge duplicates (combine properties and keep one device)")
+        options_layout.addWidget(merge_radio)
+        
+        delete_radio = QRadioButton("Delete duplicates (keep first occurrence, delete others)")
+        options_layout.addWidget(delete_radio)
+        
+        layout.addWidget(options_group)
+        
+        # Create a preview section
+        preview_group = QGroupBox("Preview (click Scan to find duplicates)")
+        layout.addWidget(preview_group)
+        
+        preview_layout = QVBoxLayout(preview_group)
+        
+        # Table for displaying duplicates
+        duplicates_table = QTableWidget()
+        duplicates_table.setColumnCount(3)
+        duplicates_table.setHorizontalHeaderLabels(["Keep", "Value", "Duplicates"])
+        duplicates_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        duplicates_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        duplicates_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        preview_layout.addWidget(duplicates_table)
+        
+        # Store scan results
+        scan_results = {}
+        
+        # Scan for duplicates
+        def scan_for_duplicates():
+            selected_column = column_combo.currentText()
+            
+            # Find the corresponding key for the selected column
+            column_idx = self.table_model._headers.index(selected_column) if selected_column in self.table_model._headers else -1
+            
+            # Default to using the column name as the key
+            key = selected_column.lower().replace(" ", "_")
+            
+            # Try to find an exact match in the column keys
+            if column_idx >= 0 and column_idx < len(self.table_model._column_keys):
+                key = self.table_model._column_keys[column_idx]
+            
+            # Group devices by the selected column value
+            devices_by_value = {}
+            
+            # Process each device
+            for device in current_devices:
+                # Get the value for the selected column
+                if key == "groups":
+                    # Special handling for groups
+                    value = ", ".join(self.table_model._device_groups.get(device.id, []))
+                else:
+                    # Regular property
+                    value = device.get_property(key, "")
+                    
+                    # Handle tag lists
+                    if key == "tags" and isinstance(value, list):
+                        value = ", ".join(value)
+                
+                # Skip empty values
+                if not value:
+                    continue
+                    
+                # Add to the group of devices with this value
+                if value not in devices_by_value:
+                    devices_by_value[value] = []
+                devices_by_value[value].append(device)
+            
+            # Filter to only include values with multiple devices (duplicates)
+            duplicate_values = {v: devices for v, devices in devices_by_value.items() if len(devices) > 1}
+            
+            # Update the duplicates table
+            duplicates_table.setRowCount(len(duplicate_values))
+            
+            # Save the scan results
+            scan_results.clear()
+            scan_results.update(duplicate_values)
+            
+            # Populate the table
+            for row, (value, devices) in enumerate(duplicate_values.items()):
+                # Create a checkbox for keeping the first device
+                checkbox = QCheckBox()
+                checkbox.setChecked(True)
+                checkbox_widget = QWidget()
+                checkbox_layout = QHBoxLayout(checkbox_widget)
+                checkbox_layout.addWidget(checkbox)
+                checkbox_layout.setAlignment(Qt.AlignCenter)
+                checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                duplicates_table.setCellWidget(row, 0, checkbox_widget)
+                
+                # Value column
+                value_item = QTableWidgetItem(value)
+                duplicates_table.setItem(row, 1, value_item)
+                
+                # Duplicates column - show count and aliases
+                device_aliases = [d.get_property("alias", "Unnamed") for d in devices]
+                duplicates_item = QTableWidgetItem(f"{len(devices)} devices: {', '.join(device_aliases)}")
+                duplicates_table.setItem(row, 2, duplicates_item)
+                
+                # Store devices in the item for later access
+                duplicates_item.setData(Qt.UserRole, devices)
+                
+            # Update action button state
+            action_button.setEnabled(len(duplicate_values) > 0)
+            
+            # Show results summary
+            total_duplicates = sum(len(devices) - 1 for devices in duplicate_values.values())
+            results_label.setText(f"Found {len(duplicate_values)} duplicate groups with a total of {total_duplicates} duplicate devices.")
+            
+        # Button to scan for duplicates
+        scan_button = QPushButton("Scan for Duplicates")
+        scan_button.clicked.connect(scan_for_duplicates)
+        preview_layout.addWidget(scan_button)
+        
+        # Results label
+        results_label = QLabel("Click Scan to find duplicates")
+        preview_layout.addWidget(results_label)
+        
+        # Action button
+        action_button = QPushButton("Apply")
+        action_button.setEnabled(False)
+        
+        # Handle the action based on selected option
+        def handle_action():
+            # Get all rows with checked "Keep" checkbox
+            rows_to_process = []
+            for row in range(duplicates_table.rowCount()):
+                checkbox_widget = duplicates_table.cellWidget(row, 0)
+                if checkbox_widget:
+                    checkbox = checkbox_widget.findChild(QCheckBox)
+                    if checkbox and checkbox.isChecked():
+                        rows_to_process.append(row)
+            
+            if not rows_to_process:
+                QMessageBox.information(
+                    dialog,
+                    "No Action",
+                    "No duplicate groups selected for processing."
+                )
+                return
+                
+            # Get the selected action
+            action = "select"
+            if merge_radio.isChecked():
+                action = "merge"
+            elif delete_radio.isChecked():
+                action = "delete"
+                
+            # Process each row
+            if action == "select":
+                # Select all duplicate devices
+                all_duplicates = []
+                for row in rows_to_process:
+                    # Get devices from the item data
+                    devices_item = duplicates_table.item(row, 2)
+                    devices = devices_item.data(Qt.UserRole)
+                    
+                    # Skip the first device (keep) and select all others (duplicates)
+                    for device in devices[1:]:
+                        all_duplicates.append(device)
+                        
+                # Select these devices in the table
+                self.device_manager.clear_selection()
+                for device in all_duplicates:
+                    self.device_manager.select_device(device)
+                
+                # Close the dialog
+                dialog.accept()
+                
+                # Show message
+                QMessageBox.information(
+                    self,
+                    "Duplicates Selected",
+                    f"Selected {len(all_duplicates)} duplicate devices. You can now edit or delete them."
+                )
+                
+            elif action == "merge":
+                # Merge duplicate properties into the first device
+                groups_processed = 0
+                devices_merged = 0
+                
+                for row in rows_to_process:
+                    # Get devices from the item data
+                    devices_item = duplicates_table.item(row, 2)
+                    devices = devices_item.data(Qt.UserRole)
+                    
+                    if len(devices) <= 1:
+                        continue
+                        
+                    # Keep the first device, merge data from others
+                    keep_device = devices[0]
+                    duplicate_devices = devices[1:]
+                    
+                    # For each duplicate, merge properties and then delete it
+                    for dup_device in duplicate_devices:
+                        # Merge non-empty properties
+                        for key, value in dup_device.get_properties().items():
+                            # Skip empty values and ID
+                            if key == "id" or not value:
+                                continue
+                                
+                            # Handle special cases
+                            if key == "tags":
+                                # Merge tags (add any missing)
+                                keep_tags = keep_device.get_property("tags", [])
+                                if not isinstance(keep_tags, list):
+                                    keep_tags = [keep_tags] if keep_tags else []
+                                    
+                                dup_tags = value if isinstance(value, list) else [value] if value else []
+                                
+                                # Add new tags
+                                for tag in dup_tags:
+                                    if tag not in keep_tags:
+                                        keep_tags.append(tag)
+                                        
+                                # Update tags
+                                keep_device.set_property("tags", keep_tags)
+                            else:
+                                # Only copy if keep device doesn't have the property
+                                if not keep_device.get_property(key, ""):
+                                    keep_device.set_property(key, value)
+                        
+                        # Now remove the duplicate device
+                        self.device_manager.remove_device(dup_device)
+                        devices_merged += 1
+                        
+                    groups_processed += 1
+                
+                # Close the dialog
+                dialog.accept()
+                
+                # Show message
+                QMessageBox.information(
+                    self,
+                    "Duplicates Merged",
+                    f"Merged {devices_merged} duplicate devices across {groups_processed} groups."
+                )
+                
+            elif action == "delete":
+                # Keep first device, delete others
+                groups_processed = 0
+                devices_deleted = 0
+                
+                for row in rows_to_process:
+                    # Get devices from the item data
+                    devices_item = duplicates_table.item(row, 2)
+                    devices = devices_item.data(Qt.UserRole)
+                    
+                    if len(devices) <= 1:
+                        continue
+                        
+                    # Keep the first device, delete others
+                    duplicate_devices = devices[1:]
+                    
+                    # Delete duplicates
+                    for dup_device in duplicate_devices:
+                        self.device_manager.remove_device(dup_device)
+                        devices_deleted += 1
+                        
+                    groups_processed += 1
+                
+                # Close the dialog
+                dialog.accept()
+                
+                # Show message
+                QMessageBox.information(
+                    self,
+                    "Duplicates Deleted",
+                    f"Moved {devices_deleted} duplicate devices to the recycle bin across {groups_processed} groups."
+                )
+        
+        action_button.clicked.connect(handle_action)
+        
+        # Button layout
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(scan_button)
+        button_layout.addStretch()
+        button_layout.addWidget(action_button)
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Show the dialog
+        dialog.exec()
+    
     def get_container_widget(self):
         """Get a widget containing the table and filter controls"""
         container = QWidget()
@@ -601,7 +960,7 @@ class DeviceTableView(QTableView):
         layout.addWidget(self)
         
         return container
-    
+     
     def register_context_menu_action(self, name, callback, priority=500):
         """
         Register a context menu action
@@ -627,7 +986,7 @@ class DeviceTableView(QTableView):
         # Sort by priority
         self._context_menu_actions.sort(key=lambda x: x[2])
         return True
-    
+     
     def unregister_context_menu_action(self, name):
         """
         Unregister a context menu action
@@ -643,7 +1002,7 @@ class DeviceTableView(QTableView):
                 del self._context_menu_actions[i]
                 return True
         return False
-    
+
     def on_item_clicked(self, index):
         """Handle item clicked"""
         if not index.isValid():
@@ -1442,7 +1801,7 @@ class DeviceTableView(QTableView):
             for item in reversed(tags_list.selectedItems()):
                 row = tags_list.row(item)
                 tags_list.takeItem(row)
-                
+        
         # Add tag filter function
         def filter_tags(text):
             filter_text = text.lower()

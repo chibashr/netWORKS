@@ -25,7 +25,9 @@ from PySide6.QtGui import QAction, QIcon, QFont, QTextCursor
 class CommandWorker(QObject):
     """Worker for running commands in the background"""
     
+    command_started = Signal(object, object)  # device, command
     command_complete = Signal(object, object, object, object)  # device, command, result, command_set
+    command_progress = Signal(int, int)  # current, total
     all_commands_complete = Signal()
     
     def __init__(self, plugin, devices, commands, command_set=None):
@@ -43,6 +45,10 @@ class CommandWorker(QObject):
         from loguru import logger
         logger.debug(f"Starting command execution for {len(self.devices)} devices and {len(self.commands)} commands")
         
+        # Calculate total number of commands for progress tracking
+        total_commands = len(self.devices) * len(self.commands)
+        completed_commands = 0
+        
         for device in self.devices:
             if self.stop_requested:
                 logger.debug("Stop requested - halting command execution")
@@ -54,7 +60,7 @@ class CommandWorker(QObject):
             logger.debug(f"Processing device: {device_name} ({device_ip})")
             
             # Get credentials for the device - include IP for subnet matching
-            credentials = self.plugin.get_device_credentials(device.id)
+            credentials = self.plugin.get_device_credentials(device.id, device_ip)
             
             if not credentials:
                 logger.warning(f"No credentials found for device: {device_name} ({device_ip})")
@@ -65,6 +71,10 @@ class CommandWorker(QObject):
                         "output": f"Command: {command['command']}\n\nNo credentials available for this device."
                     }
                     self.command_complete.emit(device, command, result, self.command_set)
+                    
+                    # Update progress
+                    completed_commands += 1
+                    self.command_progress.emit(completed_commands, total_commands)
                 continue
                 
             logger.debug(f"Using credentials for device: {device_name}, type: {credentials.get('connection_type', 'ssh')}")
@@ -76,6 +86,9 @@ class CommandWorker(QObject):
                     
                 # Log the command being executed
                 logger.debug(f"Executing command: {command['command']} on device: {device_name}")
+                
+                # Emit signal that we're starting a command
+                self.command_started.emit(device, command)
                 
                 try:
                     # Run the command
@@ -111,6 +124,10 @@ class CommandWorker(QObject):
                         "output": f"Command: {command['command']}\n\nError: {str(e)}"
                     }
                     self.command_complete.emit(device, command, result, self.command_set)
+                
+                # Update progress
+                completed_commands += 1
+                self.command_progress.emit(completed_commands, total_commands)
                 
         # All commands complete
         logger.debug("All commands completed")
@@ -648,7 +665,9 @@ class CommandDialog(QDialog):
         
         # Connect signals
         self.worker_thread.started.connect(self.worker.run)
+        self.worker.command_started.connect(self._on_command_started)
         self.worker.command_complete.connect(self._on_command_complete)
+        self.worker.command_progress.connect(self._on_command_progress)
         self.worker.all_commands_complete.connect(self._on_all_commands_complete)
         
         # Update UI
@@ -659,11 +678,24 @@ class CommandDialog(QDialog):
         # Start the thread
         self.worker_thread.start()
         
+    def _on_command_started(self, device, command):
+        """Handle command start event"""
+        # Add header to text view
+        device_name = device.get_property("alias", "Unnamed Device")
+        
+        self.output_text.append(f"=== Starting command on: {device_name} ===")
+        self.output_text.append(f"Command: {command['command']}")
+        self.output_text.append("Executing...")
+        
+        # Scroll to end - use QTextCursor's MoveOperation.End
+        self.output_text.moveCursor(QTextCursor.End)
+
+    def _on_command_progress(self, current, total):
+        """Handle command progress updates"""
+        self.progress_bar.setValue(current)
+        
     def _on_command_complete(self, device, command, result, command_set):
         """Handle command completion"""
-        # Update progress bar
-        self.progress_bar.setValue(self.progress_bar.value() + 1)
-        
         # Add output to text view
         device_name = device.get_property("alias", "Unnamed Device")
         

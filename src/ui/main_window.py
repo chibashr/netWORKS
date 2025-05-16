@@ -12,11 +12,13 @@ from PySide6.QtWidgets import (
     QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTreeView, QFrame, QLabel, QToolButton, QPushButton, QTableView,
     QHeaderView, QAbstractItemView, QSizePolicy, QInputDialog, QLineEdit, QMessageBox, QDialog, QListWidget, QTableWidget, QTableWidgetItem, QTextBrowser,
-    QApplication
+    QApplication, QFileDialog
 )
 from PySide6.QtGui import QIcon, QAction, QFont, QKeySequence, QBrush, QColor
 from PySide6.QtCore import Qt, QSize, Signal, Slot, QModelIndex, QSettings, QTimer, QByteArray, QPoint
 from PySide6.QtWidgets import QStyle
+import html
+import re
 
 from .device_table import DeviceTableModel, DeviceTableView, QAbstractItemView
 from .device_tree import DeviceTreeModel, DeviceTreeView
@@ -68,6 +70,37 @@ class MainWindow(QMainWindow):
         app_version = self.app.get_version()
         workspace = self.device_manager.current_workspace
         self.setWindowTitle(f"NetWORKS v{app_version} - Workspace: {workspace}")
+        
+    def refresh_workspace_ui(self):
+        """Refresh all UI components after workspace change"""
+        logger.debug(f"Refreshing UI for workspace: {self.device_manager.current_workspace}")
+        
+        # Update window title
+        self.updateWindowTitle()
+        
+        # Update status bar
+        self.status_workspace.setText(f"Workspace: {self.device_manager.current_workspace}")
+        self.status_bar.showMessage(f"Loaded workspace: {self.device_manager.current_workspace}", 3000)
+        
+        # Refresh device table
+        if hasattr(self, "device_table"):
+            self.device_table.refresh()
+            
+        # Refresh device panel
+        if hasattr(self, "device_panel"):
+            self.device_panel.refresh()
+            
+        # Refresh device tree
+        if hasattr(self, "device_tree"):
+            self.device_tree.refresh()
+            
+        # Update device count in status bar
+        self.update_status_bar()
+        
+        # Restore the UI layout for this workspace
+        self._restore_window_state()
+        
+        logger.debug("UI refresh complete")
         
     def _create_actions(self):
         """Create actions for menus and toolbars"""
@@ -143,6 +176,10 @@ class MainWindow(QMainWindow):
         self.action_documentation.setStatusTip("View program documentation")
         self.action_documentation.triggered.connect(self.on_documentation)
         
+        self.action_report_issue = QAction("Report Issue", self)
+        self.action_report_issue.setStatusTip("Report an issue or request a feature")
+        self.action_report_issue.triggered.connect(self.on_report_issue)
+        
         self.action_check_updates = QAction("Check for Updates", self)
         self.action_check_updates.setStatusTip("Check for application updates")
         self.action_check_updates.triggered.connect(self.on_check_updates)
@@ -205,6 +242,7 @@ class MainWindow(QMainWindow):
         # Help menu
         self.menu_help = self.menu_bar.addMenu("Help")
         self.menu_help.addAction(self.action_documentation)
+        self.menu_help.addAction(self.action_report_issue)
         self.menu_help.addAction(self.action_check_updates)
         self.menu_help.addAction(self.action_about)
         
@@ -316,6 +354,8 @@ class MainWindow(QMainWindow):
         self.properties_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.properties_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.properties_table.customContextMenuRequested.connect(self._show_property_context_menu)
+        # Add double click handler
+        self.properties_table.cellDoubleClicked.connect(self._handle_property_double_click)
         
         # Apply modern styling
         self.properties_table.setStyleSheet("""
@@ -636,13 +676,36 @@ class MainWindow(QMainWindow):
         value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
         value_item.setData(Qt.UserRole, raw_value)  # Store raw value for context menu
         
+        # Apply styling based on data type
         # If it's a URL, make it look like a link
         if isinstance(raw_value, str) and (raw_value.startswith('http://') or raw_value.startswith('https://')):
             value_item.setForeground(QBrush(QColor("blue")))
             font = value_item.font()
             font.setUnderline(True)
             value_item.setFont(font)
-            value_item.setToolTip("Click to open in browser")
+            value_item.setToolTip("Double-click to open in browser")
+        # If it's a complex data type that can be expanded, style accordingly
+        elif isinstance(raw_value, (dict, list)) or (isinstance(raw_value, str) and len(raw_value) > 100):
+            if isinstance(raw_value, dict):
+                value_item.setToolTip(f"Double-click to view dictionary details ({len(raw_value)} items)")
+            elif isinstance(raw_value, list):
+                value_item.setToolTip(f"Double-click to view list details ({len(raw_value)} items)")
+            else:
+                value_item.setToolTip("Double-click to view full text")
+            
+            # Use a slightly different style to indicate it's interactive
+            value_item.setForeground(QBrush(QColor("#505050")))
+            font = value_item.font()
+            font.setBold(True)
+            value_item.setFont(font)
+            
+            # Add a visual indicator for expandable items
+            if isinstance(raw_value, dict):
+                value_item.setText(f"📋 {formatted_value}")
+            elif isinstance(raw_value, list):
+                value_item.setText(f"📋 {formatted_value}")
+            elif isinstance(raw_value, str) and len(raw_value) > 100:
+                value_item.setText(f"📝 {formatted_value}")
         else:
             value_item.setToolTip(formatted_value)
             
@@ -1116,23 +1179,10 @@ class MainWindow(QMainWindow):
             success = self.device_manager.load_workspace(name)
             if success:
                 # Update UI with new workspace
-                self.updateWindowTitle()
-                self.status_workspace.setText(f"Workspace: {self.device_manager.current_workspace}")
-                self.status_bar.showMessage(f"Switched to workspace: {name}", 3000)
-                
-                # Refresh UI components to reflect the new workspace
-                if hasattr(self, "device_table"):
-                    self.device_table.refresh()
-                if hasattr(self, "device_panel"):
-                    self.device_panel.refresh()
-                if hasattr(self, "device_tree"):
-                    self.device_tree.refresh()
-                    
-                # Update device count in status bar
-                self.update_status_bar()
+                self.refresh_workspace_ui()
             else:
                 self.status_bar.showMessage(f"Failed to load workspace: {name}", 3000)
-    
+                
     @Slot()
     def on_save_workspace(self):
         """Save current workspace"""
@@ -1223,31 +1273,15 @@ class MainWindow(QMainWindow):
                     # Load selected workspace
                     success = self.device_manager.load_workspace(name)
                     if success:
-                        # Update UI with new workspace
-                        self.updateWindowTitle()
-                        self.status_workspace.setText(f"Workspace: {self.device_manager.current_workspace}")
-                        self.status_bar.showMessage(f"Switched to workspace: {name}", 3000)
-                        
-                        # Refresh UI components to reflect the new workspace
-                        if hasattr(self, "device_table"):
-                            self.device_table.refresh()
-                        if hasattr(self, "device_panel"):
-                            self.device_panel.refresh()
-                        if hasattr(self, "device_tree"):
-                            self.device_tree.refresh()
-                            
-                        # Restore the layout of the new workspace
-                        self._restore_window_state()
-                            
-                        # Update device count in status bar
-                        self.update_status_bar()
+                        # Refresh all UI components
+                        self.refresh_workspace_ui()
                         dialog.accept()
                     else:
                         self.status_bar.showMessage(f"Failed to load workspace: {name}", 3000)
         
         delete_button.clicked.connect(on_delete)
         switch_button.clicked.connect(on_switch)
-        close_button.clicked.connect(dialog.accept)
+        close_button.clicked.connect(dialog.reject)
         
         dialog.exec()
         
@@ -1467,6 +1501,13 @@ class MainWindow(QMainWindow):
         """Show the documentation dialog"""
         from .documentation_dialog import DocumentationDialog
         dialog = DocumentationDialog(self)
+        dialog.exec()
+        
+    @Slot()
+    def on_report_issue(self):
+        """Show the report issue dialog"""
+        from .report_issue_dialog import ReportIssueDialog
+        dialog = ReportIssueDialog(self.app, self)
         dialog.exec()
         
     @Slot()
@@ -1902,10 +1943,25 @@ class MainWindow(QMainWindow):
             return ", ".join(str(item) for item in value)
             
         elif isinstance(value, dict):
-            # For dictionaries, return a summary
+            # For dictionaries, show a preview of the content instead of just item count
             if not value:
                 return "Empty dictionary"
-            return f"Dictionary with {len(value)} items"
+            
+            # Create a preview of dictionary contents
+            preview_items = []
+            for i, (k, v) in enumerate(value.items()):
+                if i >= 3:  # Limit to first 3 key-value pairs
+                    preview_items.append("...")
+                    break
+                # Format the key-value pair
+                v_str = str(v)
+                if isinstance(v, str) and len(v) > 20:
+                    v_str = v[:17] + "..."
+                elif isinstance(v, (dict, list)):
+                    v_str = f"({type(v).__name__})"
+                preview_items.append(f"{k}: {v_str}")
+            
+            return f"{{{', '.join(preview_items)}}} ({len(value)} items)"
             
         elif isinstance(value, str):
             # Check if it's a date/time string (ISO format or common formats)
@@ -1943,7 +1999,7 @@ class MainWindow(QMainWindow):
             if len(value) > 100:
                 return value[:97] + "..."
                 
-        # Default: just convert to string
+        # For all other types, convert to string
         return str(value)
 
     def _show_detailed_property(self, key, value):
@@ -1954,43 +2010,477 @@ class MainWindow(QMainWindow):
             value: The property value
         """
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"Property: {key}")
-        dialog.resize(500, 400)
+        dialog.setWindowTitle(f"Property Details: {key}")
+        dialog.resize(600, 450)
         
         layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(10, 10, 10, 10)
         
-        # Create a text browser for displaying detailed content
-        text_browser = QTextBrowser()
+        # Add the property name and basic info
+        header_layout = QHBoxLayout()
         
-        # Format the content based on the type
-        if isinstance(value, dict):
-            import json
-            try:
-                formatted_json = json.dumps(value, indent=2)
-                text_browser.setPlainText(formatted_json)
-            except Exception:
-                text_browser.setPlainText(str(value))
-        elif isinstance(value, list):
-            # Format lists nicely, one item per line
-            if all(isinstance(item, dict) for item in value):
-                # If list of dictionaries, format as JSON
-                import json
-                try:
-                    formatted_json = json.dumps(value, indent=2)
-                    text_browser.setPlainText(formatted_json)
-                except Exception:
-                    text_browser.setPlainText("\n".join([f"- {item}" for item in value]))
-            else:
-                # Simple list formatting
-                text_browser.setPlainText("\n".join([f"- {item}" for item in value]))
-        else:
-            text_browser.setPlainText(str(value))
-            
-        layout.addWidget(text_browser)
+        # Property name
+        name_label = QLabel(f"<b>{key}</b>")
+        name_label.setStyleSheet("font-size: 14px;")
+        header_layout.addWidget(name_label)
         
-        # Add a close button
+        # Type information
+        type_label = QLabel(f"Type: <code>{type(value).__name__}</code>")
+        type_label.setStyleSheet("color: #606060;")
+        header_layout.addWidget(type_label, alignment=Qt.AlignRight)
+        
+        layout.addLayout(header_layout)
+        
+        # Add separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(separator)
+        
+        # Create a view button layout with options for different view modes
+        view_options_layout = QHBoxLayout()
+        
+        # JSON view button
+        json_view_btn = QPushButton("JSON View")
+        json_view_btn.setCheckable(True)
+        json_view_btn.setChecked(True)
+        
+        # Table view button (for dictionaries and list of dictionaries)
+        table_view_btn = QPushButton("Table View")
+        table_view_btn.setCheckable(True)
+        table_view_btn.setEnabled(self._can_display_as_table(value))
+        
+        # Raw view button
+        raw_view_btn = QPushButton("Raw View")
+        raw_view_btn.setCheckable(True)
+        
+        # Add buttons to layout
+        view_options_layout.addWidget(json_view_btn)
+        view_options_layout.addWidget(table_view_btn)
+        view_options_layout.addWidget(raw_view_btn)
+        view_options_layout.addStretch()
+        
+        # Add view options to main layout
+        layout.addLayout(view_options_layout)
+        
+        # Create a stacked widget to hold different views
+        from PySide6.QtWidgets import QStackedWidget, QTableWidget, QTableWidgetItem
+        stacked_widget = QStackedWidget()
+        
+        # JSON View with syntax highlighting for structured data
+        json_view = QTextBrowser()
+        json_view.setOpenExternalLinks(True)
+        json_view.setStyleSheet("""
+            QTextBrowser {
+                font-family: "Consolas", "Monaco", monospace;
+                font-size: 12px;
+                background-color: #FAFAFA;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                padding: 8px;
+            }
+        """)
+        
+        # Format content based on the type and create JSON view
+        self._format_json_view(json_view, value)
+        stacked_widget.addWidget(json_view)
+        
+        # Table View for dictionaries and lists of dictionaries
+        table_view = QTableWidget()
+        table_view.setAlternatingRowColors(True)
+        table_view.horizontalHeader().setStretchLastSection(True)
+        table_view.setStyleSheet("""
+            QTableWidget {
+                background-color: white;
+                gridline-color: #E0E0E0;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+            }
+            QHeaderView::section {
+                background-color: #F5F5F5;
+                padding: 6px;
+                border: none;
+                border-bottom: 1px solid #D0D0D0;
+                font-weight: bold;
+            }
+            QTableWidget::item {
+                padding: 4px;
+            }
+        """)
+        
+        # Populate table view if possible
+        self._populate_table_view(table_view, value)
+        stacked_widget.addWidget(table_view)
+        
+        # Raw View
+        raw_view = QTextBrowser()
+        raw_view.setStyleSheet("""
+            QTextBrowser {
+                font-family: "Consolas", "Monaco", monospace;
+                font-size: 12px;
+                background-color: #FAFAFA;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                padding: 8px;
+            }
+        """)
+        raw_view.setPlainText(str(value))
+        stacked_widget.addWidget(raw_view)
+        
+        layout.addWidget(stacked_widget)
+        
+        # Set up button group for view selection
+        from PySide6.QtWidgets import QButtonGroup
+        view_button_group = QButtonGroup()
+        view_button_group.addButton(json_view_btn, 0)
+        view_button_group.addButton(table_view_btn, 1)
+        view_button_group.addButton(raw_view_btn, 2)
+        
+        # Connect button group to stacked widget
+        view_button_group.buttonClicked.connect(
+            lambda button: stacked_widget.setCurrentIndex(view_button_group.id(button))
+        )
+        
+        # Add bottom button row
+        button_layout = QHBoxLayout()
+        
+        # Copy button
+        copy_button = QPushButton("Copy")
+        copy_button.setToolTip("Copy to clipboard")
+        copy_button.clicked.connect(lambda: self._copy_property_value_to_clipboard(value))
+        button_layout.addWidget(copy_button)
+        
+        # Export button for structured data
+        if isinstance(value, (dict, list)):
+            export_button = QPushButton("Export")
+            export_button.setToolTip("Export to file")
+            export_button.clicked.connect(lambda: self._export_property_value(key, value))
+            button_layout.addWidget(export_button)
+        
+        # Spacer to push close button to the right
+        button_layout.addStretch()
+        
+        # Close button
         close_button = QPushButton("Close")
         close_button.clicked.connect(dialog.accept)
-        layout.addWidget(close_button)
+        button_layout.addWidget(close_button)
         
-        dialog.exec() 
+        layout.addLayout(button_layout)
+        
+        dialog.exec()
+    
+    def _can_display_as_table(self, value):
+        """Check if the value can be displayed as a table
+        
+        Args:
+            value: The value to check
+            
+        Returns:
+            bool: True if the value can be displayed as a table
+        """
+        # Simple dictionary with simple values
+        if isinstance(value, dict):
+            return True
+            
+        # List of dictionaries with consistent keys
+        if isinstance(value, list) and len(value) > 0 and all(isinstance(item, dict) for item in value):
+            # Check if all dictionaries have the same keys
+            keys = set(value[0].keys())
+            return all(set(item.keys()) == keys for item in value)
+        
+        # Single level nested dictionary where all second-level values are simple types
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if isinstance(v, dict):
+                    for inner_k, inner_v in v.items():
+                        if isinstance(inner_v, (dict, list)):
+                            return False
+            return True
+            
+        return False
+    
+    def _format_json_view(self, text_browser, value):
+        """Format a value for display in the JSON view
+        
+        Args:
+            text_browser: The QTextBrowser to display the content in
+            value: The value to format
+        """
+        if isinstance(value, dict):
+            try:
+                import json
+                formatted_json = json.dumps(value, indent=2, sort_keys=True)
+                
+                # Apply basic syntax highlighting using HTML
+                highlighted_text = self._highlight_json(formatted_json)
+                text_browser.setHtml(highlighted_text)
+            except Exception:
+                # Fallback to plain text if JSON highlighting fails
+                text_browser.setPlainText(str(value))
+                
+        elif isinstance(value, list):
+            # Different handling based on list content
+            if all(isinstance(item, dict) for item in value) and len(value) > 0:
+                # List of dictionaries - format as JSON with syntax highlighting
+                try:
+                    import json
+                    formatted_json = json.dumps(value, indent=2, sort_keys=True)
+                    highlighted_text = self._highlight_json(formatted_json)
+                    text_browser.setHtml(highlighted_text)
+                except Exception:
+                    # Fallback to simple list format
+                    content = "<ol>\n"
+                    for item in value:
+                        content += f"<li>{html.escape(str(item))}</li>\n"
+                    content += "</ol>"
+                    text_browser.setHtml(content)
+            else:
+                # Simple list with numbered items
+                import html
+                content = "<ol>\n"
+                for item in value:
+                    content += f"<li>{html.escape(str(item))}</li>\n"
+                content += "</ol>"
+                text_browser.setHtml(content)
+        else:
+            # For strings, handle URLs and multi-line text appropriately
+            if isinstance(value, str):
+                import html
+                if value.startswith('http://') or value.startswith('https://'):
+                    text_browser.setHtml(f'<a href="{html.escape(value)}">{html.escape(value)}</a>')
+                elif '\n' in value:
+                    # For multi-line text, preserve formatting with <pre> tags
+                    text_browser.setHtml(f'<pre>{html.escape(value)}</pre>')
+                else:
+                    text_browser.setPlainText(value)
+            else:
+                text_browser.setPlainText(str(value))
+    
+    def _populate_table_view(self, table_widget, value):
+        """Populate a table widget with the provided data
+        
+        Args:
+            table_widget: The QTableWidget to populate
+            value: The value to display in the table
+        """
+        table_widget.clear()
+        
+        # Case 1: Dictionary with simple values
+        if isinstance(value, dict) and not any(isinstance(v, (dict, list)) for v in value.values()):
+            table_widget.setColumnCount(2)
+            table_widget.setHorizontalHeaderLabels(["Key", "Value"])
+            table_widget.setRowCount(len(value))
+            
+            for i, (k, v) in enumerate(sorted(value.items())):
+                key_item = QTableWidgetItem(str(k))
+                value_item = QTableWidgetItem(str(v))
+                key_item.setFlags(key_item.flags() & ~Qt.ItemIsEditable)
+                value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+                
+                # Format boolean values
+                if isinstance(v, bool):
+                    value_item.setText("Yes" if v else "No")
+                
+                table_widget.setItem(i, 0, key_item)
+                table_widget.setItem(i, 1, value_item)
+                
+            table_widget.resizeColumnsToContents()
+            
+        # Case 2: List of dictionaries with consistent keys
+        elif isinstance(value, list) and len(value) > 0 and all(isinstance(item, dict) for item in value):
+            # Get all keys from the first dictionary
+            keys = list(value[0].keys())
+            
+            # Set column count and headers
+            table_widget.setColumnCount(len(keys))
+            table_widget.setHorizontalHeaderLabels(keys)
+            table_widget.setRowCount(len(value))
+            
+            # Add data
+            for row, item in enumerate(value):
+                for col, key in enumerate(keys):
+                    # Get value or empty string if key is missing
+                    val = item.get(key, "")
+                    table_item = QTableWidgetItem(str(val))
+                    table_item.setFlags(table_item.flags() & ~Qt.ItemIsEditable)
+                    table_widget.setItem(row, col, table_item)
+                    
+            table_widget.resizeColumnsToContents()
+            
+        # Case 3: Nested dictionary (2 levels)
+        elif isinstance(value, dict) and any(isinstance(v, dict) for v in value.values()):
+            # Collect all second-level keys across all nested dictionaries
+            all_inner_keys = set()
+            for k, v in value.items():
+                if isinstance(v, dict):
+                    all_inner_keys.update(v.keys())
+            
+            # Convert to sorted list for consistent column order
+            inner_keys = sorted(all_inner_keys)
+            
+            # Set column count and headers (first column for the outer key, rest for inner keys)
+            table_widget.setColumnCount(1 + len(inner_keys))
+            headers = ["Item"] + inner_keys
+            table_widget.setHorizontalHeaderLabels(headers)
+            
+            # Count rows (one for each outer key that has a dictionary value)
+            rows = sum(1 for k, v in value.items() if isinstance(v, dict))
+            rows = max(1, rows)  # Ensure at least one row
+            table_widget.setRowCount(rows)
+            
+            # Add data
+            row = 0
+            for outer_key, outer_value in sorted(value.items()):
+                if isinstance(outer_value, dict):
+                    # Set outer key in first column
+                    key_item = QTableWidgetItem(str(outer_key))
+                    key_item.setFlags(key_item.flags() & ~Qt.ItemIsEditable)
+                    table_widget.setItem(row, 0, key_item)
+                    
+                    # Fill inner values
+                    for col, inner_key in enumerate(inner_keys, 1):
+                        inner_value = outer_value.get(inner_key, "")
+                        value_item = QTableWidgetItem(str(inner_value))
+                        value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+                        table_widget.setItem(row, col, value_item)
+                    
+                    row += 1
+                    
+            table_widget.resizeColumnsToContents()
+        
+        # If we couldn't make a table view, show a message
+        if table_widget.rowCount() == 0:
+            table_widget.setRowCount(1)
+            table_widget.setColumnCount(1)
+            table_widget.setHorizontalHeaderLabels(["Message"])
+            message = QTableWidgetItem("Cannot display this data in table format")
+            message.setFlags(message.flags() & ~Qt.ItemIsEditable)
+            message.setTextAlignment(Qt.AlignCenter)
+            table_widget.setItem(0, 0, message)
+            
+        # Optimize the view
+        table_widget.horizontalHeader().setStretchLastSection(True)
+        table_widget.resizeRowsToContents()
+    
+    def _highlight_json(self, json_str):
+        """Apply basic syntax highlighting to JSON string
+        
+        Args:
+            json_str: JSON string to highlight
+            
+        Returns:
+            HTML formatted string with syntax highlighting
+        """
+        import html
+        highlighted = html.escape(json_str)
+        
+        # Highlight strings (anything in quotes)
+        highlighted = re.sub(
+            r'(".*?")(?=:)', 
+            r'<span style="color: #0000CD;">\1</span>', 
+            highlighted
+        )
+        # Highlight values
+        highlighted = re.sub(
+            r': (".*?")(,|\n|$)', 
+            r': <span style="color: #008000;">\1</span>\2', 
+            highlighted
+        )
+        # Highlight numbers
+        highlighted = re.sub(
+            r'(: |\[)(\d+\.?\d*)(,|\n|$|\])', 
+            r'\1<span style="color: #0000FF;">\2</span>\3', 
+            highlighted
+        )
+        # Highlight booleans and null
+        highlighted = re.sub(
+            r': (true|false|null)(,|\n|$)', 
+            r': <span style="color: #B22222;">\1</span>\2', 
+            highlighted
+        )
+        
+        # Wrap in pre tag for formatting
+        return f'<pre style="margin: 0;">{highlighted}</pre>'
+    
+    def _copy_property_value_to_clipboard(self, value):
+        """Copy property value to clipboard
+        
+        Args:
+            value: The value to copy
+        """
+        clipboard = QApplication.clipboard()
+        
+        if isinstance(value, (dict, list)):
+            import json
+            try:
+                # Format as JSON for structured data
+                formatted_json = json.dumps(value, indent=2)
+                clipboard.setText(formatted_json)
+            except:
+                clipboard.setText(str(value))
+        else:
+            clipboard.setText(str(value))
+            
+        self.status_bar.showMessage("Value copied to clipboard", 2000)
+    
+    def _export_property_value(self, key, value):
+        """Export property value to a file
+        
+        Args:
+            key: The property key/name
+            value: The value to export
+        """
+        if not isinstance(value, (dict, list)):
+            return
+            
+        # Create a file dialog to get the save location
+        file_dialog = QFileDialog(self)
+        file_dialog.setAcceptMode(QFileDialog.AcceptSave)
+        file_dialog.setNameFilter("JSON files (*.json);;All files (*.*)")
+        file_dialog.setDefaultSuffix("json")
+        file_dialog.selectFile(f"{key}.json")
+        
+        if file_dialog.exec():
+            file_path = file_dialog.selectedFiles()[0]
+            
+            try:
+                with open(file_path, 'w') as f:
+                    import json
+                    json.dump(value, f, indent=2)
+                self.status_bar.showMessage(f"Exported to {file_path}", 3000)
+            except Exception as e:
+                logger.error(f"Error exporting property value: {e}")
+                QMessageBox.critical(
+                    self, 
+                    "Export Error", 
+                    f"An error occurred while exporting: {str(e)}"
+                )
+    
+    def _handle_property_double_click(self, row, column):
+        """Handle double click on a property row
+        
+        Args:
+            row: The row that was double-clicked
+            column: The column that was double-clicked
+        """
+        # Only process double clicks on the value column (1) for valid rows
+        if column == 1 and row < self.properties_table.rowCount():
+            # Skip if it's a separator row (span > 1)
+            if self.properties_table.columnSpan(row, 0) > 1:
+                return
+                
+            # Get the property value and name
+            value_item = self.properties_table.item(row, 1)
+            name_item = self.properties_table.item(row, 0)
+            
+            if value_item and name_item:
+                raw_value = value_item.data(Qt.UserRole)
+                key = name_item.text()
+                
+                # Open detailed view for dictionaries, lists, or long strings
+                if isinstance(raw_value, (dict, list)) or (isinstance(raw_value, str) and len(raw_value) > 100):
+                    self._show_detailed_property(key, raw_value)
+                # For URLs, open in browser
+                elif isinstance(raw_value, str) and (raw_value.startswith('http://') or raw_value.startswith('https://')):
+                    import webbrowser
+                    webbrowser.open(raw_value) 

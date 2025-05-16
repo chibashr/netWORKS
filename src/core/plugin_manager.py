@@ -255,8 +255,8 @@ class PluginInfo:
             data["id"],
             data["name"],
             data["version"],
-            data["description"],
-            data["author"],
+            data.get("description", ""),
+            data.get("author", ""),
             data["entry_point"],
             data.get("path")
         )
@@ -329,32 +329,28 @@ class PluginManager(QObject):
         # Discover and register plugins
         self.discover_plugins()
         
-    def _sync_registry(self, force_save=False):
-        """Synchronize in-memory state with registry file"""
-        logger.debug(f"Synchronizing plugin registry (force_save={force_save})")
+    def _sync_registry(self):
+        """Sync plugins to registry"""
+        logger.debug("Syncing plugins to registry")
         
-        # Build updated registry
-        updated_registry = {}
+        # Mark registry as dirty to ensure it's saved
+        self._registry_dirty = True
+        
+        # Build registry data
+        registry_data = {}
+        
         for plugin_id, plugin_info in self.plugins.items():
-            registry_entry = plugin_info.to_dict()
-            # Log each plugin's state as we save it
-            logger.debug(f"Registry entry for {plugin_id}: state={registry_entry['state']}, enabled={registry_entry['enabled']}, loaded={registry_entry['loaded']}")
-            updated_registry[plugin_id] = registry_entry
+            registry_data[plugin_id] = {
+                "state": plugin_info.state.name,
+                "version": plugin_info.version,
+                "path": plugin_info.path
+            }
             
-        # Save registry if needed
-        if force_save or self._registry_dirty:
-            logger.debug(f"Saving registry because {'force_save was specified' if force_save else 'registry is dirty'}")
-            success = self._save_registry(updated_registry)
-            if success:
-                self._registry_cache = updated_registry
-                self._registry_dirty = False
-                logger.debug("Registry synchronized successfully")
-            else:
-                logger.error("Failed to synchronize registry")
-        else:
-            logger.debug("No changes to registry, skipping save")
-                
-        return True
+        # Update cache
+        self._registry_cache = registry_data
+        
+        # Save to disk
+        self._save_registry()
         
     def _load_registry(self):
         """Load plugin registry"""
@@ -392,46 +388,40 @@ class PluginManager(QObject):
         self._registry_cache = {}
         return {}
         
-    def _save_registry(self, registry):
+    def _save_registry(self):
         """Save plugin registry"""
+        if not self._registry_dirty:
+            logger.debug("Registry not dirty, skipping save")
+            return
+            
+        logger.debug(f"Saving plugin registry to: {self.registry_file}")
+        
+        registry_data = {}
+        
+        # Build registry from plugins
+        for plugin_id, plugin_info in self.plugins.items():
+            registry_data[plugin_id] = {
+                "state": plugin_info.state.name,
+                "last_loaded": str(datetime.now()) if plugin_info.state.is_loaded else "",
+                "path": plugin_info.path,
+                "version": plugin_info.version
+            }
+            
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self.registry_file), exist_ok=True)
+        
         try:
-            # Log the registry data being saved
-            logger.debug(f"Saving plugin registry to {self.registry_file} with {len(registry)} plugins")
-            
-            # Create directory structure if it doesn't exist
-            registry_dir = os.path.dirname(self.registry_file)
-            os.makedirs(registry_dir, exist_ok=True)
-            logger.debug(f"Ensured registry directory exists: {registry_dir}")
-            
-            # Write registry to file
             with open(self.registry_file, 'w') as f:
-                json.dump(registry, f, indent=2)
+                json.dump(registry_data, f, indent=2)
                 
-            # Verify the file was written successfully
-            if os.path.exists(self.registry_file):
-                file_size = os.path.getsize(self.registry_file)
-                logger.debug(f"Plugin registry saved successfully. File size: {file_size} bytes")
-                
-                # Re-read to verify data integrity
-                try:
-                    with open(self.registry_file, 'r') as f:
-                        verify_data = json.load(f)
-                    logger.debug(f"Registry file verified with {len(verify_data)} plugins")
-                    
-                    # Update cache
-                    self._registry_cache = verify_data
-                    self._registry_dirty = False
-                except Exception as e:
-                    logger.error(f"Registry file verification failed: {e}")
-                    return False
-            else:
-                logger.error(f"Registry file not found after writing: {self.registry_file}")
-                return False
-                
-            return True
+            logger.debug(f"Registry saved with {len(registry_data)} plugins")
+            
+            # Update cache and clear dirty flag
+            self._registry_cache = registry_data.copy()
+            self._registry_dirty = False
+            
         except Exception as e:
             logger.error(f"Error saving plugin registry to {self.registry_file}: {e}", exc_info=True)
-            return False
         
     def discover_plugins(self):
         """Discover plugins in the configured directories"""
@@ -448,57 +438,65 @@ class PluginManager(QObject):
         
         # Check the internal plugins directory - these are bundled with the application
         if self.internal_plugins_dir:
-            logger.debug(f"Looking for plugins in internal directory: {self.internal_plugins_dir}")
+            logger.debug(f"Discovering internal plugins from {self.internal_plugins_dir}")
             internal_plugins = self._discover_plugins_in_directory(self.internal_plugins_dir)
             discovered_plugins.update(internal_plugins)
         
         # Check the external plugins directory - these are user-installed plugins
         if self.external_plugins_dir:
-            logger.debug(f"Looking for plugins in external directory: {self.external_plugins_dir}")
+            logger.debug(f"Discovering external plugins from {self.external_plugins_dir}")
             external_plugins = self._discover_plugins_in_directory(self.external_plugins_dir)
             discovered_plugins.update(external_plugins)
             
-        # Process discovered plugins
+        # Check for plugins in the current workspace directory if device_manager is available
+        if hasattr(self.app, 'device_manager') and hasattr(self.app.device_manager, 'current_workspace'):
+            current_workspace = self.app.device_manager.current_workspace
+            workspace_dir = os.path.join(self.app.device_manager.workspaces_dir, current_workspace)
+            workspace_plugins_dir = os.path.join(workspace_dir, "plugins")
+            
+            if os.path.exists(workspace_plugins_dir):
+                logger.debug(f"Discovering workspace plugins from {workspace_plugins_dir}")
+                workspace_plugins = self._discover_plugins_in_directory(workspace_plugins_dir)
+                discovered_plugins.update(workspace_plugins)
+        
+        # Handle registry - check if plugin is already registered
         for plugin_id, plugin_info in discovered_plugins.items():
-            # Check if plugin is in registry
             if plugin_id in registry:
-                # Use registry information to determine plugin state
-                registry_data = registry[plugin_id]
+                # Plugin already in registry, restore its state
+                plugin_data = registry[plugin_id]
                 
-                # Check if registry uses new state system or old enabled/loaded flags
-                if "state" in registry_data:
-                    state_name = registry_data["state"]
+                # Check for new state format
+                if "state" in plugin_data:
+                    state_name = plugin_data["state"]
                     try:
-                        state = PluginState[state_name]
-                        plugin_info.state = state
+                        plugin_info.state = PluginState[state_name]
                     except (KeyError, ValueError):
-                        logger.warning(f"Invalid plugin state in registry for {plugin_id}: {state_name}")
-                        # Default to DISCOVERED state
+                        logger.warning(f"Invalid state '{state_name}' for plugin {plugin_id}, using default")
                         plugin_info.state = PluginState.DISCOVERED
                 else:
-                    # Legacy registry format - convert to new state system
-                    enabled = registry_data.get("enabled", False)
-                    loaded = registry_data.get("loaded", False)
+                    # Legacy format - convert from enabled/loaded flags
+                    enabled = plugin_data.get("enabled", True)
+                    loaded = plugin_data.get("loaded", False)
                     plugin_info.state = PluginState.from_enabled_loaded(enabled, loaded)
-            else:
-                # New plugin, set to DISCOVERED state
-                plugin_info.state = PluginState.DISCOVERED
                 
-            # Store the plugin
+                logger.debug(f"Restored state for plugin {plugin_id}: {plugin_info.state}")
+            else:
+                # New plugin, not in registry
+                logger.debug(f"New plugin discovered: {plugin_id}")
+                plugin_info.state = PluginState.DISCOVERED
+            
+            # Store in plugins dictionary
             self.plugins[plugin_id] = plugin_info
-            
-            # Check if plugin has requirements and install them if it's already enabled
-            if plugin_info.state.is_enabled and plugin_info.requirements.get("python"):
-                logger.info(f"Plugin {plugin_id} has Python requirements, installing for enabled plugin")
-                self._install_plugin_requirements(plugin_info)
-            
-            # Install plugin requirements if auto-install is enabled regardless of plugin state
-            if hasattr(self.app, 'config') and self.app.config.get("application.auto_install_plugin_requirements", False):
-                if plugin_info.requirements.get("python"):
-                    logger.info(f"Auto-installing Python requirements for plugin {plugin_id}")
-                    self._install_plugin_requirements(plugin_info)
-            
-        # Save registry with discovered plugins
+        
+        # Clean up registry - remove entries for plugins that no longer exist
+        self._registry_cache = {
+            plugin_id: registry[plugin_id] 
+            for plugin_id in registry 
+            if plugin_id in self.plugins
+        }
+        self._registry_dirty = True
+        
+        # Save updated registry
         self._sync_registry()
         
         logger.info(f"Discovered {len(self.plugins)} plugins")
@@ -787,7 +785,7 @@ class PluginManager(QObject):
                 # Force the state directly
                 plugin_info.state = PluginState.DISABLED
                 self._registry_dirty = True
-                self._sync_registry(force_save=True)
+                self._sync_registry()
             
             # Verify instance is completely cleared
             if plugin_info.instance is not None:
@@ -804,7 +802,7 @@ class PluginManager(QObject):
         
         # Always sync the registry to make sure changes are saved
         self._registry_dirty = True
-        self._sync_registry(force_save=True)
+        self._sync_registry()
         
         return success
     
@@ -1012,7 +1010,7 @@ class PluginManager(QObject):
                 gc.collect()
             
             # Save changes to the registry
-            self._sync_registry(force_save=True)
+            self._sync_registry()
             
             logger.info(f"Successfully unloaded plugin: {plugin_id}")
             return True
@@ -1465,20 +1463,68 @@ class PluginManager(QObject):
         already_loaded = [p.id for p in self.plugins.values() if p.state.is_loaded]
         logger.debug(f"Found {len(already_loaded)} plugins already loaded")
         
+        # First, create a dependency graph
+        dependencies = {}
+        
+        try:
+            # Build dependency graph - handle varying formats of dependencies
+            for plugin_info in enabled_plugins:
+                plugin_deps = []
+                
+                # Handle possible different dependency formats
+                if hasattr(plugin_info, 'dependencies'):
+                    if isinstance(plugin_info.dependencies, list):
+                        # Handle case where dependencies is a list of plugin IDs
+                        plugin_deps = plugin_info.dependencies
+                    elif isinstance(plugin_info.dependencies, dict) and "plugins" in plugin_info.dependencies:
+                        # Handle case where dependencies is a dict with a "plugins" key
+                        if isinstance(plugin_info.dependencies["plugins"], list):
+                            plugin_deps = plugin_info.dependencies["plugins"]
+                        else:
+                            logger.warning(f"Unexpected format for plugin dependencies in {plugin_info.id}: {plugin_info.dependencies}")
+                
+                dependencies[plugin_info.id] = plugin_deps
+                logger.debug(f"Plugin {plugin_info.id} dependencies: {plugin_deps}")
+                
+            # Sort plugins by dependency order using topological sort
+            sorted_plugins = self._topological_sort(dependencies)
+            
+            # Filter to only include enabled plugins that aren't loaded yet
+            sorted_plugins = [p for p in sorted_plugins if p in [plugin.id for plugin in enabled_plugins]]
+            
+            logger.debug(f"Ordered plugins to load: {', '.join(sorted_plugins)}")
+        except Exception as e:
+            logger.error(f"Error determining plugin load order: {e}", exc_info=True)
+            # Fall back to loading in arbitrary order if we couldn't sort dependencies
+            sorted_plugins = [p.id for p in enabled_plugins]
+            logger.warning(f"Falling back to unsorted plugin loading: {', '.join(sorted_plugins)}")
+        
         loaded_plugins = []
         load_failed = []
         
-        # Load each plugin
-        for plugin_info in enabled_plugins:
-            logger.debug(f"Loading plugin: {plugin_info.id}")
-            instance = self.load_plugin(plugin_info.id)
-            
-            if instance:
-                loaded_plugins.append(plugin_info)
-                logger.debug(f"Successfully loaded plugin: {plugin_info.id}")
-            else:
-                load_failed.append(plugin_info.id)
-                logger.error(f"Failed to load plugin: {plugin_info.id}")
+        # Load each plugin in dependency order
+        for plugin_id in sorted_plugins:
+            try:
+                logger.debug(f"Loading plugin: {plugin_id}")
+                instance = self.load_plugin(plugin_id)
+                
+                if instance:
+                    loaded_plugins.append(self.plugins[plugin_id])
+                    logger.debug(f"Successfully loaded plugin: {plugin_id}")
+                else:
+                    load_failed.append(plugin_id)
+                    logger.error(f"Failed to load plugin: {plugin_id}")
+            except Exception as e:
+                load_failed.append(plugin_id)
+                logger.error(f"Exception loading plugin {plugin_id}: {e}", exc_info=True)
+                # Set plugin to ERROR state
+                if plugin_id in self.plugins:
+                    self.plugins[plugin_id].state = PluginState.ERROR
+                    self.plugins[plugin_id].error = str(e)
+                    self._registry_dirty = True
+        
+        # Save the registry after all operations
+        self._sync_registry()
         
         # Log results
         if loaded_plugins:
@@ -1487,12 +1533,70 @@ class PluginManager(QObject):
         if load_failed:
             logger.warning(f"Failed to load {len(load_failed)} plugins: {', '.join(load_failed)}")
             
-        if already_loaded:
-            logger.debug(f"The following plugins were already loaded: {', '.join(already_loaded)}")
-                
-        logger.info(f"Loaded {len(loaded_plugins)} of {total_enabled} enabled plugins")
         return loaded_plugins
+
+    def _topological_sort(self, dependencies):
+        """
+        Perform a topological sort of plugins based on dependencies
         
+        Args:
+            dependencies: Dictionary mapping plugin_id to list of dependency plugin ids
+            
+        Returns:
+            List of plugin ids in dependency order (dependencies first)
+        """
+        # Create a dictionary to track visited nodes
+        visited = {node: False for node in dependencies}
+        temp_visited = {node: False for node in dependencies}  # For cycle detection
+        # Create a list for the sorted elements
+        sorted_list = []
+        
+        # Define the recursive dfs function
+        def dfs(node):
+            # If node is already in sorted list, we can skip
+            if node in sorted_list:
+                return True
+                
+            # If the node is temporarily visited, we have a cycle
+            if temp_visited.get(node, False):
+                logger.warning(f"Dependency cycle detected involving plugin: {node}")
+                return False
+                
+            # Mark node as temporarily visited for cycle detection
+            temp_visited[node] = True
+            
+            # Visit all dependencies if they exist
+            if node in dependencies:
+                for dependency in dependencies[node]:
+                    # Skip if dependency doesn't exist in our plugin system
+                    if dependency not in visited:
+                        logger.warning(f"Plugin {node} has missing dependency: {dependency}")
+                        continue
+                    
+                    # If dependency not yet visited, visit it
+                    if not visited.get(dependency, False):
+                        success = dfs(dependency)
+                        if not success:
+                            # We detected a cycle, abort
+                            return False
+            
+            # Mark node as permanently visited
+            visited[node] = True
+            # Clear temporary visit marker
+            temp_visited[node] = False
+            
+            # After visiting all dependencies, add this node
+            sorted_list.append(node)
+            return True
+        
+        # Visit all nodes
+        for node in list(dependencies.keys()):
+            if not visited.get(node, False):
+                dfs(node)
+                
+        # Return the sorted list (dependencies first)
+        return sorted_list
+
     def unload_all_plugins(self):
         """Unload all loaded plugins"""
         logger.info("Unloading all loaded plugins")

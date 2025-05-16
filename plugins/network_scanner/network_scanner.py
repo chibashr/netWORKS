@@ -172,9 +172,44 @@ class ScannerWorker(QObject):
             # This prevents issues like having "-sn -T4 -sn -T4"
             arg_parts = arguments.split()
             unique_args = []
+            seen_options = set()
+            port_options = []  # Store all port options
+            
+            # First pass - collect all port options and other unique args
             for arg in arg_parts:
-                if arg not in unique_args or arg.startswith("-p"):
+                if arg.startswith("-p"):
+                    # Store port option separately
+                    if len(arg) > 2:  # Format is "-pXXX"
+                        port_options.append(arg[2:])  # Just the port numbers
+                    elif arg == "-p" and len(arg_parts) > arg_parts.index(arg) + 1:
+                        # Handle space-separated format like "-p 22,80"
+                        next_idx = arg_parts.index(arg) + 1
+                        next_arg = arg_parts[next_idx]
+                        if not next_arg.startswith("-"):  # Ensure it's actually port numbers
+                            port_options.append(next_arg)
+                elif arg.startswith("-"):
+                    # For other options, only add if we haven't seen them before
+                    option_char = arg[1:].split(" ")[0]  # Extract the option character
+                    if option_char not in seen_options:
+                        seen_options.add(option_char)
+                        unique_args.append(arg)
+                else:
+                    # For non-option arguments, always add
                     unique_args.append(arg)
+            
+            # Now add the consolidated port option if we collected any
+            if port_options:
+                # Merge all port specifications, removing duplicates
+                all_ports = set()
+                for ports in port_options:
+                    # Split by commas, handle ranges like "1-1000"
+                    for port_spec in ports.split(","):
+                        all_ports.add(port_spec.strip())
+                
+                # Add consolidated port option
+                unique_args.append(f"-p {','.join(sorted(all_ports))}")
+                
+            # Rebuild the arguments string
             arguments = " ".join(unique_args)
                 
             # Log the scan command
@@ -3454,6 +3489,137 @@ class NetworkScannerPlugin(PluginInterface):
             import subprocess
             import threading
             import platform
+            from PySide6.QtCore import QObject, Signal, QThread
+            
+            # Create a worker object with signals for thread-safe UI updates
+            class PingScanWorker(QObject):
+                progress_updated = Signal(int, int)  # current, total
+                status_updated = Signal(str)  # status message
+                device_found = Signal(dict)  # device data
+                scan_complete = Signal(dict)  # scan results
+                
+                def __init__(self, ip_list, network_range):
+                    super().__init__()
+                    self.ip_list = ip_list
+                    self.network_range = network_range
+                    self.should_stop = False
+                    
+                def stop(self):
+                    self.should_stop = True
+                    
+                def run(self):
+                    self._run_scan()
+                    
+                def _ping_host(self, ip, index):
+                    if self.should_stop:
+                        return
+                        
+                    # Determine ping command based on OS
+                    system = platform.system().lower()
+                    if system == "windows":
+                        ping_cmd = ["ping", "-n", "1", "-w", "500", str(ip)]
+                        ping_success = lambda proc: proc.returncode == 0
+                    else:  # Linux and macOS
+                        ping_cmd = ["ping", "-c", "1", "-W", "1", str(ip)]
+                        ping_success = lambda proc: proc.returncode == 0
+                        
+                    try:
+                        # Execute ping command
+                        proc = subprocess.run(
+                            ping_cmd, 
+                            stdout=subprocess.PIPE, 
+                            stderr=subprocess.PIPE,
+                            timeout=1
+                        )
+                        
+                        # Check result
+                        if ping_success(proc):
+                            # Log success
+                            self.status_updated.emit(f"Host {ip} is up")
+                            
+                            # Create device data
+                            host_data = {
+                                "ip_address": str(ip),
+                                "scan_source": "ping",
+                                "alias": f"Device at {ip}",
+                                "tags": ["scanned", "ping"]
+                            }
+                            
+                            # Try to get hostname
+                            try:
+                                import socket
+                                hostname = socket.getfqdn(str(ip))
+                                if hostname and hostname != str(ip):
+                                    host_data["hostname"] = hostname
+                                    host_data["alias"] = hostname
+                            except Exception:
+                                pass
+                                
+                            # Emit device found signal
+                            self.device_found.emit(host_data)
+                        else:
+                            # Host is not up, don't add it
+                            logger.debug(f"Host {ip} did not respond to ping")
+                            
+                    except Exception as e:
+                        logger.debug(f"Error pinging {ip}: {e}")
+                        
+                    finally:
+                        # Update progress through signal
+                        if not self.should_stop:
+                            self.progress_updated.emit(index + 1, len(self.ip_list))
+                            
+                def _run_scan(self):
+                    start_time = time.time()
+                    alive_hosts = []
+                    threads = []
+                    max_concurrent = min(50, len(self.ip_list))  # Limit concurrent threads
+                    
+                    try:
+                        for i, ip in enumerate(self.ip_list):
+                            if self.should_stop:
+                                break
+                                
+                            # Create and start thread
+                            t = threading.Thread(target=self._ping_host, args=(ip, i))
+                            t.daemon = True
+                            threads.append(t)
+                            t.start()
+                            
+                            # Limit concurrent threads
+                            while len([t for t in threads if t.is_alive()]) >= max_concurrent:
+                                time.sleep(0.01)
+                                
+                            # Update status periodically
+                            if i % 10 == 0:
+                                self.status_updated.emit(f"Scanned {i} of {len(self.ip_list)} addresses...")
+                                
+                        # Wait for all threads to complete
+                        for t in threads:
+                            if self.should_stop:
+                                break
+                            t.join(timeout=0.5)
+                            
+                        # Scan complete
+                        scan_time = time.time() - start_time
+                        self.status_updated.emit(f"Scan complete: Found {len(alive_hosts)} devices in {round(scan_time, 1)} seconds")
+                        
+                        # Store results
+                        scan_results = {
+                            "network_range": self.network_range,
+                            "scan_type": "quick_ping",
+                            "total_hosts": len(self.ip_list),
+                            "devices_found": len(alive_hosts),
+                            "scan_time": scan_time,
+                            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        
+                        # Emit scan complete signal
+                        self.scan_complete.emit(scan_results)
+                        
+                    except Exception as e:
+                        logger.error(f"Error during ping scan: {e}")
+                        self.status_updated.emit(f"Error during scan: {e}")
             
             # Set scanning flag
             self._is_scanning = True
@@ -3520,144 +3686,23 @@ class NetworkScannerPlugin(PluginInterface):
             if hasattr(self, "progress_bar") and self.progress_bar:
                 self.progress_bar.setRange(0, len(ip_list))
                 self.progress_bar.setValue(0)
-                
-            # Track alive hosts
-            alive_hosts = []
-            self._ping_scan_should_stop = False
             
-            # Determine ping command based on OS
-            system = platform.system().lower()
-            if system == "windows":
-                ping_cmd = lambda ip: ["ping", "-n", "1", "-w", "500", str(ip)]
-                ping_success = lambda proc: proc.returncode == 0
-            else:  # Linux and macOS
-                ping_cmd = lambda ip: ["ping", "-c", "1", "-W", "1", str(ip)]
-                ping_success = lambda proc: proc.returncode == 0
-                
-            # Function to ping a host
-            def ping_host(ip, index):
-                if self._ping_scan_should_stop:
-                    return
-                    
-                try:
-                    # Execute ping command
-                    cmd = ping_cmd(ip)
-                    proc = subprocess.run(
-                        cmd, 
-                        stdout=subprocess.PIPE, 
-                        stderr=subprocess.PIPE,
-                        timeout=1
-                    )
-                    
-                    # Check result
-                    if ping_success(proc):
-                        alive_hosts.append(str(ip))
-                        # Log success
-                        self.log_message(f"Host {ip} is up")
-                        
-                        # Create device data
-                        host_data = {
-                            "ip_address": str(ip),
-                            "scan_source": "ping",
-                            "alias": f"Device at {ip}",
-                            "tags": ["scanned", "ping"]
-                        }
-                        
-                        # Try to get hostname
-                        try:
-                            import socket
-                            hostname = socket.getfqdn(str(ip))
-                            if hostname and hostname != str(ip):
-                                host_data["hostname"] = hostname
-                                host_data["alias"] = hostname
-                        except Exception:
-                            pass
-                            
-                        # Send to device handler
-                        self._on_device_found(host_data)
-                    else:
-                        # Host is not up, don't add it
-                        logger.debug(f"Host {ip} did not respond to ping")
-                        
-                except Exception as e:
-                    logger.debug(f"Error pinging {ip}: {e}")
-                    
-                finally:
-                    # Update progress
-                    if not self._ping_scan_should_stop and hasattr(self, "progress_bar") and self.progress_bar:
-                        self.progress_bar.setValue(index + 1)
-                        if hasattr(self, "status_label") and self.status_label:
-                            self.status_label.setText(f"Scanning: {index + 1}/{len(ip_list)} ({int(((index + 1) / len(ip_list)) * 100)}%)")
-                            
-            # Function to run the scan in a thread
-            def run_scan():
-                start_time = time.time()
-                threads = []
-                max_concurrent = min(50, len(ip_list))  # Limit concurrent threads
-                
-                try:
-                    for i, ip in enumerate(ip_list):
-                        if self._ping_scan_should_stop:
-                            break
-                            
-                        # Create and start thread
-                        t = threading.Thread(target=ping_host, args=(ip, i))
-                        t.daemon = True
-                        threads.append(t)
-                        t.start()
-                        
-                        # Limit concurrent threads
-                        while len([t for t in threads if t.is_alive()]) >= max_concurrent:
-                            time.sleep(0.01)
-                            
-                        # Update status periodically
-                        if i % 10 == 0:
-                            self.log_message(f"Scanned {i} of {len(ip_list)} addresses...")
-                            
-                    # Wait for all threads to complete
-                    for t in threads:
-                        t.join(timeout=0.5)
-                        
-                    # Scan complete
-                    scan_time = time.time() - start_time
-                    self.log_message(f"Scan complete: Found {len(alive_hosts)} devices in {round(scan_time, 1)} seconds")
-                    
-                    # Update UI
-                    if hasattr(self, "scan_button"):
-                        self.scan_button.setEnabled(True)
-                        self.stop_button.setEnabled(False)
-                        
-                    if hasattr(self, "status_label"):
-                        self.status_label.setText(f"Scan complete: Found {len(alive_hosts)} devices")
-                        
-                    if hasattr(self, "progress_bar"):
-                        self.progress_bar.setValue(len(ip_list))
-                        
-                    # Store results
-                    self._scan_results = {
-                        "network_range": network_range,
-                        "scan_type": "quick_ping",
-                        "total_hosts": len(ip_list),
-                        "devices_found": len(alive_hosts),
-                        "scan_time": scan_time,
-                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    
-                    # Emit scan complete signal
-                    self.scan_completed.emit(self._scan_results)
-                    
-                except Exception as e:
-                    logger.error(f"Error during ping scan: {e}")
-                    self.log_message(f"Error during scan: {e}")
-                    
-                finally:
-                    # Set scanning flag
-                    self._is_scanning = False
-                    
-            # Start scan thread
-            scan_thread = threading.Thread(target=run_scan)
-            scan_thread.daemon = True
-            scan_thread.start()
+            # Create worker thread
+            self._ping_scan_thread = QThread()
+            self._ping_scan_worker = PingScanWorker(ip_list, network_range)
+            self._ping_scan_worker.moveToThread(self._ping_scan_thread)
+            
+            # Connect worker signals
+            self._ping_scan_worker.progress_updated.connect(self._on_ping_scan_progress)
+            self._ping_scan_worker.status_updated.connect(self.log_message)
+            self._ping_scan_worker.device_found.connect(self._on_device_found)
+            self._ping_scan_worker.scan_complete.connect(self._on_ping_scan_complete)
+            
+            # Connect thread signals
+            self._ping_scan_thread.started.connect(self._ping_scan_worker.run)
+            
+            # Start the worker thread
+            self._ping_scan_thread.start()
             
             return True
             
@@ -3667,10 +3712,48 @@ class NetworkScannerPlugin(PluginInterface):
             self.log_message(f"Error starting scan: {e}")
             return False
             
+    def _on_ping_scan_progress(self, current, total):
+        """Handle ping scan progress updates in a thread-safe way"""
+        if hasattr(self, "progress_bar") and self.progress_bar:
+            self.progress_bar.setValue(current)
+            
+        if hasattr(self, "status_label") and self.status_label:
+            percentage = int((current / total) * 100) if total > 0 else 0
+            self.status_label.setText(f"Scanning: {current}/{total} ({percentage}%)")
+            
+    def _on_ping_scan_complete(self, results):
+        """Handle ping scan completion in a thread-safe way"""
+        # Store the results
+        self._scan_results = results
+        
+        # Update UI
+        if hasattr(self, "scan_button"):
+            self.scan_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            
+        # Update status
+        if hasattr(self, "status_label"):
+            self.status_label.setText("Scan complete")
+            
+        # Set progress to 100%
+        if hasattr(self, "progress_bar"):
+            self.progress_bar.setValue(self.progress_bar.maximum())
+            
+        # Clean up
+        self._is_scanning = False
+        
+        # Clean up thread
+        if hasattr(self, "_ping_scan_thread") and self._ping_scan_thread.isRunning():
+            self._ping_scan_thread.quit()
+            self._ping_scan_thread.wait(1000)
+            
+        # Emit the scan completed signal
+        self.scan_completed.emit(results)
+            
     def stop_ping_scan(self):
         """Stop the ping scan if it's running"""
-        if hasattr(self, "_ping_scan_should_stop"):
-            self._ping_scan_should_stop = True
+        if hasattr(self, "_ping_scan_worker"):
+            self._ping_scan_worker.stop()
             self.log_message("Stopping ping scan...")
             return True
         return False

@@ -1,38 +1,20 @@
 {
   "command_manager": {
-    "id": "command_manager",
-    "name": "Command Manager",
-    "version": "1.0.0",
-    "description": "Run and manage commands on network devices",
-    "author": "NetWORKS",
-    "entry_point": "command_manager.py",
+    "state": "ENABLED",
+    "last_loaded": "",
     "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\command_manager",
-    "enabled": true,
-    "loaded": false,
-    "state": "ENABLED"
+    "version": "1.0.0"
   },
   "network_scanner": {
-    "id": "network_scanner",
-    "name": "Network Scanner",
-    "version": "1.2.3",
-    "description": "A plugin that scans the network for devices and adds them to NetWORKS",
-    "author": "NetWORKS Team",
-    "entry_point": "network_scanner.py",
+    "state": "ENABLED",
+    "last_loaded": "",
     "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\network_scanner",
-    "enabled": true,
-    "loaded": false,
-    "state": "ENABLED"
+    "version": "1.2.3"
   },
   "sample": {
-    "id": "sample",
-    "name": "Sample Plugin",
-    "version": "1.0.9",
-    "description": "A comprehensive sample plugin that demonstrates the plugin system and provides testing capabilities",
-    "author": "NetWORKS Team",
-    "entry_point": "sample_plugin.py",
+    "state": "DISABLED",
+    "last_loaded": "",
     "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\sample",
-    "enabled": false,
-    "loaded": false,
-    "state": "DISABLED"
+    "version": "1.0.9"
   }
 }

@@ -1,7 +1,6 @@
 {
   "name": "NetWORKS",
-
-  "version": "0.8.48",
+  "version": "0.8.54",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -10,18 +9,16 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-
-  "version_string": "0.8.48",
+  "version_string": "0.8.54",
   "version_info": {
     "major": 0,
     "minor": 8,
-    "patch": 48,
+    "patch": 54,
     "build": 0,
     "release_type": "stable"
   },
-
-  "build_date": "2025-05-22",
-  "release_notes": "Completely redesigned device properties panel with modern table view, filtering, export functionality (CSV/JSON), and improved selection capabilities. Better visualization of different data types and responsive design.",
+  "build_date": "2025-05-29",
+  "release_notes": "Enhanced property details viewer with multiple view modes including tabular data representation for structured data.",
   "release_type": "alpha",
   "api_version": "0.8",
   "feature_flags": {
@@ -53,7 +50,36 @@
   },
   "version_history": [
     {
-
+      "version": "0.8.54",
+      "date": "2025-05-29",
+      "changes": "Enhanced property details viewer with multiple viewing modes including JSON, table, and raw views. Added smart table generation for dictionaries and lists of dictionaries for better data visualization."
+    },
+    {
+      "version": "0.8.53",
+      "date": "2025-05-28",
+      "changes": "Enhanced properties panel with improved dictionary display and double-click functionality. Added visual indicators for interactive property values and improved detailed property view with syntax highlighting for JSON data."
+    },
+    {
+      "version": "0.8.52",
+      "date": "2025-05-27",
+      "changes": "Added workspace selection dialog that appears at program launch. The dialog allows users to choose an existing workspace or create a new one, improving workflow management and accessibility."
+    },
+    {
+      "version": "0.8.51",
+      "date": "2025-05-26",
+      "changes": "Added device deduplication feature to identify and manage duplicate devices. The feature allows users to find duplicates based on MAC address, IP address, hostname or any other column, and provides options to select, merge, or delete duplicate devices."
+    },
+    {
+      "version": "0.8.50",
+      "date": "2025-05-25",
+      "changes": "Improved plugin and device loading system to ensure workspace-specific plugins are loaded at startup. Added support for discovering plugins in the workspace directory and implemented dependency-aware plugin loading to resolve plugin dependencies properly. Fixed issues with workspace device loading."
+    },
+    {
+      "version": "0.8.49",
+      "date": "2025-05-25",
+      "changes": "Added comprehensive GitHub issue reporting system with offline support. Users can now submit bugs, feature requests, and questions directly to GitHub with automatic system information collection, screenshot capture, and offline queueing for when connectivity is unavailable."
+    },
+    {
       "version": "0.8.48",
       "date": "2025-05-22",
       "changes": "Completely redesigned device properties panel with modern table view, filtering, export functionality (CSV/JSON), and improved selection capabilities. Better visualization of different data types and responsive design."
