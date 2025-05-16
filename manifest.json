@@ -15,7 +15,7 @@
     "minor": 8,
     "patch": 54,
     "build": 0,
-    "release_type": "alpha"
+    "release_type": "stable"
   },
   "build_date": "2025-05-29",
   "release_notes": "Enhanced property details viewer with multiple view modes including tabular data representation for structured data.",
