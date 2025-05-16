@@ -81,6 +81,6 @@ htmlcov/
 coverage.xml
 *,cover 
 
-workspaces/
+config/workspaces/
 config/backups/
 tests/
