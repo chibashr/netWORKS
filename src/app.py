@@ -403,7 +403,11 @@ class Application(QApplication):
             
     def show_workspace_selection(self):
         """Show workspace selection dialog at startup"""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, QGroupBox, QRadioButton, QLineEdit, QTextEdit
+        from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, 
+                                     QGroupBox, QRadioButton, QLineEdit, QTextEdit, QSplitter, QTreeWidget, 
+                                     QTreeWidgetItem, QTabWidget, QMessageBox, QInputDialog, QMenu, QWidget)
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QAction, QCursor
         
         self.logger.info("Showing workspace selection dialog")
         
@@ -412,14 +416,13 @@ class Application(QApplication):
         
         # Create dialog
         dialog = QDialog()
-        dialog.setWindowTitle("Workspace Selection")
-        dialog.setMinimumWidth(500)
-        dialog.setMinimumHeight(400)
+        dialog.setWindowTitle("Workspace Manager")
+        dialog.resize(800, 600)
         
         layout = QVBoxLayout(dialog)
         
         # Header section
-        header_label = QLabel("Select a workspace to open or create a new one:")
+        header_label = QLabel("Select a workspace, view details, or create a new one:")
         header_label.setStyleSheet("font-size: 12pt; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(header_label)
         
@@ -440,32 +443,83 @@ class Application(QApplication):
         option_layout.addWidget(create_radio)
         layout.addWidget(option_group)
         
-        # Existing workspaces section
-        existing_group = QGroupBox("Existing Workspaces")
-        existing_layout = QVBoxLayout(existing_group)
+        # Create a splitter for workspace list and details
+        splitter = QSplitter(Qt.Horizontal)
+        layout.addWidget(splitter, 1)
+        
+        # Left side - workspace list
+        list_widget = QWidget()
+        list_layout = QVBoxLayout(list_widget)
+        list_layout.setContentsMargins(0, 0, 0, 0)
         
         workspaces_list = QListWidget()
+        list_layout.addWidget(QLabel("Available Workspaces:"))
+        list_layout.addWidget(workspaces_list)
         
-        # Default workspace should be first in the list
-        default_idx = -1
+        # Add buttons for managing workspaces
+        workspace_buttons_layout = QHBoxLayout()
+        rename_button = QPushButton("Rename")
+        remove_button = QPushButton("Remove")
+        workspace_buttons_layout.addWidget(rename_button)
+        workspace_buttons_layout.addWidget(remove_button)
+        list_layout.addLayout(workspace_buttons_layout)
         
-        # Add workspaces to the list
-        for i, workspace in enumerate(workspaces):
-            name = workspace.get("name", "Unknown")
-            description = workspace.get("description", "")
-            display_text = f"{name} - {description}" if description else name
-            workspaces_list.addItem(display_text)
-            
-            # Remember index of default workspace
-            if name == "default":
-                default_idx = i
+        splitter.addWidget(list_widget)
         
-        # Select default workspace if it exists
-        if default_idx >= 0:
-            workspaces_list.setCurrentRow(default_idx)
-            
-        existing_layout.addWidget(workspaces_list)
-        layout.addWidget(existing_group)
+        # Right side - workspace details
+        details_widget = QWidget()
+        details_layout = QVBoxLayout(details_widget)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        
+        details_label = QLabel("Workspace Details:")
+        details_layout.addWidget(details_label)
+        
+        # Tab widget for workspace details
+        tab_widget = QTabWidget()
+        
+        # Summary tab
+        summary_widget = QWidget()
+        summary_layout = QVBoxLayout(summary_widget)
+        
+        name_label = QLabel("Name: ")
+        description_label = QLabel("Description: ")
+        created_label = QLabel("Created: ")
+        last_saved_label = QLabel("Last Saved: ")
+        device_count_label = QLabel("Devices: ")
+        group_count_label = QLabel("Groups: ")
+        plugin_count_label = QLabel("Plugins: ")
+        
+        summary_layout.addWidget(name_label)
+        summary_layout.addWidget(description_label)
+        summary_layout.addWidget(created_label)
+        summary_layout.addWidget(last_saved_label)
+        summary_layout.addWidget(device_count_label)
+        summary_layout.addWidget(group_count_label)
+        summary_layout.addWidget(plugin_count_label)
+        summary_layout.addStretch()
+        
+        tab_widget.addTab(summary_widget, "Summary")
+        
+        # Devices tab
+        devices_tree = QTreeWidget()
+        devices_tree.setHeaderLabels(["Device Name", "IP Address", "Status"])
+        tab_widget.addTab(devices_tree, "Devices")
+        
+        # Groups tab
+        groups_tree = QTreeWidget()
+        groups_tree.setHeaderLabels(["Group Name", "Description", "Device Count"])
+        tab_widget.addTab(groups_tree, "Groups")
+        
+        # Plugins tab
+        plugins_tree = QTreeWidget()
+        plugins_tree.setHeaderLabels(["Plugin Name", "Status"])
+        tab_widget.addTab(plugins_tree, "Plugins")
+        
+        details_layout.addWidget(tab_widget)
+        splitter.addWidget(details_widget)
+        
+        # Set size ratio between list and details (1:2)
+        splitter.setSizes([250, 550])
         
         # New workspace section
         new_group = QGroupBox("New Workspace")
@@ -486,17 +540,270 @@ class Application(QApplication):
         
         layout.addWidget(new_group)
         
+        # Default workspace should be first in the list
+        default_idx = -1
+        
+        # Add workspaces to the list
+        for i, workspace in enumerate(workspaces):
+            name = workspace.get("name", "Unknown")
+            display_text = name
+            workspaces_list.addItem(display_text)
+            
+            # Remember index of default workspace
+            if name == "default":
+                default_idx = i
+        
+        # Select default workspace if it exists
+        if default_idx >= 0:
+            workspaces_list.setCurrentRow(default_idx)
+        
+        # Function to update workspace details
+        def update_workspace_details(workspace_name):
+            # Find the workspace data
+            workspace_data = None
+            for ws in workspaces:
+                if ws.get("name") == workspace_name:
+                    workspace_data = ws
+                    break
+            
+            if not workspace_data:
+                return
+            
+            # Update summary tab
+            name_label.setText(f"Name: {workspace_data.get('name', 'Unknown')}")
+            description_label.setText(f"Description: {workspace_data.get('description', '')}")
+            created_label.setText(f"Created: {workspace_data.get('created', 'Unknown')}")
+            last_saved_label.setText(f"Last Saved: {workspace_data.get('last_saved', 'Never')}")
+            
+            # Count devices, groups, plugins
+            devices = workspace_data.get('devices', [])
+            groups = workspace_data.get('groups', [])
+            plugins = workspace_data.get('enabled_plugins', [])
+            
+            device_count_label.setText(f"Devices: {len(devices)}")
+            group_count_label.setText(f"Groups: {len(groups)}")
+            plugin_count_label.setText(f"Plugins: {len(plugins)}")
+            
+            # Clear trees
+            devices_tree.clear()
+            groups_tree.clear()
+            plugins_tree.clear()
+            
+            # Get device information from references
+            workspace_path = os.path.join(self.device_manager.workspaces_dir, workspace_name)
+            devices_path = os.path.join(workspace_path, "devices")
+            
+            # Update devices tree if devices directory exists
+            if os.path.exists(devices_path) and os.path.isdir(devices_path):
+                for device_id in devices:
+                    device_dir = os.path.join(devices_path, device_id)
+                    device_file = os.path.join(device_dir, "device.json")
+                    
+                    if os.path.exists(device_file):
+                        try:
+                            with open(device_file, 'r') as f:
+                                device_data = json.load(f)
+                                
+                            device_item = QTreeWidgetItem(devices_tree)
+                            device_item.setText(0, device_data.get('alias', 'Unknown Device'))
+                            device_item.setText(1, device_data.get('ip_address', ''))
+                            device_item.setText(2, device_data.get('status', 'Unknown'))
+                        except Exception as e:
+                            self.logger.error(f"Error loading device data: {e}")
+            
+            # Update groups tree
+            groups_file = os.path.join(workspace_path, "groups.json")
+            if os.path.exists(groups_file):
+                try:
+                    with open(groups_file, 'r') as f:
+                        groups_data = json.load(f)
+                        
+                    for group_data in groups_data.get('groups', []):
+                        group_item = QTreeWidgetItem(groups_tree)
+                        group_item.setText(0, group_data.get('name', 'Unknown Group'))
+                        group_item.setText(1, group_data.get('description', ''))
+                        group_item.setText(2, str(len(group_data.get('devices', []))))
+                        
+                        # Add subgroups recursively
+                        def add_subgroups(parent_item, subgroups_data):
+                            for subgroup in subgroups_data:
+                                subgroup_item = QTreeWidgetItem(parent_item)
+                                subgroup_item.setText(0, subgroup.get('name', 'Unknown Group'))
+                                subgroup_item.setText(1, subgroup.get('description', ''))
+                                subgroup_item.setText(2, str(len(subgroup.get('devices', []))))
+                                add_subgroups(subgroup_item, subgroup.get('subgroups', []))
+                                
+                        add_subgroups(group_item, group_data.get('subgroups', []))
+                except Exception as e:
+                    self.logger.error(f"Error loading groups data: {e}")
+            
+            # Update plugins tree
+            for plugin_id in plugins:
+                plugin_item = QTreeWidgetItem(plugins_tree)
+                plugin_item.setText(0, plugin_id)
+                plugin_item.setText(1, "Enabled")
+        
+        # Update details when selection changes
+        def on_workspace_selected():
+            selected_item = workspaces_list.currentItem()
+            if selected_item:
+                workspace_name = selected_item.text()
+                update_workspace_details(workspace_name)
+                
+                # Enable/disable rename and remove buttons based on selection
+                is_default = (workspace_name == "default")
+                remove_button.setEnabled(not is_default)
+                rename_button.setEnabled(not is_default)
+        
+        # Connect signals
+        workspaces_list.currentItemChanged.connect(lambda: on_workspace_selected())
+        
+        # Rename workspace
+        def on_rename_workspace():
+            selected_item = workspaces_list.currentItem()
+            if not selected_item:
+                QMessageBox.warning(dialog, "No Selection", "Please select a workspace to rename.")
+                return
+                
+            workspace_name = selected_item.text()
+            
+            if workspace_name == "default":
+                QMessageBox.warning(dialog, "Cannot Rename", "The default workspace cannot be renamed.")
+                return
+                
+            new_name, ok = QInputDialog.getText(
+                dialog, "Rename Workspace", 
+                "Enter new name for workspace:", 
+                QLineEdit.Normal, workspace_name
+            )
+            
+            if ok and new_name:
+                # Check if name already exists
+                if any(ws.get('name') == new_name for ws in workspaces):
+                    QMessageBox.warning(dialog, "Name Exists", f"A workspace named '{new_name}' already exists.")
+                    return
+                    
+                # Get the workspace path
+                old_path = os.path.join(self.device_manager.workspaces_dir, workspace_name)
+                new_path = os.path.join(self.device_manager.workspaces_dir, new_name)
+                
+                # Ensure workspace exists
+                if not os.path.exists(old_path):
+                    QMessageBox.warning(dialog, "Error", f"Workspace '{workspace_name}' not found.")
+                    return
+                
+                try:
+                    # Update workspace.json
+                    workspace_file = os.path.join(old_path, "workspace.json")
+                    if os.path.exists(workspace_file):
+                        with open(workspace_file, 'r') as f:
+                            workspace_data = json.load(f)
+                            
+                        workspace_data['name'] = new_name
+                        
+                        with open(workspace_file, 'w') as f:
+                            json.dump(workspace_data, f, indent=2)
+                    
+                    # Rename directory
+                    os.rename(old_path, new_path)
+                    
+                    # Update list
+                    selected_item.setText(new_name)
+                    QMessageBox.information(dialog, "Success", f"Workspace renamed to '{new_name}'.")
+                    
+                    # Refresh workspaces list
+                    workspaces = self.device_manager.list_workspaces()
+                    on_workspace_selected()
+                    
+                except Exception as e:
+                    QMessageBox.critical(dialog, "Error", f"Failed to rename workspace: {str(e)}")
+        
+        # Remove workspace
+        def on_remove_workspace():
+            selected_item = workspaces_list.currentItem()
+            if not selected_item:
+                QMessageBox.warning(dialog, "No Selection", "Please select a workspace to remove.")
+                return
+                
+            workspace_name = selected_item.text()
+            
+            if workspace_name == "default":
+                QMessageBox.warning(dialog, "Cannot Remove", "The default workspace cannot be removed.")
+                return
+                
+            response = QMessageBox.question(
+                dialog, "Confirm Removal",
+                f"Are you sure you want to remove workspace '{workspace_name}'?\nThis cannot be undone.",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if response == QMessageBox.Yes:
+                # Delete workspace
+                success = self.device_manager.delete_workspace(workspace_name)
+                if success:
+                    # Remove from list
+                    row = workspaces_list.row(selected_item)
+                    workspaces_list.takeItem(row)
+                    
+                    # Select default workspace
+                    for i in range(workspaces_list.count()):
+                        if workspaces_list.item(i).text() == "default":
+                            workspaces_list.setCurrentRow(i)
+                            break
+                    
+                    QMessageBox.information(dialog, "Success", f"Workspace '{workspace_name}' removed.")
+                    
+                    # Refresh workspaces list
+                    workspaces = self.device_manager.list_workspaces()
+                    on_workspace_selected()
+                else:
+                    QMessageBox.critical(dialog, "Error", f"Failed to remove workspace: {workspace_name}")
+        
+        # Connect buttons
+        rename_button.clicked.connect(on_rename_workspace)
+        remove_button.clicked.connect(on_remove_workspace)
+        
+        # Add context menu to workspace list
+        def show_context_menu(position):
+            menu = QMenu()
+            selected_item = workspaces_list.currentItem()
+            
+            if selected_item:
+                workspace_name = selected_item.text()
+                is_default = (workspace_name == "default")
+                
+                open_action = QAction("Open", menu)
+                open_action.triggered.connect(lambda: on_ok())
+                menu.addAction(open_action)
+                
+                if not is_default:
+                    rename_action = QAction("Rename", menu)
+                    rename_action.triggered.connect(on_rename_workspace)
+                    menu.addAction(rename_action)
+                    
+                    remove_action = QAction("Remove", menu)
+                    remove_action.triggered.connect(on_remove_workspace)
+                    menu.addAction(remove_action)
+                
+                menu.exec(QCursor.pos())
+        
+        workspaces_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        workspaces_list.customContextMenuRequested.connect(show_context_menu)
+        
         # Show/hide appropriate sections based on radio button selection
         def update_sections():
-            existing_group.setVisible(open_radio.isChecked())
+            list_widget.setVisible(open_radio.isChecked())
+            details_widget.setVisible(open_radio.isChecked())
             new_group.setVisible(create_radio.isChecked())
             dialog.adjustSize()
             
         open_radio.toggled.connect(update_sections)
         create_radio.toggled.connect(update_sections)
         
-        # Initial update
+        # Initial updates
         update_sections()
+        if workspaces_list.currentItem():
+            on_workspace_selected()
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -528,17 +835,15 @@ class Application(QApplication):
                 # Open selected workspace
                 selected_item = workspaces_list.currentItem()
                 if selected_item:
-                    workspace_name = selected_item.text().split(" - ")[0]
+                    workspace_name = selected_item.text()
                     success = self.device_manager.load_workspace(workspace_name)
                     if success:
                         self.logger.info(f"Loaded workspace: {workspace_name}")
                         self.main_window.refresh_workspace_ui()
                         dialog.accept()
                     else:
-                        from PySide6.QtWidgets import QMessageBox
                         QMessageBox.critical(dialog, "Error", f"Failed to load workspace: {workspace_name}")
                 else:
-                    from PySide6.QtWidgets import QMessageBox
                     QMessageBox.warning(dialog, "No Selection", "Please select a workspace to open.")
             else:
                 # Create new workspace
@@ -546,14 +851,12 @@ class Application(QApplication):
                 description = desc_edit.toPlainText().strip()
                 
                 if not name:
-                    from PySide6.QtWidgets import QMessageBox
                     QMessageBox.warning(dialog, "Invalid Name", "Please enter a name for the workspace.")
                     return
                     
                 # Check if workspace already exists
                 for ws in workspaces:
                     if ws.get("name") == name:
-                        from PySide6.QtWidgets import QMessageBox
                         QMessageBox.warning(dialog, "Workspace Exists", f"A workspace named '{name}' already exists.")
                         return
                 
@@ -566,7 +869,6 @@ class Application(QApplication):
                     self.main_window.refresh_workspace_ui()
                     dialog.accept()
                 else:
-                    from PySide6.QtWidgets import QMessageBox
                     QMessageBox.critical(dialog, "Error", f"Failed to create workspace: {name}")
         
         # Handle Cancel button (use default workspace)
