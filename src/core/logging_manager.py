@@ -118,12 +118,75 @@ class LoggingManager:
         """
         return logger
         
+    def update_configuration(self, level="INFO", diagnose=True, backtrace=True):
+        """Update logging configuration at runtime
+        
+        Args:
+            level (str): The logging level to set (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            diagnose (bool): Whether to enable diagnostic mode for better error tracing
+            backtrace (bool): Whether to enable backtraces for error logs
+        """
+        # Convert string level to uppercase to ensure consistent format
+        level = level.upper() if isinstance(level, str) else level
+        
+        # Validate level
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        if level not in valid_levels:
+            logger.warning(f"Invalid log level {level}, defaulting to INFO")
+            level = "INFO"
+            
+        logger.info(f"Updating logging configuration: level={level}, diagnose={diagnose}, backtrace={backtrace}")
+        
+        # Remove existing handlers and recreate them with new settings
+        # Note: We can't easily update existing handlers with loguru, so we recreate them
+        
+        # Keep track of existing handlers
+        existing_handlers = logger._core.handlers.copy()
+        console_handler = None
+        file_handlers = []
+        
+        # Find console and file handlers
+        for handler_id, handler in existing_handlers.items():
+            if hasattr(handler, '_sink') and handler._sink == sys.stderr:
+                console_handler = handler_id
+            elif hasattr(handler, '_sink') and hasattr(handler._sink, 'name'):
+                file_handlers.append(handler_id)
+        
+        # Update console handler if it exists
+        if console_handler is not None:
+            logger.remove(console_handler)
+            logger.add(
+                sys.stderr,
+                format=existing_handlers[console_handler]._format,
+                level=level,
+                colorize=True,
+                backtrace=backtrace,
+                diagnose=diagnose
+            )
+        
+        # Update file handlers if they exist
+        for handler_id in file_handlers:
+            handler = existing_handlers[handler_id]
+            if hasattr(handler._sink, 'name'):
+                file_path = handler._sink.name
+                logger.remove(handler_id)
+                logger.add(
+                    file_path,
+                    format=handler._format,
+                    level=level,
+                    rotation=handler._rotation,
+                    retention=handler._retention,
+                    compression=handler._compression,
+                    backtrace=backtrace,
+                    diagnose=diagnose
+                )
+        
+        logger.info(f"Logging configuration updated: level={level}, diagnose={diagnose}, backtrace={backtrace}")
+        
     def set_level(self, level):
         """Set the logging level
         
         Args:
             level (str): The logging level to set (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         """
-        # Implementation would depend on how we want to change log levels at runtime
-        # This is a placeholder for future functionality
-        pass 
+        self.update_configuration(level=level) 

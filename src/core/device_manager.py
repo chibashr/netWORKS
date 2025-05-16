@@ -1081,15 +1081,33 @@ class DeviceManager(QObject):
                 plugin_manager = self.app.plugin_manager
                 # Get the plugin IDs listed as enabled in the workspace
                 enabled_plugins = workspace_info.get('enabled_plugins', [])
+                logger.debug(f"Workspace {name} has {len(enabled_plugins)} enabled plugins: {', '.join(enabled_plugins)}")
                 
-                # Enable/disable plugins based on the workspace info
-                for plugin_id, plugin_info in plugin_manager.plugins.items():
-                    if plugin_id in enabled_plugins and not plugin_info.enabled:
-                        logger.debug(f"Enabling plugin {plugin_id} from workspace configuration")
-                        plugin_manager.enable_plugin(plugin_id)
-                    elif plugin_id not in enabled_plugins and plugin_info.enabled:
-                        logger.debug(f"Disabling plugin {plugin_id} from workspace configuration")
-                        plugin_manager.disable_plugin(plugin_id)
+                try:
+                    # First, discover all available plugins to ensure we have a complete list
+                    plugin_manager.discover_plugins()
+                    
+                    # Then enable plugins based on the workspace configuration
+                    for plugin_id in enabled_plugins:
+                        try:
+                            if plugin_id in plugin_manager.plugins:
+                                if not plugin_manager.plugins[plugin_id].state.is_enabled:
+                                    logger.debug(f"Enabling plugin {plugin_id} from workspace configuration")
+                                    plugin_manager.enable_plugin(plugin_id)
+                                
+                                # Ensure the plugin is loaded if enabled
+                                if (not plugin_manager.plugins[plugin_id].state.is_loaded and 
+                                    plugin_manager.plugins[plugin_id].state.is_enabled):
+                                    logger.debug(f"Loading plugin {plugin_id} from workspace configuration")
+                                    plugin_manager.load_plugin(plugin_id)
+                            else:
+                                logger.warning(f"Plugin {plugin_id} specified in workspace configuration not found")
+                        except Exception as e:
+                            logger.error(f"Error enabling/loading plugin {plugin_id}: {e}", exc_info=True)
+                            # Continue with other plugins even if one fails
+                except Exception as e:
+                    logger.error(f"Error during plugin discovery/loading: {e}", exc_info=True)
+                    # Continue with workspace loading even if plugins fail
             
             # Load devices from workspace directory
             workspace_devices_dir = os.path.join(workspace_dir, "devices")
@@ -1140,12 +1158,6 @@ class DeviceManager(QObject):
             for device in self.devices.values():
                 if device not in self.root_group.devices:
                     self.root_group.add_device(device)
-            
-            # Enable plugins
-            if hasattr(self.app, 'plugin_manager'):
-                enabled_plugins = workspace_info.get("enabled_plugins", [])
-                for plugin_id in enabled_plugins:
-                    self.app.plugin_manager.enable_plugin(plugin_id)
             
             self.current_workspace = name
             

@@ -565,6 +565,22 @@ class CommandManagerPlugin(PluginInterface):
             return self.credential_store.get_all_subnet_credentials()
         return {}
         
+    def get_device_credentials(self, device_id, device_ip=None, groups=None):
+        """
+        Get credentials for a device with fallback to group or subnet credentials
+        
+        Args:
+            device_id: The device ID
+            device_ip: The device IP address (for subnet matching)
+            groups: List of groups the device belongs to
+            
+        Returns:
+            dict: Credentials dictionary or empty dict if no credentials found
+        """
+        if hasattr(self, 'credential_store') and self.credential_store:
+            return self.credential_store.get_device_credentials(device_id, device_ip, groups)
+        return {}
+        
     def set_device_credentials(self, device_id, credentials):
         """Set credentials for a device"""
         if hasattr(self, 'credential_store') and self.credential_store:
@@ -649,6 +665,61 @@ class CommandManagerPlugin(PluginInterface):
             
         # Return empty dict if no outputs found
         return {}
+    
+    def add_command_output(self, device_id, command_id, output, command_text=None):
+        """Add command output to history
+        
+        Args:
+            device_id (str): Device ID
+            command_id (str): Command ID
+            output (str): Command output
+            command_text (str, optional): Command text
+        """
+        logger.debug(f"Adding command output for device: {device_id}, command: {command_id}")
+        
+        # Delegate to output handler if available
+        if hasattr(self, 'output_handler') and self.output_handler:
+            try:
+                self.output_handler.add_command_output(device_id, command_id, output, command_text)
+                return True
+            except Exception as e:
+                logger.error(f"Error adding command output via handler: {e}")
+                return False
+        else:
+            logger.error("No output handler available")
+            return False
+    
+    def run_command(self, device, command, credentials=None):
+        """Run a command on a device
+        
+        Args:
+            device: Device to run command on
+            command (str): Command to run
+            credentials (dict, optional): Credentials to use
+            
+        Returns:
+            dict: Command result with keys 'success' and 'output'
+        """
+        logger.debug(f"Running command on device: {device.id if hasattr(device, 'id') else 'Unknown'}")
+        
+        # Delegate to command handler if available
+        if hasattr(self, 'command_handler') and self.command_handler:
+            try:
+                return self.command_handler.run_command(device, command, credentials)
+            except Exception as e:
+                logger.error(f"Error running command via handler: {e}")
+                # Fall back to a basic error response
+                return {
+                    "success": False,
+                    "output": f"Command: {command}\n\nError: {str(e)}"
+                }
+        else:
+            # No command handler available
+            logger.error("No command handler available")
+            return {
+                "success": False,
+                "output": f"Command: {command}\n\nNo command handler available"
+            }
     
     def _on_run_commands(self):
         """Handle run commands menu item"""
