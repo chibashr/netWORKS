@@ -7,6 +7,7 @@
 PySide6==6.9.0      # Qt framework for Python
 qtpy==2.4.3         # Abstraction layer for Qt bindings
 qtawesome==1.4.0    # Icon fonts for Qt applications
+numpy==1.24.3       # Numerical computing library (version compatible with pandas 2.0.3)
 
 # Configuration and data handling
 pyyaml==6.0.2       # YAML parser for configuration files

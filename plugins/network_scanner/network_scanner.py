@@ -36,8 +36,14 @@ from src.core.plugin_interface import PluginInterface
 plugin_dir = os.path.dirname(os.path.abspath(__file__))
 if plugin_dir not in sys.path:
     sys.path.append(plugin_dir)
-    
-# Change relative imports to absolute imports
+
+# Initialize plugin dependencies before other imports
+from plugins.network_scanner.utils import ensure_plugin_dependencies
+if not ensure_plugin_dependencies():
+    logger.error("Failed to ensure plugin dependencies")
+    raise ImportError("Failed to ensure plugin dependencies")
+
+# Now import the rest of the plugin modules
 from plugins.network_scanner.ui import create_main_widget, create_dock_widget, show_error_message
 from plugins.network_scanner.utils import (
     safe_action_wrapper, parse_ip_range, get_subnet_for_ip, 
@@ -56,7 +62,7 @@ from plugins.network_scanner.handlers import (
     _on_scan_from_device_action, _on_rescan_device_action
 )
 
-# Check for dependencies and log warnings
+# Import dependencies that should now be in the plugin's lib directory
 try:
     import nmap
     HAS_NMAP = True
