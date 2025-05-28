@@ -47,7 +47,8 @@ if not ensure_plugin_dependencies():
 from plugins.network_scanner.ui import create_main_widget, create_dock_widget, show_error_message
 from plugins.network_scanner.utils import (
     safe_action_wrapper, parse_ip_range, get_subnet_for_ip, 
-    get_network_interfaces
+    get_network_interfaces, get_friendly_interface_name, calculate_host_count,
+    safe_emit_device_found
 )
 from plugins.network_scanner.scanner import Scanner
 from plugins.network_scanner.device_manager import (
@@ -56,7 +57,7 @@ from plugins.network_scanner.device_manager import (
 )
 from plugins.network_scanner.handlers import (
     on_scan_button_clicked, on_stop_button_clicked,
-    on_quick_ping_button_clicked, on_advanced_scan_button_clicked,
+    on_quick_ping_button_clicked,
     on_scan_action, on_scan_selected_action, on_scan_type_manager_action,
     _on_scan_network_action, _on_scan_subnet_action, 
     _on_scan_from_device_action, _on_rescan_device_action
@@ -86,13 +87,20 @@ class NetworkScannerPlugin(PluginInterface):
     device inventory.
     """
     
+    # Define signals at class level for PySide6
+    scan_progress_signal = Signal(int, int)  # current, total
+    scan_device_found = Signal(object)  # device data
+    scan_completed = Signal(dict)  # scan results
+    scan_error = Signal(str)  # error message
+    scan_profiles_changed = Signal()  # scan profiles updated
+    
     def __init__(self, app=None):
         """Initialize the Network Scanner Plugin"""
         super().__init__()
         
         # Basic plugin info - can be overridden by manifest
         self.name = "Network Scanner"
-        self.version = "1.2.6"
+        self.version = "1.3.0"
         self.description = "Scan networks and discover devices"
         self.author = "NetWORKS Team"
         self.website = "https://github.com/chibashr/netWORKS"
@@ -120,6 +128,17 @@ class NetworkScannerPlugin(PluginInterface):
         self.scan_queue = []
         self.is_scan_running = False
         self._scan_queue_connected = False
+        
+        # Initialize scan-related attributes
+        self.discovered_devices = []
+        self._scan_queue = []
+        self._queue_scan_type = None
+        self._is_scanning = False
+        
+        # Queue progress tracking
+        self._queue_total = 0
+        self._queue_current = 0
+        self._queue_failed = 0
         
         # UI components (will be created during initialization)
         self.main_widget = None
@@ -178,41 +197,220 @@ class NetworkScannerPlugin(PluginInterface):
     
     def _load_scan_profiles(self):
         """Load scan profiles from configuration"""
-        # Default profiles
-        default_profiles = {
-            "quick": {
-                "name": "Quick Scan (ping only)",
-                "description": "Fast ping scan to discover hosts",
-                "arguments": "-sn",
-                "os_detection": False,
-                "port_scan": False,
-                "timeout": 60
-            },
-            "standard": {
-                "name": "Standard Scan",
-                "description": "Basic port scan of common ports",
-                "arguments": "-sS -T4 -F",
-                "os_detection": False,
-                "port_scan": True,
-                "timeout": 300
-            },
-            "comprehensive": {
-                "name": "Comprehensive Scan",
-                "description": "Detailed scan with service detection",
-                "arguments": "-sS -T4 -A",
-                "os_detection": True,
-                "port_scan": True,
-                "timeout": 600
+        # Try to load from persistent storage first
+        profiles = self._load_profiles_from_storage()
+        
+        if not profiles:
+            # Default profiles if none exist
+            profiles = {
+                "quick": {
+                    "name": "Quick Scan (ping only)",
+                    "description": "Fast ping scan to discover hosts",
+                    "arguments": "-sn",
+                    "os_detection": False,
+                    "port_scan": False,
+                    "timeout": 60
+                },
+                "standard": {
+                    "name": "Standard Scan",
+                    "description": "Basic port scan of common ports",
+                    "arguments": "-sS -T4 -F",
+                    "os_detection": False,
+                    "port_scan": True,
+                    "timeout": 300
+                },
+                "comprehensive": {
+                    "name": "Comprehensive Scan",
+                    "description": "Detailed scan with service detection",
+                    "arguments": "-sS -T4 -A",
+                    "os_detection": True,
+                    "port_scan": True,
+                    "timeout": 600
+                },
+                "service": {
+                    "name": "Service Detection",
+                    "description": "Service version detection scan",
+                    "arguments": "-sV",
+                    "os_detection": False,
+                    "port_scan": True,
+                    "timeout": 300
+                },
+                "stealth": {
+                    "name": "Stealth Scan",
+                    "description": "Stealthy SYN scan",
+                    "arguments": "-sS -T2",
+                    "os_detection": False,
+                    "port_scan": True,
+                    "timeout": 600
+                }
             }
-        }
         
         # Add to settings
         self._settings["scan_profiles"] = {
-            "value": default_profiles.copy(),
-            "default": default_profiles.copy(),
+            "value": profiles.copy(),
+            "default": profiles.copy(),
             "type": "dict",
             "description": "Scan profiles configuration"
         }
+    
+    def _load_profiles_from_storage(self):
+        """Load scan profiles from persistent storage"""
+        try:
+            import json
+            from pathlib import Path
+            
+            # Get the plugin data directory
+            plugin_data_dir = Path(__file__).parent / "data"
+            plugin_data_dir.mkdir(exist_ok=True)
+            
+            profiles_file = plugin_data_dir / "scan_profiles.json"
+            
+            if profiles_file.exists():
+                with open(profiles_file, 'r') as f:
+                    profiles = json.load(f)
+                    logger.debug(f"Loaded {len(profiles)} scan profiles from storage")
+                    return profiles
+        except Exception as e:
+            logger.warning(f"Could not load scan profiles from storage: {e}")
+        
+        return None
+        
+    def _save_profiles_to_storage(self):
+        """Save scan profiles to persistent storage"""
+        try:
+            import json
+            from pathlib import Path
+            
+            # Get the plugin data directory
+            plugin_data_dir = Path(__file__).parent / "data"
+            plugin_data_dir.mkdir(exist_ok=True)
+            
+            profiles_file = plugin_data_dir / "scan_profiles.json"
+            
+            profiles = self._settings["scan_profiles"]["value"]
+            
+            with open(profiles_file, 'w') as f:
+                json.dump(profiles, f, indent=2)
+                
+            logger.debug(f"Saved {len(profiles)} scan profiles to storage")
+            return True
+        except Exception as e:
+            logger.error(f"Could not save scan profiles to storage: {e}")
+            return False
+            
+    def add_scan_profile(self, profile_id, profile_data):
+        """Add a new scan profile"""
+        if not profile_id or not isinstance(profile_data, dict):
+            return False
+            
+        # Validate required fields
+        required_fields = ["name", "description", "arguments"]
+        for field in required_fields:
+            if field not in profile_data:
+                logger.error(f"Missing required field '{field}' in profile data")
+                return False
+        
+        # Add default values for optional fields
+        profile_data.setdefault("os_detection", False)
+        profile_data.setdefault("port_scan", False)
+        profile_data.setdefault("timeout", 300)
+        
+        # Add to settings
+        profiles = self._settings["scan_profiles"]["value"].copy()
+        profiles[profile_id] = profile_data
+        self._settings["scan_profiles"]["value"] = profiles
+        
+        # Save to storage
+        self._save_profiles_to_storage()
+        
+        # Update all dropdowns
+        self._update_all_scan_type_dropdowns()
+        
+        logger.info(f"Added scan profile: {profile_id}")
+        return True
+        
+    def update_scan_profile(self, profile_id, profile_data):
+        """Update an existing scan profile"""
+        if not profile_id or profile_id not in self._settings["scan_profiles"]["value"]:
+            return False
+            
+        if not isinstance(profile_data, dict):
+            return False
+            
+        # Validate required fields
+        required_fields = ["name", "description", "arguments"]
+        for field in required_fields:
+            if field not in profile_data:
+                logger.error(f"Missing required field '{field}' in profile data")
+                return False
+        
+        # Add default values for optional fields
+        profile_data.setdefault("os_detection", False)
+        profile_data.setdefault("port_scan", False)
+        profile_data.setdefault("timeout", 300)
+        
+        # Update in settings
+        profiles = self._settings["scan_profiles"]["value"].copy()
+        profiles[profile_id] = profile_data
+        self._settings["scan_profiles"]["value"] = profiles
+        
+        # Save to storage
+        self._save_profiles_to_storage()
+        
+        # Update all dropdowns
+        self._update_all_scan_type_dropdowns()
+        
+        logger.info(f"Updated scan profile: {profile_id}")
+        return True
+        
+    def delete_scan_profile(self, profile_id):
+        """Delete a scan profile (cannot delete built-in profiles)"""
+        if not profile_id:
+            return False
+            
+        # Check if it's a built-in profile
+        builtin_profiles = ["quick", "standard", "comprehensive", "service", "stealth"]
+        if profile_id in builtin_profiles:
+            logger.warning(f"Cannot delete built-in profile: {profile_id}")
+            return False
+            
+        # Check if profile exists
+        if profile_id not in self._settings["scan_profiles"]["value"]:
+            logger.warning(f"Profile does not exist: {profile_id}")
+            return False
+            
+        # Remove from settings
+        profiles = self._settings["scan_profiles"]["value"].copy()
+        del profiles[profile_id]
+        self._settings["scan_profiles"]["value"] = profiles
+        
+        # Save to storage
+        self._save_profiles_to_storage()
+        
+        # Update all dropdowns
+        self._update_all_scan_type_dropdowns()
+        
+        logger.info(f"Deleted scan profile: {profile_id}")
+        return True
+        
+    def get_scan_profiles(self):
+        """Get all scan profiles"""
+        return self._settings["scan_profiles"]["value"].copy()
+        
+    def get_scan_profile(self, profile_id):
+        """Get a specific scan profile"""
+        return self._settings["scan_profiles"]["value"].get(profile_id)
+        
+    def _update_all_scan_type_dropdowns(self):
+        """Update all scan type dropdowns when profiles change"""
+        # Update main scan type dropdown
+        self._populate_scan_types_dropdown()
+        
+        # Emit a signal that other components can listen to
+        if hasattr(self, 'scan_profiles_changed'):
+            self.scan_profiles_changed.emit()
+        
+        logger.debug("Updated all scan type dropdowns")
     
     def register_signal(self, name, signal_type=None):
         """Dynamically register a new signal"""
@@ -276,8 +474,9 @@ class NetworkScannerPlugin(PluginInterface):
             ]
         }
         
+        # Remove the "Network" category and add actions directly to toolbar
         self.toolbar_actions = {
-            "Network": [
+            "main": [
                 self.scan_action,
                 self.scan_selected_action,
                 self.scan_type_manager_action
@@ -305,12 +504,12 @@ class NetworkScannerPlugin(PluginInterface):
         self.scan_button = self.ui_components.get('scan_button')
         self.stop_button = self.ui_components.get('stop_button')
         self.quick_ping_button = self.ui_components.get('quick_ping_button')
-        self.advanced_scan_button = self.ui_components.get('advanced_scan_button')
         self.os_detection_check = self.ui_components.get('os_detection_check')
         self.port_scan_check = self.ui_components.get('port_scan_check')
         self.status_label = self.ui_components.get('status_label')
         self.progress_bar = self.ui_components.get('progress_bar')
         self.results_text = self.ui_components.get('results_text')
+        self.results_toggle_button = self.ui_components.get('results_toggle_button')
         
         # Connect signals to slots
         if self.scan_button:
@@ -321,9 +520,6 @@ class NetworkScannerPlugin(PluginInterface):
         
         if self.quick_ping_button:
             self.quick_ping_button.clicked.connect(self.on_quick_ping_button_clicked)
-        
-        if self.advanced_scan_button:
-            self.advanced_scan_button.clicked.connect(self.on_advanced_scan_button_clicked)
         
         if self.scan_type_manager_button:
             self.scan_type_manager_button.clicked.connect(self.on_scan_type_manager_action)
@@ -347,6 +543,16 @@ class NetworkScannerPlugin(PluginInterface):
         # Initialize scanner system
         scanner = Scanner()
         self.register_handler("scanner", scanner)
+        # Also store as _scanner for direct access
+        self._scanner = scanner
+        
+        # Set up scanner callbacks for progress and results
+        self._scanner.set_callbacks(
+            progress_callback=self._on_scan_progress,
+            device_found_callback=self._on_device_found,
+            scan_complete_callback=self._on_scan_complete,
+            scan_error_callback=self._on_scan_error
+        )
         
         # Create UI components
         self._create_actions()
@@ -458,6 +664,13 @@ class NetworkScannerPlugin(PluginInterface):
             except Exception as e:
                 logger.error(f"Error connecting to device manager signals: {e}")
         
+        # Connect to our own scan_profiles_changed signal
+        try:
+            self.scan_profiles_changed.connect(self._on_scan_profiles_changed)
+            logger.debug("Connected to scan_profiles_changed signal")
+        except Exception as e:
+            logger.error(f"Error connecting to scan_profiles_changed signal: {e}")
+        
         # Schedule a delayed population of dropdowns
         QTimer.singleShot(100, self._populate_interface_dropdown)
         QTimer.singleShot(200, self._populate_scan_types_dropdown)
@@ -472,28 +685,35 @@ class NetworkScannerPlugin(PluginInterface):
             # Get available interfaces
             interfaces = get_network_interfaces()
             
+            # Clear existing items
+            self.interface_combo.clear()
+            
             # Add interfaces to combo box
             for interface in interfaces:
                 if_name = interface.get("name", "")
+                if_friendly_name = interface.get("friendly_name", if_name)
                 if_ip = interface.get("ip", "")
                 if_netmask = interface.get("netmask", "")
                 
                 if if_name and if_ip:
-                    # Create a display string with name and IP
-                    display = f"{if_name} ({if_ip})"
-                    self.interface_combo.addItem(display)
+                    # Create a display string with friendly name and IP
+                    display = f"{if_friendly_name} ({if_ip})"
+                    # Store the original interface name as user data
+                    self.interface_combo.addItem(display, if_name)
             
             logger.debug(f"Populated interface dropdown with {len(interfaces)} interfaces")
             
-            # Select first item if available
+            # Select first item if available and update network range
             if self.interface_combo.count() > 0:
                 self.interface_combo.setCurrentIndex(0)
+                # Update network range for the selected interface
+                self._update_network_range_from_interface(0)
                 
         except Exception as e:
             logger.error(f"Error populating interface dropdown: {e}", exc_info=True)
             # Add just the Any option as fallback
             self.interface_combo.clear()
-            self.interface_combo.addItem("Any (default)")
+            self.interface_combo.addItem("Any (default)", "any")
     
     def _populate_scan_types_dropdown(self):
         """Populate the scan types dropdown with available scan profiles"""
@@ -502,56 +722,78 @@ class NetworkScannerPlugin(PluginInterface):
             return
             
         try:
+            # Store current selection to restore it if possible
+            current_selection = self.scan_type_combo.currentText()
+            
             # Clear the combo box
             self.scan_type_combo.clear()
             
-            # Define default scan types
-            default_scan_types = {
-                "quick": "Quick Scan (ping only)",
-                "standard": "Standard Scan",
-                "comprehensive": "Comprehensive Scan",
-                "stealth": "Stealth Scan",
-                "service": "Service Detection"
-            }
+            # Get current scan profiles from settings
+            scan_profiles = self._settings.get("scan_profiles", {}).get("value", {})
             
-            # Create default scan profiles if not already defined
-            if not hasattr(self, "settings"):
-                self.settings = {}
-                
-            if "scan_profiles" not in self.settings:
-                self.settings["scan_profiles"] = {
-                    "value": default_scan_types,
-                    "default": default_scan_types
-                }
-                
-            # Get scan profiles from settings
-            scan_profiles = self.settings["scan_profiles"]["value"]
+            # If no profiles exist, create defaults
+            if not scan_profiles:
+                logger.warning("No scan profiles found, creating defaults")
+                self._load_scan_profiles()
+                scan_profiles = self._settings["scan_profiles"]["value"]
             
             # Add scan types to combo box
+            profile_count = 0
             for profile_id, profile in scan_profiles.items():
                 if isinstance(profile, dict):
                     display_name = profile.get("name", profile_id)
+                    self.scan_type_combo.addItem(display_name)
+                    profile_count += 1
                 else:
-                    display_name = profile
-                    
-                self.scan_type_combo.addItem(display_name)
+                    # Handle legacy format
+                    self.scan_type_combo.addItem(str(profile))
+                    profile_count += 1
             
-            logger.debug(f"Populated scan types dropdown with {len(scan_profiles)} profiles")
+            logger.debug(f"Populated scan types dropdown with {profile_count} profiles")
             
-            # Select default scan type
-            default_type = "quick"
-            default_index = self.scan_type_combo.findText("Quick Scan (ping only)")
-            if default_index >= 0:
-                self.scan_type_combo.setCurrentIndex(default_index)
-            elif self.scan_type_combo.count() > 0:
-                self.scan_type_combo.setCurrentIndex(0)
+            # Try to restore previous selection
+            if current_selection:
+                index = self.scan_type_combo.findText(current_selection)
+                if index >= 0:
+                    self.scan_type_combo.setCurrentIndex(index)
+                    logger.debug(f"Restored selection: {current_selection}")
+                else:
+                    # If previous selection not found, select a good default
+                    self._select_default_scan_type()
+            else:
+                # Select default scan type
+                self._select_default_scan_type()
                 
         except Exception as e:
             logger.error(f"Error populating scan types dropdown: {e}", exc_info=True)
             # Add basic types as fallback
             self.scan_type_combo.clear()
-            self.scan_type_combo.addItem("Quick Scan")
-            self.scan_type_combo.addItem("Standard Scan")
+            fallback_types = ["Quick Scan", "Standard Scan", "Service Detection"]
+            for scan_type in fallback_types:
+                self.scan_type_combo.addItem(scan_type)
+            self.scan_type_combo.setCurrentIndex(0)
+            
+    def _select_default_scan_type(self):
+        """Select a good default scan type"""
+        # Preferred order of defaults
+        preferred_defaults = [
+            "Quick Scan (ping only)",
+            "Standard Scan", 
+            "Service Detection",
+            "Comprehensive Scan"
+        ]
+        
+        for preferred in preferred_defaults:
+            index = self.scan_type_combo.findText(preferred)
+            if index >= 0:
+                self.scan_type_combo.setCurrentIndex(index)
+                logger.debug(f"Selected default scan type: {preferred}")
+                return
+        
+        # If none of the preferred defaults found, select first item
+        if self.scan_type_combo.count() > 0:
+            self.scan_type_combo.setCurrentIndex(0)
+            logger.debug(f"Selected first available scan type: {self.scan_type_combo.currentText()}")
     
     def _update_interface_choices_and_refresh_ui(self):
         """Update interface choices and refresh UI"""
@@ -567,30 +809,53 @@ class NetworkScannerPlugin(PluginInterface):
         if not hasattr(self, "interface_combo") or not self.interface_combo:
             return
             
-        # Get the selected interface
-        selected_if_text = self.interface_combo.currentText()
+        # Get the selected interface data
+        if index < 0 or index >= self.interface_combo.count():
+            return
+            
+        # Get the interface name from user data
+        interface_name = self.interface_combo.itemData(index)
         
         # If "Any" is selected, don't change the network range
-        if selected_if_text == "Any (default)":
+        if interface_name == "any":
             return
         
         try:
-            # Try to extract IP from the combo box text
-            # Format is typically "eth0 (192.168.1.100)"
-            import re
-            ip_match = re.search(r'\(([0-9\.]+)\)', selected_if_text)
+            # Get all interfaces to find the one we need
+            interfaces = get_network_interfaces()
             
-            if ip_match:
-                ip_address = ip_match.group(1)
+            # Find the interface with matching name
+            selected_interface = None
+            for interface in interfaces:
+                if interface.get("name") == interface_name:
+                    selected_interface = interface
+                    break
+            
+            if selected_interface:
+                ip_address = selected_interface.get("ip")
+                netmask = selected_interface.get("netmask", "255.255.255.0")
                 
-                # Get subnet for this IP
-                subnet = get_subnet_for_ip(ip_address)
-                
-                if subnet:
-                    # Update the network range field
-                    self.network_range_edit.setText(subnet)
-                    logger.debug(f"Updated network range to {subnet} based on selected interface")
-                    
+                if ip_address and netmask:
+                    # Calculate the actual network subnet
+                    try:
+                        # Convert netmask to CIDR notation
+                        netmask_obj = ipaddress.ip_address(netmask)
+                        network_bits = bin(int(netmask_obj)).count('1')
+                        
+                        # Create network object with the correct subnet
+                        network = ipaddress.ip_network(f"{ip_address}/{network_bits}", strict=False)
+                        subnet = str(network)
+                        
+                        # Update the network range field
+                        self.network_range_edit.setText(subnet)
+                        logger.debug(f"Updated network range to {subnet} based on selected interface {interface_name}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error calculating subnet for {ip_address}/{netmask}: {e}")
+                        # Fallback to /24 network
+                        fallback_network = ipaddress.ip_network(f"{ip_address}/24", strict=False)
+                        self.network_range_edit.setText(str(fallback_network))
+                        
         except Exception as e:
             logger.error(f"Error updating network range from interface: {e}", exc_info=True)
             
@@ -685,11 +950,6 @@ class NetworkScannerPlugin(PluginInterface):
         logger.debug("Quick ping button clicked")
         on_quick_ping_button_clicked(self)
     
-    def on_advanced_scan_button_clicked(self):
-        """Handle advanced scan button click"""
-        logger.debug("Advanced scan button clicked")
-        on_advanced_scan_button_clicked(self)
-    
     # Context menu actions
     def _on_scan_network_action(self, selected_items):
         """Handle scan network context menu action"""
@@ -728,15 +988,16 @@ class NetworkScannerPlugin(PluginInterface):
             )
             return
             
-        # Get scan type from user
+        # Get scan type from user using dynamic dropdown
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QDialogButtonBox
         
         # Create scan type selection dialog
         scan_dialog = QDialog(self.main_window)
         scan_dialog.setWindowTitle("Select Scan Type")
-        scan_dialog.setMinimumWidth(300)
+        scan_dialog.setMinimumWidth(350)
         
         layout = QVBoxLayout(scan_dialog)
+        layout.setSpacing(12)
         
         # Add instructions
         if len(devices_with_ip) == 1:
@@ -745,33 +1006,83 @@ class NetworkScannerPlugin(PluginInterface):
             label = QLabel(f"Select scan type for {len(devices_with_ip)} devices:")
         layout.addWidget(label)
         
-        # Create scan type combo box
+        # Create scan type combo box with current profiles
         scan_type_combo = QComboBox()
+        scan_type_combo.setMinimumWidth(300)
         
-        # Get scan profiles from settings
-        scan_profiles = self.settings["scan_profiles"]["value"]
+        # Get current scan profiles (this will include any custom profiles)
+        scan_profiles = self._settings["scan_profiles"]["value"]
         
-        # Add scan types to combo box
+        # Add scan types to combo box with profile details
+        profile_mapping = {}  # Map display names to profile IDs
         for profile_id, profile in scan_profiles.items():
             if isinstance(profile, dict):
                 display_name = profile.get("name", profile_id)
-            else:
-                display_name = profile
+                description = profile.get("description", "")
                 
-            scan_type_combo.addItem(display_name)
+                # Create a detailed display string
+                if description:
+                    full_display = f"{display_name} - {description}"
+                else:
+                    full_display = display_name
+                    
+                scan_type_combo.addItem(full_display)
+                profile_mapping[full_display] = profile_id
+            else:
+                # Fallback for old-style profiles
+                scan_type_combo.addItem(str(profile))
+                profile_mapping[str(profile)] = profile_id
         
         # If no scan types found, add defaults
         if scan_type_combo.count() == 0:
             default_types = ["Quick Scan (ping only)", "Standard Scan", "Comprehensive Scan"]
             for scan_type in default_types:
                 scan_type_combo.addItem(scan_type)
+                profile_mapping[scan_type] = scan_type.lower().replace(" ", "_")
         
-        # Set standard scan as default if available
-        standard_index = scan_type_combo.findText("Standard Scan")
-        if standard_index >= 0:
-            scan_type_combo.setCurrentIndex(standard_index)
+        # Set standard scan as default if available, otherwise service detection
+        preferred_defaults = ["Standard Scan", "Service Detection", "Quick Scan (ping only)"]
+        for preferred in preferred_defaults:
+            for i in range(scan_type_combo.count()):
+                if preferred in scan_type_combo.itemText(i):
+                    scan_type_combo.setCurrentIndex(i)
+                    break
+            else:
+                continue
+            break
         
         layout.addWidget(scan_type_combo)
+        
+        # Add profile details display
+        details_label = QLabel()
+        details_label.setWordWrap(True)
+        details_label.setStyleSheet("padding: 8px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;")
+        layout.addWidget(details_label)
+        
+        # Function to update details when selection changes
+        def update_details():
+            current_text = scan_type_combo.currentText()
+            profile_id = profile_mapping.get(current_text)
+            
+            if profile_id and profile_id in scan_profiles:
+                profile = scan_profiles[profile_id]
+                if isinstance(profile, dict):
+                    args = profile.get("arguments", "")
+                    timeout = profile.get("timeout", 300)
+                    os_det = "Yes" if profile.get("os_detection", False) else "No"
+                    port_scan = "Yes" if profile.get("port_scan", False) else "No"
+                    
+                    details_text = f"Arguments: {args}\n"
+                    details_text += f"OS Detection: {os_det} | Port Scan: {port_scan} | Timeout: {timeout}s"
+                    details_label.setText(details_text)
+                else:
+                    details_label.setText("Legacy profile format")
+            else:
+                details_label.setText("No details available")
+        
+        # Connect the update function and call it initially
+        scan_type_combo.currentTextChanged.connect(update_details)
+        update_details()
         
         # Add buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -784,7 +1095,18 @@ class NetworkScannerPlugin(PluginInterface):
             return  # User canceled
         
         # Get selected scan type
-        scan_type = scan_type_combo.currentText()
+        selected_display = scan_type_combo.currentText()
+        selected_profile_id = profile_mapping.get(selected_display, selected_display)
+        
+        # Get the actual profile name for display
+        if selected_profile_id in scan_profiles:
+            profile = scan_profiles[selected_profile_id]
+            if isinstance(profile, dict):
+                scan_type_name = profile.get("name", selected_profile_id)
+            else:
+                scan_type_name = str(profile)
+        else:
+            scan_type_name = selected_display
                 
         # Show the main window and dock
         if self.main_window:
@@ -801,13 +1123,13 @@ class NetworkScannerPlugin(PluginInterface):
         # Scan the first device immediately
         if devices_with_ip:
             first_device, first_ip = devices_with_ip[0]
-            self.log_message(f"Rescanning device at {first_ip} with {scan_type}")
-            self.scan_network(first_ip, scan_type)
+            self.log_message(f"Rescanning device at {first_ip} with {scan_type_name}")
+            self.scan_network(first_ip, scan_type_name)
             
             # Queue the remaining devices to be scanned sequentially
             if len(devices_with_ip) > 1:
                 remaining_devices = devices_with_ip[1:]
-                self._queue_device_scans(remaining_devices, scan_type)
+                self._queue_device_scans(remaining_devices, scan_type_name)
         
     def get_menu_actions(self):
         """Return actions to be placed in the menus"""
@@ -835,7 +1157,7 @@ class NetworkScannerPlugin(PluginInterface):
         dock = create_dock_widget(self.main_widget)
         
         # Return a list of tuples: (widget_name, widget, area)
-        return [("Network Scanner", dock, Qt.RightDockWidgetArea)]
+        return [("Network Scan Controls", dock, Qt.RightDockWidgetArea)]
         
     def scan_network(self, target, scan_type=None, **kwargs):
         """Start a network scan with the given parameters"""
@@ -860,17 +1182,28 @@ class NetworkScannerPlugin(PluginInterface):
         # Reset the discovered devices list for this scan
         self.discovered_devices = []
         
+        # Initialize UI for scanning
+        if hasattr(self, "progress_bar") and self.progress_bar:
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            
+        if hasattr(self, "status_label") and self.status_label:
+            self.status_label.setText("Initializing scan...")
+            
+        if hasattr(self, "scan_button") and self.scan_button:
+            self.scan_button.setEnabled(False)
+            
+        if hasattr(self, "stop_button") and self.stop_button:
+            self.stop_button.setEnabled(True)
+        
         # Get scan settings from UI
         if hasattr(self, "os_detection_check") and self.os_detection_check:
             kwargs.setdefault("os_detection", self.os_detection_check.isChecked())
         if hasattr(self, "port_scan_check") and self.port_scan_check:
             kwargs.setdefault("port_scan", self.port_scan_check.isChecked())
         
-        # Initialize thread and worker attributes if not already set
-        if not hasattr(self, "_scanner_thread"):
-            self._scanner_thread = None
-        if not hasattr(self, "_scanner_worker"):
-            self._scanner_worker = None
+        # Log scan start
+        self.log_message(f"Starting {scan_type or 'network'} scan of {target}")
             
         # Forward the scan request to the scanner module
         return self._scanner.scan_network(target, scan_type, **kwargs)
@@ -976,7 +1309,9 @@ class NetworkScannerPlugin(PluginInterface):
         
         # Update UI components if available
         if hasattr(self, "progress_bar") and self.progress_bar:
-            self.progress_bar.setValue(self.progress_value)
+            # Set the progress bar to show actual counts instead of percentage
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(current)
             
         if hasattr(self, "status_label") and self.status_label:
             self.status_label.setText(f"Scanning: {current}/{total} hosts")
@@ -1117,10 +1452,30 @@ class NetworkScannerPlugin(PluginInterface):
         # Check if we have a queue
         if not self._scan_queue:
             logger.debug("No devices in scan queue")
+            # If we just finished a queue, show summary
+            if hasattr(self, '_queue_total') and self._queue_total > 0:
+                completed = self._queue_current
+                failed = getattr(self, '_queue_failed', 0)
+                successful = completed - failed
+                self.log_message(f"Queue completed: {successful} successful, {failed} failed out of {self._queue_total} devices")
+                # Reset queue tracking
+                self._queue_total = 0
+                self._queue_current = 0
+                self._queue_failed = 0
+            
+            # Disconnect signals when queue is empty
+            if self._scan_queue_connected:
+                try:
+                    self.scan_completed.disconnect(self._process_scan_queue)
+                    self.scan_error.disconnect(self._process_scan_queue)
+                    self._scan_queue_connected = False
+                    logger.debug("Scan queue empty, disconnected signals")
+                except Exception as e:
+                    logger.debug(f"Error disconnecting scan queue signals: {e}")
             return
             
         # Check if a scan is currently running
-        if self._is_scanning:
+        if self.is_scanning():
             # Wait for the current scan to finish - don't start a new one yet
             logger.debug("Scan still in progress, waiting to process next device in queue")
             return
@@ -1129,34 +1484,41 @@ class NetworkScannerPlugin(PluginInterface):
         # This helps ensure any thread cleanup from the previous scan is complete
         def start_next_scan():
             # Double check we're not scanning and have items in queue
-            if self._is_scanning or not self._scan_queue:
+            if self.is_scanning() or not self._scan_queue:
                 return
                 
             # Get the next device from the queue
             device, ip_address = self._scan_queue.pop(0)
             
+            # Update queue progress
+            self._queue_current += 1
+            queue_progress = f"({self._queue_current}/{self._queue_total})"
+            
             # Get the scan type (default to standard if not specified)
-            scan_type = self._queue_scan_type or "standard"
+            scan_type = self._queue_scan_type or "Standard Scan"
             
-            # Make sure we're cleaned up from previous scan
-            self._cleanup_previous_scan()
+            # Start the scan with progress info
+            self.log_message(f"Starting queued scan {queue_progress} of device at {ip_address} with {scan_type}")
+            success = self.scan_network(ip_address, scan_type)
             
-            # Reset scanning state
-            self._is_scanning = False
+            if not success:
+                logger.error(f"Failed to start scan for {ip_address}, processing next in queue")
+                self._queue_failed += 1
+                # If scan failed to start, try the next one immediately
+                if self._scan_queue:
+                    QTimer.singleShot(500, self._process_scan_queue)
             
-            # Start the scan
-            self.log_message(f"Starting queued scan of device at {ip_address} with {scan_type}")
-            self.scan_network(ip_address, scan_type)
-            
-            # If the queue is empty, disconnect the signal
+            # If the queue is empty, disconnect the signals
             if not self._scan_queue:
                 try:
                     self.scan_completed.disconnect(self._process_scan_queue)
+                    self.scan_error.disconnect(self._process_scan_queue)
                     self._scan_queue_connected = False
+                    logger.debug("Scan queue completed, disconnected signals")
                 except Exception as e:
-                    logger.debug(f"Error disconnecting scan_completed signal: {e}")
+                    logger.debug(f"Error disconnecting scan queue signals: {e}")
         
-        # Use a timer to delay the next scan start by 1000ms to ensure cleanup
+        # Use a shorter timer delay (1 second instead of 2) for better responsiveness
         QTimer.singleShot(1000, start_next_scan)
         
     def _cleanup_previous_scan(self):
@@ -1262,23 +1624,34 @@ class NetworkScannerPlugin(PluginInterface):
         if not devices_with_ip:
             return
             
-        # Store the scan type
+        # Store the scan type and queue info
         self._queue_scan_type = scan_type
+        self._queue_total = len(devices_with_ip)
+        self._queue_current = 0
+        self._queue_failed = 0
             
         # Add devices to the queue
         self._scan_queue.extend(devices_with_ip)
         
-        # Connect to scan_completed signal if not already connected
+        # Connect to both scan_completed and scan_error signals if not already connected
         if not self._scan_queue_connected:
             self.scan_completed.connect(self._process_scan_queue)
+            self.scan_error.connect(self._process_scan_queue)
             self._scan_queue_connected = True
             
+        # Log queue status
+        self.log_message(f"Queued {len(devices_with_ip)} devices for {scan_type} scanning")
+        
     def _on_scan_error(self, error_message):
         """Handle scan errors"""
         logger.error(f"Scan error: {error_message}")
         
         # Update state
         self._is_scanning = False
+        
+        # Track failed scans in queue
+        if self._scan_queue and hasattr(self, '_queue_failed'):
+            self._queue_failed += 1
         
         # Update UI
         if hasattr(self, "scan_button") and self.scan_button:
@@ -1292,6 +1665,9 @@ class NetworkScannerPlugin(PluginInterface):
         
         # Log error
         self.log_message(f"ERROR: {error_message}")
+        
+        # Note: Queue processing is now handled automatically via signal connection
+        # No need to manually call _process_scan_queue here
         
         # Emit the error signal
         self.scan_error.emit(error_message)
@@ -1344,6 +1720,17 @@ class NetworkScannerPlugin(PluginInterface):
         
         # Use a short timer to ensure all signals are processed before cleanup
         QTimer.singleShot(100, complete_cleanup)
+
+    def _on_scan_profiles_changed(self):
+        """Handle scan profiles changed signal"""
+        logger.debug("Scan profiles changed, updating UI components")
+        
+        # Update the main scan type dropdown
+        if hasattr(self, "scan_type_combo") and self.scan_type_combo:
+            self._populate_scan_types_dropdown()
+        
+        # Any other UI components that need updating can be added here
+        # For example, if there are other dropdowns or lists that show scan types
 
 # Define a get_plugin function for the plugin system to use
 def get_plugin():

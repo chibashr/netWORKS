@@ -79,39 +79,6 @@ def on_quick_ping_button_clicked(plugin: Any) -> None:
             f"An error occurred during quick ping scan: {str(e)}"
         )
 
-def on_advanced_scan_button_clicked(plugin: Any) -> None:
-    """Handle advanced scan button click"""
-    try:
-        # Get network range from UI
-        if not plugin.network_range_edit:
-            logger.error("Network range edit field not available")
-            return
-            
-        network_range = plugin.network_range_edit.text().strip()
-        if not network_range:
-            QMessageBox.warning(
-                plugin.main_window,
-                "Warning",
-                "Please enter a network range to scan"
-            )
-            return
-            
-        # Start a comprehensive scan
-        plugin.scan_network(
-            network_range,
-            "Comprehensive Scan",
-            os_detection=True,
-            port_scan=True
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in advanced scan handler: {e}")
-        QMessageBox.critical(
-            plugin.main_window,
-            "Error",
-            f"An error occurred during advanced scan: {str(e)}"
-        )
-
 def on_scan_action(plugin: Any) -> None:
     """Handle scan action from menu/toolbar"""
     try:
@@ -172,37 +139,23 @@ def on_scan_selected_action(plugin: Any) -> None:
 def on_scan_type_manager_action(plugin: Any) -> None:
     """Handle scan type manager action"""
     try:
-        # Show scan type manager dialog
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTreeWidget, QTreeWidgetItem
+        # Import the comprehensive scan type manager dialog
+        from plugins.network_scanner.ui import create_scan_type_manager_dialog
         
-        dialog = QDialog(plugin.main_window)
-        dialog.setWindowTitle("Scan Type Manager")
-        dialog.setMinimumWidth(400)
+        # Create and show the dialog, passing the plugin instance
+        dialog_components = create_scan_type_manager_dialog(plugin.main_window, plugin._settings, plugin)
+        dialog = dialog_components['dialog']
         
-        layout = QVBoxLayout(dialog)
-        
-        # Create tree widget for scan types
-        tree = QTreeWidget()
-        tree.setHeaderLabels(["Name", "Description", "Arguments"])
-        
-        # Add scan profiles to tree
-        scan_profiles = plugin.settings["scan_profiles"]["value"]
-        for profile_id, profile in scan_profiles.items():
-            if isinstance(profile, dict):
-                item = QTreeWidgetItem([
-                    profile.get("name", profile_id),
-                    profile.get("description", ""),
-                    profile.get("arguments", "")
-                ])
-                tree.addTopLevelItem(item)
-                
-        layout.addWidget(tree)
-        
-        # Show dialog
+        # Show the dialog
         dialog.exec()
+        
+        # After dialog closes, update all dropdowns to reflect any changes
+        plugin._update_all_scan_type_dropdowns()
         
     except Exception as e:
         logger.error(f"Error in scan type manager action handler: {e}")
+        import traceback
+        traceback.print_exc()
 
 def _on_scan_network_action(plugin: Any, selected_items: List[Any]) -> None:
     """Handle scan network context menu action"""

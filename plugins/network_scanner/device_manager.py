@@ -25,21 +25,24 @@ def match_device(device_manager: Any, host_data: Dict) -> List[Any]:
     if not ip_address:
         return matches
         
-    # Search by IP address
-    ip_matches = device_manager.find_devices(
-        lambda d: d.get_property('ip_address') == ip_address
-    )
-    matches.extend(ip_matches)
-    
-    # If we have a MAC address, also search by that
-    if mac_address:
-        mac_matches = device_manager.find_devices(
-            lambda d: d.get_property('mac_address') == mac_address
-        )
-        # Add any new matches not already found by IP
-        for device in mac_matches:
-            if device not in matches:
+    try:
+        # Get all devices and filter by IP address
+        all_devices = device_manager.get_devices()
+        
+        # Search by IP address
+        for device in all_devices:
+            if device.get_property('ip_address') == ip_address:
                 matches.append(device)
+        
+        # If we have a MAC address, also search by that
+        if mac_address:
+            for device in all_devices:
+                if (device.get_property('mac_address') == mac_address and 
+                    device not in matches):
+                    matches.append(device)
+                    
+    except Exception as e:
+        logger.error(f"Error searching for matching devices: {e}")
                 
     return matches
 

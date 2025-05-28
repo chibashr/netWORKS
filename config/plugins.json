@@ -1,15 +1,15 @@
 {
   "command_manager": {
-    "state": "ENABLED",
-    "last_loaded": "",
+    "state": "LOADED",
+    "last_loaded": "2025-05-28 16:26:42.320871",
     "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\command_manager",
     "version": "1.0.3"
   },
   "network_scanner": {
-    "state": "ENABLED",
-    "last_loaded": "",
+    "state": "LOADED",
+    "last_loaded": "2025-05-28 16:26:42.320871",
     "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\network_scanner",
-    "version": "1.2.3"
+    "version": "1.3.0"
   },
   "sample": {
     "state": "DISABLED",

@@ -1,7 +1,7 @@
 {
   "id": "network_scanner",
   "name": "Network Scanner",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "description": "A plugin that scans the network for devices and adds them to NetWORKS",
   "author": "NetWORKS Team",
   "entry_point": "network_scanner.py",
@@ -19,6 +19,20 @@
   },
   "dependencies": [],
   "changelog": [
+    {
+      "version": "1.3.0",
+      "date": "2025-01-28",
+      "changes": [
+        "Fixed network interface display to show friendly names instead of GUIDs on Windows",
+        "Improved network range calculation to use actual interface subnet instead of /24 default",
+        "Fixed progress bar to show actual host counts (e.g., 5/254) instead of percentages (0/100)",
+        "Enhanced multiple device scanning to process devices sequentially with proper progress tracking",
+        "Removed 'Network' button from toolbar and ensured other toolbar items register correctly",
+        "Added automatic network range population on startup based on selected interface",
+        "Improved interface name resolution on Windows using wmic and PowerShell commands",
+        "Enhanced subnet calculation to respect actual netmask instead of assuming /24"
+      ]
+    },
     {
       "version": "1.2.3",
       "date": "2025-05-28",
