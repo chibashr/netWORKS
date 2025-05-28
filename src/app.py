@@ -46,6 +46,9 @@ class Application(QApplication):
         self.setOrganizationName("NetWORKS")
         self.setOrganizationDomain("networks.app")
         
+        # Prevent application from quitting when windows are temporarily hidden
+        self.setQuitOnLastWindowClosed(False)
+        
         # Force light mode by setting the style to Fusion
         self.setStyle("Fusion")
         
@@ -335,28 +338,28 @@ class Application(QApplication):
         """Initialize application components"""
         self.logger.info("Initializing application")
         
-        # Show splash screen
-        splash = SplashScreen()
-        splash.show()
+        # Show splash screen for initial loading
+        self.splash = SplashScreen()
+        self.splash.show()
         
         # Check environment for data directories
         self._ensure_data_directories()
         
         # Load configuration
-        splash.update_progress(20, "Loading configuration...")
+        self.splash.update_progress(20, "Loading configuration...")
         self.config = Config(self)
         self.config.load()
         
         # Initialize device manager
-        splash.update_progress(40, "Initializing device manager...")
+        self.splash.update_progress(40, "Initializing device manager...")
         self.device_manager = DeviceManager(self)
         
         # Initialize plugin manager
-        splash.update_progress(60, "Loading plugins...")
+        self.splash.update_progress(60, "Loading plugins...")
         self.plugin_manager = PluginManager(self)
         
         # Initialize issue reporter
-        splash.update_progress(80, "Initializing issue reporting system...")
+        self.splash.update_progress(80, "Initializing issue reporting system...")
         from .core.issue_reporter import IssueReporter
         self.issue_reporter = IssueReporter(self.config, self)
         
@@ -374,33 +377,102 @@ class Application(QApplication):
         except Exception as e:
             self.logger.warning(f"Failed to update logging configuration: {e}")
         
-        # Create main window
-        splash.update_progress(90, "Creating main window...")
+        # Create main window (but don't show it yet)
+        self.splash.update_progress(90, "Creating main window...")
         self.main_window = MainWindow(self)
         
-        # Complete progress and close splash screen
-        splash.update_progress(100, "Startup complete...")
-        splash.close()
+        # Complete initial loading progress
+        self.splash.update_progress(100, "Initial setup complete...")
         
-        # Show workspace selection dialog before displaying the main window
+        # Hide splash screen and show workspace selection dialog
+        self.splash.hide()
+        
+        # Show workspace selection dialog
+        # The dialog handlers will manage the splash screen for workspace loading
         self.show_workspace_selection()
         
-        # Now display the main window
-        self.main_window.show()
-        
-        # Check for first run
-        if self.config.is_first_run():
-            self.logger.info("First run detected")
-            # Mark as having been run to prevent showing on next startup
-            self.config.mark_as_run()
+        # After workspace selection dialog closes, the main window will be shown
+        # by the _complete_startup method called from _finalize_workspace_loading
+
+    def _finalize_workspace_loading(self):
+        """Finalize workspace loading by hiding splash screen and showing main window"""
+        try:
+            self.logger.debug("Finalizing workspace loading...")
             
-            # Show first run dialog after a short delay to ensure main window is visible
-            QTimer.singleShot(500, self.on_first_run)
+            # Show main window immediately to prevent application from closing
+            if hasattr(self, 'main_window'):
+                self.logger.debug("Showing main window immediately")
+                self.main_window.show()
+            else:
+                self.logger.error("Main window not found during finalization")
             
-        # Check for queued issues if we have a token
-        if hasattr(self, 'issue_reporter') and self.issue_reporter.github_token:
-            QTimer.singleShot(10000, self._check_issue_queue)
+            if hasattr(self, 'splash'):
+                # Small delay to show the completion message, then hide splash and complete startup
+                QTimer.singleShot(1000, self._complete_startup)
+                self.logger.debug("Scheduled startup completion")
+            else:
+                self.logger.warning("Splash screen not found during finalization, calling startup completion directly")
+                self._complete_startup()
+        except Exception as e:
+            self.logger.exception(f"Error during workspace loading finalization: {e}")
+            # Try to complete startup anyway
+            try:
+                if hasattr(self, 'main_window'):
+                    self.main_window.show()
+                self._complete_startup()
+            except Exception as e2:
+                self.logger.exception(f"Failed to recover from finalization error: {e2}")
+
+    def _complete_startup(self):
+        """Complete the startup process by hiding splash screen and handling first run"""
+        try:
+            self.logger.debug("Completing startup process...")
             
+            # Hide splash screen
+            if hasattr(self, 'splash'):
+                self.splash.hide()
+                self.logger.debug("Splash screen hidden")
+            
+            # Main window is already shown in _finalize_workspace_loading
+            # Just ensure it's visible and focused
+            if hasattr(self, 'main_window'):
+                self.main_window.raise_()
+                self.main_window.activateWindow()
+                self.logger.debug("Main window activated and raised")
+            else:
+                self.logger.error("Main window not found during startup completion")
+                return
+            
+            # Check for first run
+            if self.config.is_first_run():
+                self.logger.info("First run detected")
+                # Mark as having been run to prevent showing on next startup
+                self.config.mark_as_run()
+                
+                # Show first run dialog after a short delay to ensure main window is visible
+                QTimer.singleShot(500, self.on_first_run)
+                
+            # Check for queued issues if we have a token
+            if hasattr(self, 'issue_reporter') and self.issue_reporter.github_token:
+                QTimer.singleShot(10000, self._check_issue_queue)
+                
+            # Re-enable quit on last window closed now that startup is complete
+            self.setQuitOnLastWindowClosed(True)
+                
+            self.logger.info("Startup process completed successfully")
+            
+        except Exception as e:
+            self.logger.exception(f"Error during startup completion: {e}")
+            # Try to show main window anyway
+            try:
+                if hasattr(self, 'main_window'):
+                    self.main_window.show()
+                    self.main_window.raise_()
+                if hasattr(self, 'splash'):
+                    self.splash.hide()
+            except Exception as e2:
+                self.logger.exception(f"Failed to recover from startup error: {e2}")
+
     def show_workspace_selection(self):
         """Show workspace selection dialog at startup"""
         from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, 
@@ -815,9 +887,25 @@ class Application(QApplication):
             button_layout.addWidget(skip_button)
             
             def on_skip():
-                self.device_manager.load_workspace("default")
-                self.main_window.refresh_workspace_ui()
+                # Close dialog first
                 dialog.accept()
+                # Show splash screen for workspace loading
+                if hasattr(self, 'splash'):
+                    self.splash.show()
+                    self.splash.update_progress(20, "Loading default workspace...")
+                    self.processEvents()
+                
+                # Load workspace
+                success = self.device_manager.load_workspace("default")
+                if hasattr(self, 'splash'):
+                    self.splash.update_progress(80, "Refreshing workspace UI...")
+                    self.processEvents()
+                
+                if success:
+                    self.main_window.refresh_workspace_ui()
+                    if hasattr(self, 'splash'):
+                        self.splash.update_progress(100, "Default workspace loaded...")
+                        self._finalize_workspace_loading()
                 
             skip_button.clicked.connect(on_skip)
         
@@ -836,13 +924,32 @@ class Application(QApplication):
                 selected_item = workspaces_list.currentItem()
                 if selected_item:
                     workspace_name = selected_item.text()
+                    
+                    # Close dialog first
+                    dialog.accept()
+                    
+                    # Show splash screen for workspace loading
+                    if hasattr(self, 'splash'):
+                        self.splash.show()
+                        self.splash.update_progress(20, f"Loading workspace '{workspace_name}'...")
+                        self.processEvents()
+                    
+                    # Load workspace
                     success = self.device_manager.load_workspace(workspace_name)
+                    if hasattr(self, 'splash'):
+                        self.splash.update_progress(80, "Refreshing workspace UI...")
+                        self.processEvents()
+                    
                     if success:
                         self.logger.info(f"Loaded workspace: {workspace_name}")
                         self.main_window.refresh_workspace_ui()
-                        dialog.accept()
+                        if hasattr(self, 'splash'):
+                            self.splash.update_progress(100, f"Workspace '{workspace_name}' loaded successfully...")
+                            self._finalize_workspace_loading()
                     else:
-                        QMessageBox.critical(dialog, "Error", f"Failed to load workspace: {workspace_name}")
+                        if hasattr(self, 'splash'):
+                            self.splash.hide()
+                        QMessageBox.critical(None, "Error", f"Failed to load workspace: {workspace_name}")
                 else:
                     QMessageBox.warning(dialog, "No Selection", "Please select a workspace to open.")
             else:
@@ -860,23 +967,66 @@ class Application(QApplication):
                         QMessageBox.warning(dialog, "Workspace Exists", f"A workspace named '{name}' already exists.")
                         return
                 
+                # Close dialog first
+                dialog.accept()
+                
+                # Show splash screen for workspace creation and loading
+                if hasattr(self, 'splash'):
+                    self.splash.show()
+                    self.splash.update_progress(10, f"Creating workspace '{name}'...")
+                    self.processEvents()
+                
                 # Create the new workspace
                 success = self.device_manager.create_workspace(name, description)
                 if success:
+                    if hasattr(self, 'splash'):
+                        self.splash.update_progress(50, f"Loading workspace '{name}'...")
+                        self.processEvents()
+                    
                     # Load the new workspace
-                    self.device_manager.load_workspace(name)
-                    self.logger.info(f"Created and loaded workspace: {name}")
-                    self.main_window.refresh_workspace_ui()
-                    dialog.accept()
+                    load_success = self.device_manager.load_workspace(name)
+                    if hasattr(self, 'splash'):
+                        self.splash.update_progress(80, "Refreshing workspace UI...")
+                        self.processEvents()
+                    
+                    if load_success:
+                        self.logger.info(f"Created and loaded workspace: {name}")
+                        self.main_window.refresh_workspace_ui()
+                        if hasattr(self, 'splash'):
+                            self.splash.update_progress(100, f"Workspace '{name}' created and loaded successfully...")
+                            self._finalize_workspace_loading()
+                    else:
+                        if hasattr(self, 'splash'):
+                            self.splash.hide()
+                        QMessageBox.critical(None, "Error", f"Failed to load workspace: {name}")
                 else:
-                    QMessageBox.critical(dialog, "Error", f"Failed to create workspace: {name}")
+                    if hasattr(self, 'splash'):
+                        self.splash.hide()
+                    QMessageBox.critical(None, "Error", f"Failed to create workspace: {name}")
         
         # Handle Cancel button (use default workspace)
         def on_cancel():
-            self.device_manager.load_workspace("default")
-            self.main_window.refresh_workspace_ui()
+            # Close dialog first
             dialog.reject()
             
+            # Show splash screen for workspace loading
+            if hasattr(self, 'splash'):
+                self.splash.show()
+                self.splash.update_progress(20, "Loading default workspace...")
+                self.processEvents()
+            
+            # Load default workspace
+            success = self.device_manager.load_workspace("default")
+            if hasattr(self, 'splash'):
+                self.splash.update_progress(80, "Refreshing workspace UI...")
+                self.processEvents()
+            
+            if success:
+                self.main_window.refresh_workspace_ui()
+                if hasattr(self, 'splash'):
+                    self.splash.update_progress(100, "Default workspace loaded...")
+                    self._finalize_workspace_loading()
+        
         ok_button.clicked.connect(on_ok)
         cancel_button.clicked.connect(on_cancel)
         
