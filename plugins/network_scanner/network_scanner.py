@@ -85,16 +85,12 @@ class NetworkScannerPlugin(PluginInterface):
     It allows scanning network ranges and adding discovered devices to the
     device inventory.
     """
-    # Custom signals
-    scan_started = Signal(str)  # network_range
-    scan_progress_signal = Signal(int, int)  # current, total
-    scan_device_found = Signal(object)  # device
-    scan_completed = Signal(dict)  # results_dict
-    scan_error = Signal(str)  # error_message
     
-    def __init__(self):
+    def __init__(self, app=None):
         """Initialize the Network Scanner Plugin"""
         super().__init__()
+        
+        # Basic plugin info - can be overridden by manifest
         self.name = "Network Scanner"
         self.version = "1.2.6"
         self.description = "Scan networks and discover devices"
@@ -102,115 +98,162 @@ class NetworkScannerPlugin(PluginInterface):
         self.website = "https://github.com/chibashr/netWORKS"
         self.plugin_id = "network_scanner"
         
-        # UI components
-        self.dock_widget = None
-        self.menu_actions = {}
-        self.toolbar_actions = {}
-        self.context_menu_actions = {}
-        self.main_window = None
+        # Store app reference
+        self.app = app
         
-        # Scanner properties
-        self._scanner_thread = None
-        self._scanner_worker = None
-        self._is_scanning = False
-        self.target_subnet = ""
-        self.progress_value = 0  # Rename from scan_progress to avoid conflict with signal
-        self.discovered_devices = []
-        self._scan_log = []
-        self._scan_results = {}
+        # Initialize dynamic signal registry
+        self._signals = {}
         self._connected_signals = set()
         
-        # Initialize instance variables
-        self._scanner = None
-        self._scan_queue = []  # Queue for multiple device scans
-        self._queue_scan_type = None  # Scan type for queued scans
-        self._scan_queue_connected = False  # Whether scan queue signal is connected
+        # Initialize UI components registry
+        self._ui_components = {}
         
-        # Initialize settings
+        # Initialize handlers registry
+        self._handlers = {}
+        
+        # Initialize plugin settings
         self._initialize_settings()
         
-        # Create UI components
-        self._create_actions()
-        self._create_widgets()
+        # Initialize scanner components
+        self.scanner = None
+        self.scan_thread = None
+        self.scan_queue = []
+        self.is_scan_running = False
+        self._scan_queue_connected = False
         
-        logger.debug("NetworkScannerPlugin instance initialized")
+        # UI components (will be created during initialization)
+        self.main_widget = None
+        self.menu_actions = {}
+        self.toolbar_actions = {}
+        
+        logger.debug("Network Scanner Plugin instantiated")
     
     def _initialize_settings(self):
         """Initialize plugin settings with default values"""
-        self.settings = {
+        # Define settings schema
+        settings_schema = {
             "scan_type": {
                 "value": "quick",
-                "default": "quick"
+                "default": "quick",
+                "type": "string",
+                "description": "Default scan type"
             },
             "scan_timeout": {
-                "value": 300,  # 5 minutes
-                "default": 300
+                "value": 300,
+                "default": 300,
+                "type": "integer",
+                "description": "Scan timeout in seconds"
             },
             "os_detection": {
                 "value": False,
-                "default": False
+                "default": False,
+                "type": "boolean",
+                "description": "Enable OS detection"
             },
             "port_scan": {
                 "value": False,
-                "default": False
+                "default": False,
+                "type": "boolean",
+                "description": "Enable port scanning"
             },
             "use_sudo": {
                 "value": False,
-                "default": False
+                "default": False,
+                "type": "boolean",
+                "description": "Use sudo for scanning"
             },
             "custom_scan_args": {
                 "value": "",
-                "default": ""
-            },
-            "scan_profiles": {
-                "value": {
-                    "quick": {
-                        "name": "Quick Scan (ping only)",
-                        "description": "Fast ping scan to discover hosts",
-                        "arguments": "-sn",
-                        "os_detection": False,
-                        "port_scan": False,
-                        "timeout": 60
-                    },
-                    "standard": {
-                        "name": "Standard Scan",
-                        "description": "Basic port scan of common ports",
-                        "arguments": "-sS -T4 -F",
-                        "os_detection": False,
-                        "port_scan": True,
-                        "timeout": 300
-                    },
-                    "comprehensive": {
-                        "name": "Comprehensive Scan",
-                        "description": "Detailed scan with service detection",
-                        "arguments": "-sS -T4 -A",
-                        "os_detection": True,
-                        "port_scan": True,
-                        "timeout": 600
-                    },
-                    "stealth": {
-                        "name": "Stealth Scan",
-                        "description": "Low and slow scan to avoid detection",
-                        "arguments": "-sS -T2",
-                        "os_detection": False,
-                        "port_scan": True,
-                        "timeout": 900
-                    },
-                    "service": {
-                        "name": "Service Detection",
-                        "description": "Detailed service and version detection",
-                        "arguments": "-sV",
-                        "os_detection": False,
-                        "port_scan": True,
-                        "timeout": 450
-                    }
-                },
-                "default": {}  # This will be populated in the constructor
+                "default": "",
+                "type": "string",
+                "description": "Custom scan arguments"
             }
         }
         
-        # Set default profiles
-        self.settings["scan_profiles"]["default"] = self.settings["scan_profiles"]["value"].copy()
+        # Load settings from schema
+        self._settings = settings_schema
+        
+        # Load scan profiles
+        self._load_scan_profiles()
+    
+    def _load_scan_profiles(self):
+        """Load scan profiles from configuration"""
+        # Default profiles
+        default_profiles = {
+            "quick": {
+                "name": "Quick Scan (ping only)",
+                "description": "Fast ping scan to discover hosts",
+                "arguments": "-sn",
+                "os_detection": False,
+                "port_scan": False,
+                "timeout": 60
+            },
+            "standard": {
+                "name": "Standard Scan",
+                "description": "Basic port scan of common ports",
+                "arguments": "-sS -T4 -F",
+                "os_detection": False,
+                "port_scan": True,
+                "timeout": 300
+            },
+            "comprehensive": {
+                "name": "Comprehensive Scan",
+                "description": "Detailed scan with service detection",
+                "arguments": "-sS -T4 -A",
+                "os_detection": True,
+                "port_scan": True,
+                "timeout": 600
+            }
+        }
+        
+        # Add to settings
+        self._settings["scan_profiles"] = {
+            "value": default_profiles.copy(),
+            "default": default_profiles.copy(),
+            "type": "dict",
+            "description": "Scan profiles configuration"
+        }
+    
+    def register_signal(self, name, signal_type=None):
+        """Dynamically register a new signal"""
+        if signal_type is None:
+            signal_type = Signal
+        self._signals[name] = signal_type()
+        return self._signals[name]
+    
+    def register_ui_component(self, name, component):
+        """Dynamically register a UI component"""
+        self._ui_components[name] = component
+        return component
+    
+    def register_handler(self, name, handler):
+        """Dynamically register a handler"""
+        self._handlers[name] = handler
+        return handler
+    
+    def get_signal(self, name):
+        """Get a registered signal by name"""
+        return self._signals.get(name)
+    
+    def get_ui_component(self, name):
+        """Get a registered UI component by name"""
+        return self._ui_components.get(name)
+    
+    def get_handler(self, name):
+        """Get a registered handler by name"""
+        return self._handlers.get(name)
+    
+    def get_setting(self, name):
+        """Get a setting value by name"""
+        setting = self._settings.get(name)
+        return setting.get("value") if setting else None
+    
+    def update_setting(self, name, value):
+        """Update a setting value"""
+        if name in self._settings:
+            self._settings[name]["value"] = value
+            return True
+        return False
     
     def _create_actions(self):
         """Create plugin actions"""
@@ -302,7 +345,17 @@ class NetworkScannerPlugin(PluginInterface):
         self.device_manager = self.app.device_manager
         
         # Initialize scanner system
-        self._initialize_scanner()
+        scanner = Scanner()
+        self.register_handler("scanner", scanner)
+        
+        # Create UI components
+        self._create_actions()
+        self._create_widgets()
+        
+        # Register UI components
+        if hasattr(self, 'ui_components') and self.ui_components:
+            for name, component in self.ui_components.items():
+                self.register_ui_component(name, component)
         
         # Connect to application signals
         self._connect_signals()
@@ -356,48 +409,33 @@ class NetworkScannerPlugin(PluginInterface):
         self._scanner_worker = None
         
         # Disconnect scan queue signal if connected
-        if self._scan_queue_connected:
+        if hasattr(self, '_scan_queue_connected') and self._scan_queue_connected:
             try:
-                self.scan_completed.disconnect(self._process_scan_queue)
+                scan_completed_signal = self.get_signal("scan_completed")
+                if scan_completed_signal:
+                    scan_completed_signal.disconnect(self._process_scan_queue)
                 self._scan_queue_connected = False
             except Exception as e:
                 logger.debug(f"Error disconnecting scan queue signal: {e}")
         
         # Clear scan queue
-        self._scan_queue = []
-        self._queue_scan_type = None
+        if hasattr(self, '_scan_queue'):
+            self._scan_queue = []
+        if hasattr(self, '_queue_scan_type'):
+            self._queue_scan_type = None
         
         return True
         
     def _initialize_scanner(self):
-        """Initialize the scanner instance"""
+        """Initialize the network scanner"""
         try:
-            # Import the scanner class
-            from plugins.network_scanner.scanner import Scanner
-            
-            # Create a scanner instance with our settings
-            self._scanner = Scanner(settings=self.settings)
-            
-            # Connect scanner signals to our handlers
-            self._scanner.scan_started.connect(lambda network_range: self.scan_started.emit(network_range))
-            self._scanner.scan_progress.connect(self._on_scan_progress)
-            self._scanner.scan_device_found.connect(self._on_device_found)
-            self._scanner.scan_completed.connect(self._on_scan_complete)
-            self._scanner.scan_error.connect(self._on_scan_error)
-            
-            # Store the device manager reference in the scanner
-            self._scanner.device_manager = self.device_manager
-            
-            # Initialize thread and worker references
-            self._scanner_thread = None
-            self._scanner_worker = None
-            
+            # Create scanner instance without settings
+            self._scanner = Scanner()
             logger.debug("Scanner initialized successfully")
+            return True
         except Exception as e:
-            logger.error(f"Error initializing scanner: {e}", exc_info=True)
-            self._scanner = None
-            self._scanner_thread = None
-            self._scanner_worker = None
+            logger.error(f"Error initializing scanner: {e}")
+            return False
     
     def _connect_signals(self):
         """Connect to application signals"""
@@ -777,7 +815,11 @@ class NetworkScannerPlugin(PluginInterface):
         
     def get_toolbar_actions(self):
         """Return actions to be placed on toolbars"""
-        return self.toolbar_actions
+        # Return a flat list of actions for the toolbar
+        toolbar_actions = []
+        for category, actions in self.toolbar_actions.items():
+            toolbar_actions.extend(actions)
+        return toolbar_actions
         
     def get_context_menu_actions(self):
         """Return actions to be placed in context menus"""

@@ -32,10 +32,18 @@ def ensure_plugin_dependencies():
         with open(requirements_file) as f:
             requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
         
+        # Map package names to their import names
+        package_map = {
+            'python-nmap': 'nmap',
+            'netifaces': 'netifaces'
+        }
+        
         # Install missing requirements
         for req in requirements:
+            package_name = req.split('>=')[0].split('==')[0]
+            import_name = package_map.get(package_name, package_name)
             try:
-                __import__(req.split('>=')[0].split('==')[0])
+                __import__(import_name)
             except ImportError:
                 print(f"Installing plugin requirement: {req}")
                 subprocess.check_call([

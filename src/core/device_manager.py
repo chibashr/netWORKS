@@ -1151,37 +1151,45 @@ class DeviceManager(QObject):
                     # Enable all plugins marked as enabled in the workspace
                     all_plugins = plugin_manager.get_plugins()
                     for plugin_info in all_plugins:
-                        plugin_id = plugin_info.id
-                        should_be_enabled = plugin_id in enabled_plugins
-                        
-                        if should_be_enabled:
-                            logger.debug(f"Enabling plugin {plugin_id} for workspace {name}")
-                            # Only enable if not already enabled
-                            if not plugin_info.state.is_enabled:
-                                # Update plugin state in registry first
-                                plugin_info.enabled = True
-                                plugin_manager._registry_dirty = True
-                                
-                            # Then load the plugin if it's not already loaded
-                            if not plugin_info.state.is_loaded:
-                                logger.debug(f"Loading plugin {plugin_id} for workspace {name}")
-                                plugin_manager.load_plugin(plugin_id)
-                        else:
-                            # Disable any plugins not in the enabled list but currently enabled
-                            if plugin_info.state.is_enabled:
-                                logger.debug(f"Disabling plugin {plugin_id} for workspace {name}")
-                                # Unload if currently loaded
-                                if plugin_info.state.is_loaded:
-                                    plugin_manager.unload_plugin(plugin_id)
-                                
-                                # Update state in registry
-                                plugin_info.enabled = False
-                                plugin_manager._registry_dirty = True
+                        try:
+                            plugin_id = plugin_info.id
+                            should_be_enabled = plugin_id in enabled_plugins
+                            
+                            if should_be_enabled:
+                                logger.debug(f"Enabling plugin {plugin_id} for workspace {name}")
+                                # Only enable if not already enabled
+                                if not plugin_info.state.is_enabled:
+                                    # Update plugin state in registry first
+                                    plugin_info.enabled = True
+                                    if hasattr(plugin_manager, '_registry_dirty'):
+                                        plugin_manager._registry_dirty = True
+                                    
+                                # Then load the plugin if it's not already loaded
+                                if not plugin_info.state.is_loaded:
+                                    logger.debug(f"Loading plugin {plugin_id} for workspace {name}")
+                                    plugin_manager.load_plugin(plugin_id)
+                            else:
+                                # Disable any plugins not in the enabled list but currently enabled
+                                if plugin_info.state.is_enabled:
+                                    logger.debug(f"Disabling plugin {plugin_id} for workspace {name}")
+                                    # Unload if currently loaded
+                                    if plugin_info.state.is_loaded:
+                                        plugin_manager.unload_plugin(plugin_id)
+                                    
+                                    # Update state in registry
+                                    plugin_info.enabled = False
+                                    if hasattr(plugin_manager, '_registry_dirty'):
+                                        plugin_manager._registry_dirty = True
+                        except Exception as e:
+                            logger.error(f"Error handling plugin {plugin_info.id}: {e}", exc_info=True)
+                            continue  # Continue with next plugin
                     
-                    # Sync the plugin registry to save changes
-                    plugin_manager._sync_registry()
+                    # Sync the plugin registry to save changes if the method exists
+                    if hasattr(plugin_manager, '_sync_registry'):
+                        plugin_manager._sync_registry()
                 except Exception as e:
                     logger.error(f"Error restoring plugin states: {e}", exc_info=True)
+                    # Continue loading workspace even if plugin restoration fails
             
             # Now load the devices
             devices_path = os.path.join(workspace_dir, "devices")

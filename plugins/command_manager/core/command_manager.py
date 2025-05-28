@@ -36,19 +36,41 @@ from plugins.command_manager.utils.credential_store import CredentialStore
 class CommandManagerPlugin(PluginInterface):
     """Command Manager Plugin for NetWORKS"""
     
-    def __init__(self):
+    def __init__(self, app=None):
         """Initialize the plugin"""
         super().__init__()
         
         logger.debug("Initializing Command Manager Plugin")
         
-        # Plugin data directories
-        self.data_dir = None
-        self.commands_dir = None
-        self.output_dir = None
+        # Store app reference
+        self.app = app
         
-        # Plugin settings
-        self.settings = {
+        # Initialize dynamic registries
+        self._signals = {}
+        self._ui_components = {}
+        self._handlers = {}
+        self._settings = {}
+        self._connected_signals = set()
+        
+        # Initialize plugin data paths
+        self._data_paths = {}
+        
+        # Initialize UI components
+        self.command_dialog = None
+        self.output_panel = None
+        self.toolbar = None
+        self.toolbar_action = None
+        self.batch_export_action = None
+        self.credential_manager_action = None
+        
+        # Initialize plugin settings
+        self._initialize_settings()
+        
+        logger.debug("Command Manager Plugin instance initialized")
+        
+    def _initialize_settings(self):
+        """Initialize plugin settings with default values"""
+        settings_schema = {
             "export_filename_template": {
                 "name": "Export Filename Template",
                 "description": "Template for exported command filenames. Available variables: {hostname}, {ip}, {command}, {date}, and any device property.",
@@ -65,32 +87,113 @@ class CommandManagerPlugin(PluginInterface):
             },
             "export_command_format": {
                 "name": "Export Command Format",
-                "description": "How to format command names in exported filenames (truncated, full, etc.)",
+                "description": "How to format command names in exported filenames",
                 "type": "choice",
                 "choices": ["truncated", "full", "sanitized"],
                 "default": "truncated",
                 "value": "truncated"
+            },
+            "credential_store": {
+                "name": "Credential Store Settings",
+                "description": "Settings for credential storage and encryption",
+                "type": "dict",
+                "default": {
+                    "encryption_method": "bcrypt",
+                    "key_derivation": "pbkdf2",
+                    "iterations": 100000
+                },
+                "value": {
+                    "encryption_method": "bcrypt",
+                    "key_derivation": "pbkdf2",
+                    "iterations": 100000
+                }
             }
         }
         
-        # UI components
-        self.command_dialog = None
-        self.output_panel = None
-        self.toolbar_action = None
-        self.toolbar = None
-        self.context_menu_actions = {}
+        # Load settings from schema
+        self._settings = settings_schema
         
-        # Create handlers
-        self.command_handler = None
-        self.output_handler = None
-        
-        # Data components
-        self.command_sets = {}  # {device_type: {firmware: CommandSet}}
-        self.credential_store = None
-        self.outputs = {}       # {device_id: {command_id: {timestamp: output}}}
-        
-        logger.debug("Command Manager Plugin instance initialized")
-        
+    def register_signal(self, name, signal_type=None):
+        """Dynamically register a new signal"""
+        if signal_type is None:
+            signal_type = Signal
+        self._signals[name] = signal_type()
+        return self._signals[name]
+    
+    def register_ui_component(self, name, component):
+        """Dynamically register a UI component"""
+        self._ui_components[name] = component
+        return component
+    
+    def register_handler(self, name, handler):
+        """Dynamically register a handler"""
+        self._handlers[name] = handler
+        return handler
+    
+    def register_data_path(self, name, path):
+        """Dynamically register a data path"""
+        self._data_paths[name] = path
+        return path
+    
+    def get_signal(self, name):
+        """Get a registered signal by name"""
+        return self._signals.get(name)
+    
+    def get_ui_component(self, name):
+        """Get a registered UI component by name"""
+        return self._ui_components.get(name)
+    
+    def get_handler(self, name):
+        """Get a registered handler by name"""
+        return self._handlers.get(name)
+    
+    def get_data_path(self, name):
+        """Get a registered data path by name"""
+        return self._data_paths.get(name)
+    
+    def get_setting(self, name):
+        """Get a setting value by name"""
+        setting = self._settings.get(name)
+        return setting.get("value") if setting else None
+    
+    def update_setting(self, name, value):
+        """Update a setting value"""
+        if name in self._settings:
+            self._settings[name]["value"] = value
+            return True
+        return False
+    
+    # Properties for backward compatibility
+    @property
+    def command_handler(self):
+        """Get the command handler"""
+        return self.get_handler("command_handler")
+    
+    @property
+    def output_handler(self):
+        """Get the output handler"""
+        return self.get_handler("output_handler")
+    
+    @property
+    def credential_store(self):
+        """Get the credential store"""
+        return self.get_handler("credential_store")
+    
+    @property
+    def data_dir(self):
+        """Get the data directory"""
+        return self.get_data_path("data_dir")
+    
+    @property
+    def commands_dir(self):
+        """Get the commands directory"""
+        return self.get_data_path("commands_dir")
+    
+    @property
+    def output_dir(self):
+        """Get the output directory"""
+        return self.get_data_path("output_dir")
+    
     def initialize(self, app, plugin_info):
         """Initialize the plugin"""
         self.app = app
@@ -100,69 +203,34 @@ class CommandManagerPlugin(PluginInterface):
         
         logger.debug(f"Command Manager initialization started. App: {app}, plugin_info: {plugin_info}")
         
-        # Create data directories
+        # Create and register data directories FIRST
         self._create_data_directories()
         
-        # Create credential store
+        # Create and register credential store
         try:
             data_dir = Path(self.plugin_info.path) / "data"
-            self.credential_store = CredentialStore(data_dir)
-            
-            # Log device manager state before setting
-            logger.debug(f"Device manager reference before setting: {self.device_manager}")
-            logger.debug(f"Device manager exists: {self.device_manager is not None}")
-            if self.device_manager:
-                logger.debug(f"Device manager has get_device method: {hasattr(self.device_manager, 'get_device')}")
-                logger.debug(f"Device manager type: {type(self.device_manager)}")
+            credential_store = CredentialStore(data_dir)
             
             # Set the device manager reference in the credential store
-            # This will also set the current workspace name and migrate any
-            # credentials from legacy locations to workspace-specific directories
-            self.credential_store.set_device_manager(self.device_manager)
+            credential_store.set_device_manager(self.device_manager)
             
-            # Get the current workspace name for logging
-            workspace_dir = None
-            current_workspace = "default"
-            if hasattr(self.device_manager, 'get_current_workspace_name'):
-                try:
-                    current_workspace = self.device_manager.get_current_workspace_name()
-                    logger.debug(f"Current workspace is: {current_workspace}")
-                except Exception as e:
-                    logger.warning(f"Error getting current workspace name: {e}")
+            # Register the credential store
+            self.register_handler("credential_store", credential_store)
             
-            # Try to get the workspace directory path
-            if hasattr(self.device_manager, 'get_workspace_dir'):
-                try:
-                    workspace_dir = self.device_manager.get_workspace_dir()
-                    logger.debug(f"Workspace directory is: {workspace_dir}")
-                except Exception as e:
-                    logger.warning(f"Error getting workspace directory: {e}")
-            
-            # Check actual app structure to find workspace directory if not provided
-            if not workspace_dir and hasattr(self.app, 'base_dir'):
-                try:
-                    # Construct workspace dir from app base dir
-                    workspace_dir = Path(self.app.base_dir) / "config" / "workspaces" / current_workspace
-                    if workspace_dir.exists():
-                        logger.debug(f"Using inferred workspace directory: {workspace_dir}")
-                    else:
-                        logger.debug(f"Inferred workspace directory does not exist: {workspace_dir}")
-                except Exception as e:
-                    logger.warning(f"Error inferring workspace directory: {e}")
-                    
-            logger.debug(f"Credential store initialized with data_dir: {data_dir}")
         except Exception as e:
             logger.error(f"Error initializing credential store: {e}")
             logger.exception("Exception details:")
-            self.credential_store = None
-            
-        # Initialize handlers
-        self.command_handler = CommandHandler(self)
-        self.output_handler = OutputHandler(self)
+        
+        # Initialize and register handlers
+        command_handler = CommandHandler(self)
+        output_handler = OutputHandler(self)
+        
+        self.register_handler("command_handler", command_handler)
+        self.register_handler("output_handler", output_handler)
         
         # Load command outputs and command sets
-        self.output_handler.load_command_outputs()
-        self.command_handler.load_default_command_sets()
+        output_handler.load_command_outputs()
+        command_handler.load_default_command_sets()
         
         # Create UI components and toolbar
         register_ui(self)
@@ -258,16 +326,18 @@ class CommandManagerPlugin(PluginInterface):
         
     def cleanup(self):
         """Clean up plugin resources"""
-        logger.info(f"{self.plugin_info.name} Plugin cleaned up")
+        logger.info(f"Command Manager Plugin cleaned up")
         
         try:
             # Save command sets
-            if self.command_handler:
-                self.command_handler.save_command_sets()
+            command_handler = self.get_handler("command_handler")
+            if command_handler:
+                command_handler.save_command_sets()
             
             # Save command outputs
-            if self.output_handler:
-                self.output_handler.save_command_outputs()
+            output_handler = self.get_handler("output_handler")
+            if output_handler:
+                output_handler.save_command_outputs()
                     
             # Close command dialog if open
             if hasattr(self, 'command_dialog') and self.command_dialog:
@@ -305,21 +375,25 @@ class CommandManagerPlugin(PluginInterface):
     def _create_data_directories(self):
         """Create data directories for the plugin"""
         # Main data directory
-        self.data_dir = Path(self.plugin_info.path) / "data"
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        data_dir = Path(self.plugin_info.path) / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        self.register_data_path("data_dir", data_dir)
         
         # Command sets directory
-        self.commands_dir = self.data_dir / "commands"
-        self.commands_dir.mkdir(exist_ok=True)
+        commands_dir = data_dir / "commands"
+        commands_dir.mkdir(exist_ok=True)
+        self.register_data_path("commands_dir", commands_dir)
         
         # Command outputs directory
-        self.output_dir = self.data_dir / "outputs"
-        self.output_dir.mkdir(exist_ok=True)
+        output_dir = data_dir / "outputs"
+        output_dir.mkdir(exist_ok=True)
+        self.register_data_path("output_dir", output_dir)
         
         # Legacy credentials directory - marked for migration
-        legacy_creds_dir = self.data_dir / "credentials"
+        legacy_creds_dir = data_dir / "credentials"
         if legacy_creds_dir.exists():
             logger.debug("Legacy credentials directory exists, will be migrated to workspace directory")
+            self.register_data_path("legacy_creds_dir", legacy_creds_dir)
             
     def get_current_workspace_dir(self):
         """Get the current workspace directory
@@ -467,7 +541,19 @@ class CommandManagerPlugin(PluginInterface):
     
     def get_toolbar_actions(self):
         """Get actions to be added to the toolbar"""
-        return [self.toolbar_action, self.batch_export_action, self.credential_manager_action]
+        # Ensure toolbar actions are created
+        if not hasattr(self, 'toolbar_action'):
+            return []
+        
+        actions = []
+        if hasattr(self, 'toolbar_action') and self.toolbar_action:
+            actions.append(self.toolbar_action)
+        if hasattr(self, 'batch_export_action') and self.batch_export_action:
+            actions.append(self.batch_export_action)
+        if hasattr(self, 'credential_manager_action') and self.credential_manager_action:
+            actions.append(self.credential_manager_action)
+        
+        return actions
         
     def find_existing_menu(self, menu_name):
         """Find an existing menu by name (case-insensitive)

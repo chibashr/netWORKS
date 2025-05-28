@@ -44,35 +44,37 @@ A NetWORKS plugin is a directory containing the following components:
 ```
 my_plugin/
 ├── API.md              # API documentation (required)
-├── plugin.yaml         # Plugin metadata (required)
+├── manifest.json       # Plugin metadata (required)
+├── requirements.txt    # Python dependencies (optional)
 ├── my_plugin.py        # Main plugin file (specified in entry_point)
 ├── resources/          # Resources directory (optional)
 │   ├── icons/          # Plugin icons
 │   └── ui/             # UI definition files
-├── lib/                # Library directory for plugin-specific modules (optional)
-│   └── ...             # Additional Python modules
+├── lib/                # Library directory for plugin dependencies (auto-generated)
+│   └── ...             # Python packages installed via requirements.txt
 └── docs/               # Additional documentation (optional)
     └── ...             # Documentation files
 ```
 
 ### Required Files
 
-#### plugin.yaml
+#### manifest.json
 
 This file contains plugin metadata:
 
-```yaml
-id: my_plugin               # Unique identifier for the plugin
-name: My Plugin             # Human-readable name
-version: 1.0.0              # Plugin version (semantic versioning recommended)
-description: >              # Description of what the plugin does
-  A comprehensive description of the plugin's functionality.
-  Can span multiple lines.
-author: Your Name           # Author name or organization
-entry_point: my_plugin.py   # Main plugin file
-min_app_version: 0.1.0      # Minimum compatible application version (optional)
-dependencies:               # Other plugins this plugin depends on (optional)
-  - other_plugin: ">=1.0.0"
+```json
+{
+  "id": "my_plugin",
+  "name": "My Plugin",
+  "version": "1.0.0",
+  "description": "A comprehensive description of the plugin's functionality. Can span multiple lines.",
+  "author": "Your Name",
+  "entry_point": "my_plugin.py",
+  "min_app_version": "0.1.0",
+  "dependencies": {
+    "other_plugin": ">=1.0.0"
+  }
+}
 ```
 
 #### API.md
@@ -150,7 +152,7 @@ Version history and changes.
 
 #### Main Plugin File
 
-This is the entry point specified in `plugin.yaml`. It must contain a class that inherits from `PluginInterface`:
+This is the entry point specified in `manifest.json`. It must contain a class that inherits from `PluginInterface`:
 
 ```python
 from src.core.plugin_interface import PluginInterface
@@ -171,6 +173,55 @@ class MyPlugin(PluginInterface):
 - **resources/**: Contains static resources like icons, images, and UI files
 - **lib/**: Contains additional Python modules specific to the plugin
 - **docs/**: Contains additional documentation
+
+### Dependency Management
+
+NetWORKS plugins use a self-contained dependency management system to ensure plugins work reliably across different installations:
+
+#### requirements.txt
+
+Create a `requirements.txt` file in your plugin directory to specify Python dependencies:
+
+```
+# My Plugin Requirements
+requests>=2.25.0
+beautifulsoup4>=4.9.0
+lxml>=4.6.0
+```
+
+#### Automatic Dependency Installation
+
+When a plugin is loaded, NetWORKS automatically:
+
+1. Checks for a `requirements.txt` file in the plugin directory
+2. Installs dependencies to the plugin's `lib/` folder using `pip install --target`
+3. Adds the `lib/` folder to the Python path for the plugin
+4. Ensures dependencies are isolated from other plugins and the main application
+
+This approach provides several benefits:
+
+- **Isolation**: Each plugin has its own dependency versions
+- **Reliability**: Plugins work regardless of what's installed system-wide
+- **Portability**: Plugins can be distributed with their dependencies
+- **Safety**: Plugin dependencies don't conflict with each other or the main app
+
+#### Using Dependencies in Your Plugin
+
+Dependencies installed to the `lib/` folder are automatically available for import:
+
+```python
+# These imports will use the versions from your plugin's lib/ folder
+import requests
+from bs4 import BeautifulSoup
+import lxml
+```
+
+#### Best Practices for Dependencies
+
+1. **Pin versions**: Use specific version ranges to ensure compatibility
+2. **Minimize dependencies**: Only include what you actually need
+3. **Document dependencies**: Explain why each dependency is needed in your API.md
+4. **Test isolation**: Ensure your plugin works with its isolated dependencies
 
 ## Plugin Development Lifecycle
 
@@ -247,15 +298,17 @@ plugins/my_first_plugin/
 
 ### Step 2: Create the Plugin Metadata
 
-Create a `plugin.yaml` file:
+Create a `manifest.json` file:
 
-```yaml
-id: my_first_plugin
-name: My First Plugin
-version: 0.1.0
-description: A simple demonstration plugin
-author: Your Name
-entry_point: my_first_plugin.py
+```json
+{
+  "id": "my_first_plugin",
+  "name": "My First Plugin",
+  "version": "0.1.0",
+  "description": "A simple demonstration plugin",
+  "author": "Your Name",
+  "entry_point": "my_first_plugin.py"
+}
 ```
 
 ### Step 3: Create the Main Plugin File
@@ -872,7 +925,7 @@ device.set_property("backup.next_scheduled", "2023-05-22")
 device.set_property("backup_error_count", 0)
 ```
 
-Where `your_plugin_id` must match your plugin's ID exactly as defined in your plugin.yaml file.
+Where `your_plugin_id` must match your plugin's ID exactly as defined in your manifest.json file.
 
 Properties that don't follow this convention will appear in the "Custom Properties" section instead.
 
