@@ -105,13 +105,23 @@ class SplashScreen(QSplashScreen):
             if os.path.exists(manifest_path):
                 with open(manifest_path, 'r', encoding='utf-8') as f:
                     manifest = json.load(f)
-                    return manifest.get('version', '0.1.0')
+                    
+                    # Get version information
+                    version = manifest.get('version', '0.1.0')
+                    version_info = manifest.get('version_info', {})
+                    build_number = version_info.get('build', None)
+                    
+                    # Format complete version string
+                    if build_number:
+                        return f"{version} (Build {build_number})"
+                    else:
+                        return version
             else:
                 logger.warning(f"Manifest file not found at {manifest_path}")
-                return '0.1.0'
+                return '0.9.12 (Build 279)'
         except Exception as e:
             logger.error(f"Error reading version from manifest: {e}")
-            return '0.1.0'
+            return '0.9.12 (Build 279)'
 
     def update_progress(self, percentage=None, message=None, current_step=None, total_steps=None):
         """

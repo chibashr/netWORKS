@@ -14,6 +14,47 @@ Workspaces now save and restore UI layouts, including:
 
 This means that each workspace can have its own custom UI arrangement tailored to specific use cases.
 
+## Plugin Management in Workspaces
+
+### Plugin Isolation
+
+Each workspace maintains complete plugin isolation:
+
+- **Enabled Plugins**: Each workspace remembers which plugins were enabled
+- **Plugin Settings**: Plugin configurations are workspace-specific
+- **Plugin Data**: Plugin data directories are separated by workspace
+- **Clean Transitions**: Plugins are properly unloaded when switching workspaces
+
+### Plugin Loading Process
+
+When switching workspaces:
+
+1. **Save Current State**: Current workspace plugin states are saved
+2. **Unload Plugins**: All loaded plugins are cleanly unloaded with proper cleanup
+3. **Load New Workspace**: Target workspace configuration is loaded
+4. **Restore Plugins**: Only plugins enabled for the new workspace are loaded
+
+This ensures:
+- No memory leaks between workspace switches
+- Complete isolation of plugin states
+- Consistent plugin behavior per workspace
+
+### Plugin Directory Structure
+
+Workspaces support multiple plugin sources:
+
+```
+plugins/                           # Global plugins (shared across workspaces)
+├── command_manager/
+├── network_scanner/
+└── sample/
+
+config/workspaces/production/      # Workspace-specific plugins
+├── plugins/
+│   └── production_monitor/        # Only available in 'production' workspace
+└── workspace.json                 # Includes enabled_plugins list
+```
+
 ## Workspace Structure
 
 Each workspace is stored in the `config/workspaces` directory with the following structure:
@@ -23,12 +64,14 @@ config/workspaces/
 ├── default/                   # Default workspace
 │   ├── workspace.json         # Workspace metadata
 │   ├── groups.json            # Group structure
+│   ├── plugins/               # Workspace-specific plugins (optional)
 │   └── devices/               # Device references
 │       ├── device1.ref        # Reference to device1
 │       └── device2.ref        # Reference to device2
 └── production/                # Another workspace
     ├── workspace.json
     ├── groups.json
+    ├── plugins/               # Production-specific plugins
     └── devices/
 ```
 
@@ -83,6 +126,8 @@ To switch to a different workspace:
 
 When switching workspaces, the UI layout will automatically change to match the saved layout for that workspace.
 
+**Important**: When switching workspaces, all plugins are unloaded and reloaded according to the new workspace's configuration. This ensures complete isolation between workspace environments.
+
 ### Saving Workspace State
 
 ```python
@@ -115,4 +160,17 @@ The "default" workspace is created automatically when the application starts for
 3. **Create workspaces for different environments**: For example, create separate workspaces for development, testing, and production environments.
 4. **Document workspaces**: Use the description field to document the purpose and contents of each workspace.
 5. **Share workspaces**: Copy workspace directories between installations to share configurations.
-6. **Customize layouts per workspace**: Arrange UI elements differently based on the workspace's purpose. 
+6. **Customize layouts per workspace**: Arrange UI elements differently based on the workspace's purpose.
+7. **Plugin Configuration**: Configure different plugins for different workspaces based on your needs (e.g., monitoring plugins for production, testing plugins for development).
+8. **Resource Management**: Be aware that switching workspaces unloads all plugins, which helps prevent memory leaks but may require some initialization time.
+
+## Plugin Development Considerations
+
+When developing plugins for NetWORKS:
+
+1. **Implement proper cleanup**: Always implement the `cleanup()` method to prevent memory leaks
+2. **Use workspace-specific data**: Store plugin data in workspace-specific directories
+3. **Handle initialization gracefully**: Be prepared for plugins to be loaded/unloaded frequently
+4. **Test workspace transitions**: Verify your plugin works correctly when switching between workspaces
+
+See [Plugin Workspace Integration](plugins/workspace_integration.md) for detailed information on developing workspace-aware plugins. 

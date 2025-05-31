@@ -10,6 +10,7 @@ import json
 import yaml
 from loguru import logger  # Keep this for type hints and as a fallback
 from PySide6.QtCore import QObject, Signal
+import sys
 
 
 class Config(QObject):
@@ -38,14 +39,22 @@ class Config(QObject):
         # Ensure config directory exists
         os.makedirs(self.config_dir, exist_ok=True)
         
+        # Determine application base directory for plugin paths
+        if getattr(sys, 'frozen', False):
+            # Running as executable - use the directory where the executable is located
+            app_base_dir = os.path.dirname(sys.executable)
+        else:
+            # Running as script - use the project root directory 
+            app_base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+        
         # Default configuration
         self.default_config = {
             "application": {
                 "theme": "light",
                 "plugins_enabled": True,
                 "logs_level": "INFO",
-                "plugins_directory": os.path.abspath(os.path.join(os.path.dirname(__file__), "plugins")),
-                "external_plugins_directory": os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "plugins")),
+                "plugins_directory": os.path.join(os.path.dirname(__file__), "plugins"),  # Internal/built-in plugins
+                "external_plugins_directory": os.path.join(app_base_dir, "plugins"),  # External/user plugins
                 "auto_install_plugin_requirements": True,
                 "auto_enable_discovered_plugins": True
             },

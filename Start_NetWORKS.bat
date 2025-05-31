@@ -28,7 +28,7 @@ python -m pip install --upgrade pip
 
 :: Install/Repair dependencies
 echo [INFO] Installing/Repairing dependencies...
-python -m pip install -r requirements.txt --force-reinstall
+python -m pip install -r requirements.txt
 
 :: Start the application
 echo [INFO] Starting NetWORKS...

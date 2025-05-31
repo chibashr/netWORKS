@@ -67,9 +67,9 @@ class MainWindow(QMainWindow):
         
     def updateWindowTitle(self):
         """Update the window title to include current workspace"""
-        app_version = self.app.get_version()
+        app_full_version = self.app.manifest.get("full_version", self.app.get_version())
         workspace = self.device_manager.current_workspace
-        self.setWindowTitle(f"NetWORKS v{app_version} - Workspace: {workspace}")
+        self.setWindowTitle(f"NetWORKS v{app_full_version} - Workspace: {workspace}")
         
     def refresh_workspace_ui(self):
         """Refresh all UI components after workspace change"""
@@ -484,7 +484,7 @@ class MainWindow(QMainWindow):
             plugin_info.ui_components['device_panels'].append((panel_name, widget))
             
         # Add dock widgets
-        dock_widgets = plugin.get_dock_widgets()
+        dock_widgets = getattr(plugin, 'get_dock_widgets', lambda: [])()
         for widget_name, widget, area in dock_widgets:
             dock = QDockWidget(widget_name, self)
             # Set object name to ensure proper state saving/restoring
@@ -1138,7 +1138,7 @@ class MainWindow(QMainWindow):
         """Open settings dialog"""
         logger.debug("Opening settings dialog")
         from .settings_dialog import SettingsDialog
-        dialog = SettingsDialog(self.config, self)
+        dialog = SettingsDialog(self.config, self.app.plugin_manager, self)
         dialog.exec()
         
     @Slot()

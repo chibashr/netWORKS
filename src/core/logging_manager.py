@@ -23,13 +23,30 @@ class LoggingManager:
             app_version (str, optional): The application version for logging. Defaults to None.
         """
         self.app_version = app_version
-        self.logs_dir = Path("logs")
+        
+        # Determine the correct base directory for the application
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller executable
+            base_dir = Path(sys.executable).parent
+        else:
+            # Running as Python script
+            base_dir = Path(__file__).parent.parent.parent
+        
+        self.logs_dir = base_dir / "logs"
         self.recent_log_path = self.logs_dir / "recent_logs.log"
         self.init_time = datetime.now()
         self.session_id = int(time.time())
         
         # Create logs directory if it doesn't exist
-        os.makedirs(self.logs_dir, exist_ok=True)
+        try:
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            # If we can't create the logs directory, fall back to a temp directory
+            import tempfile
+            self.logs_dir = Path(tempfile.gettempdir()) / "NetWORKS_logs"
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+            self.recent_log_path = self.logs_dir / "recent_logs.log"
+            print(f"Warning: Could not create logs directory, using temp directory: {self.logs_dir}")
         
         # Remove all existing loguru sinks
         logger.remove()
@@ -67,48 +84,63 @@ class LoggingManager:
         )
         
         # Console handler
-        logger.add(
-            sys.stderr,
-            format=base_format,
-            level="INFO",
-            colorize=True,
-            backtrace=True,
-            diagnose=True
-        )
+        try:
+            logger.add(
+                sys.stderr,
+                format=base_format,
+                level="INFO",
+                colorize=True,
+                backtrace=True,
+                diagnose=True
+            )
+        except Exception as e:
+            print(f"Warning: Could not add console logger: {e}")
         
         # Recent logs file handler (always keeps the recent logs)
-        logger.add(
-            self.recent_log_path,
-            format=detailed_format,
-            level="DEBUG",
-            rotation="5 MB",
-            retention=3,
-            compression="zip",
-            backtrace=True,
-            diagnose=True
-        )
+        try:
+            if self.recent_log_path and self.recent_log_path.parent.exists():
+                logger.add(
+                    str(self.recent_log_path),  # Convert Path to string
+                    format=detailed_format,
+                    level="DEBUG",
+                    rotation="5 MB",
+                    retention=3,
+                    compression="zip",
+                    backtrace=True,
+                    diagnose=True
+                )
+        except Exception as e:
+            print(f"Warning: Could not add recent logs file handler: {e}")
         
         # Session-specific log file
-        session_log_file = self.logs_dir / f"networks_{self.init_time.strftime('%Y%m%d_%H%M%S')}_{self.session_id}.log"
-        logger.add(
-            session_log_file,
-            format=detailed_format,
-            level="DEBUG",
-            rotation="10 MB",
-            retention="1 week",
-            compression="zip",
-            backtrace=True,
-            diagnose=True
-        )
+        try:
+            session_log_file = self.logs_dir / f"networks_{self.init_time.strftime('%Y%m%d_%H%M%S')}_{self.session_id}.log"
+            if session_log_file and session_log_file.parent.exists():
+                logger.add(
+                    str(session_log_file),  # Convert Path to string
+                    format=detailed_format,
+                    level="DEBUG",
+                    rotation="10 MB",
+                    retention="1 week",
+                    compression="zip",
+                    backtrace=True,
+                    diagnose=True
+                )
+        except Exception as e:
+            print(f"Warning: Could not add session log file handler: {e}")
         
         # Log startup information
-        logger.info(f"Logging initialized for session {self.session_id}")
-        logger.debug(f"Application Version: {self.app_version or 'Unknown'}")
-        logger.debug(f"System: {platform.system()} {platform.release()} {platform.version()}")
-        logger.debug(f"Python: {platform.python_version()}")
-        logger.debug(f"Machine: {platform.machine()}")
-        logger.debug(f"Log files directory: {self.logs_dir.absolute()}")
-        logger.debug(f"Session log file: {session_log_file.name}")
+        try:
+            logger.info(f"Logging initialized for session {self.session_id}")
+            logger.debug(f"Application Version: {self.app_version or 'Unknown'}")
+            logger.debug(f"System: {platform.system()} {platform.release()} {platform.version()}")
+            logger.debug(f"Python: {platform.python_version()}")
+            logger.debug(f"Machine: {platform.machine()}")
+            logger.debug(f"Log files directory: {self.logs_dir.absolute()}")
+            if 'session_log_file' in locals():
+                logger.debug(f"Session log file: {session_log_file.name}")
+        except Exception as e:
+            print(f"Warning: Could not log startup information: {e}")
         
     def get_logger(self):
         """Get the configured logger instance

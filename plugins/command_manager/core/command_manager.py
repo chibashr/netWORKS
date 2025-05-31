@@ -42,7 +42,7 @@ class CommandManagerPlugin(PluginInterface):
         
         logger.debug("Initializing Command Manager Plugin")
         
-        # Store app reference
+        # Store app reference early if provided
         self.app = app
         
         # Initialize dynamic registries
@@ -163,6 +163,10 @@ class CommandManagerPlugin(PluginInterface):
             return True
         return False
     
+    def get_settings(self):
+        """Get all plugin settings for the plugin manager UI"""
+        return self._settings.copy()
+    
     # Properties for backward compatibility
     @property
     def command_handler(self):
@@ -196,7 +200,9 @@ class CommandManagerPlugin(PluginInterface):
     
     def initialize(self, app, plugin_info):
         """Initialize the plugin"""
-        self.app = app
+        # Store app reference and set up plugin interface (only if not already set)
+        if not hasattr(self, 'app') or self.app is None:
+            self.app = app
         self.plugin_info = plugin_info
         self.main_window = app.main_window
         self.device_manager = app.device_manager
@@ -1292,4 +1298,14 @@ class CommandManagerPlugin(PluginInterface):
         # If settings were changed, update UI components
         if result:
             logger.debug("Settings updated")
-            # Refresh any UI components that depend on settings 
+            # Refresh any UI components that depend on settings
+    
+    def get_dock_widgets(self):
+        """
+        Get dock widgets to be added to the main window
+        
+        Returns:
+            list: List of (widget_name, widget, area) tuples where area is a Qt.DockWidgetArea
+        """
+        # Command Manager plugin doesn't add any dock widgets
+        return [] 

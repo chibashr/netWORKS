@@ -19,17 +19,19 @@ from PySide6.QtCore import Qt, QTime, QSize, Signal, Slot
 class SettingsDialog(QDialog):
     """Settings dialog for configuring NetWORKS"""
     
-    def __init__(self, config, parent=None):
+    def __init__(self, config, plugin_manager=None, parent=None):
         """Initialize the settings dialog
         
         Args:
             config: Config instance for accessing settings
+            plugin_manager: Plugin manager instance to notify of directory changes
             parent: Parent widget
         """
         super().__init__(parent)
         
-        # Store config instance
+        # Store config and plugin manager instances
         self.config = config
+        self.plugin_manager = plugin_manager
         
         # Set dialog properties
         self.setWindowTitle("Settings")
@@ -539,10 +541,14 @@ class SettingsDialog(QDialog):
         
     def _save_settings(self):
         """Save settings from UI elements to config"""
+        # Check if external plugins directory changed
+        old_plugins_dir = self.config.get("application.external_plugins_directory", "")
+        new_plugins_dir = self.plugins_dir_edit.text()
+        
         # General settings
         self.config.set("ui.theme", self.theme_combo.currentText().lower())
         self.config.set("application.plugins_enabled", self.enable_plugins_check.isChecked())
-        self.config.set("application.external_plugins_directory", self.plugins_dir_edit.text())
+        self.config.set("application.external_plugins_directory", new_plugins_dir)
         
         # Update settings
         self.config.set("general.check_updates", self.check_updates_check.isChecked())
@@ -589,6 +595,10 @@ class SettingsDialog(QDialog):
         
         # Save config
         self.config.save()
+        
+        # Notify plugin manager if plugins directory changed
+        if self.plugin_manager and old_plugins_dir != new_plugins_dir:
+            self.plugin_manager.update_external_plugins_directory(new_plugins_dir)
         
     def _on_browse_plugins_dir(self):
         """Handle browse button for plugins directory"""

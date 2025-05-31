@@ -82,13 +82,16 @@ class SamplePlugin(PluginInterface):
     test_completed = Signal(str, bool)  # Emitted when a test completes (test_name, success)
     test_all_completed = Signal(object)  # Emitted when all tests complete (results_dict)
     
-    def __init__(self):
+    def __init__(self, app=None):
         """Initialize the plugin"""
         super().__init__()
         self.name = "Sample Plugin"
         self.version = "1.0.9"
         self.description = "A sample plugin that demonstrates the plugin system and provides testing capabilities"
         self.author = "NetWORKS Team"
+        
+        # Store app reference early if provided
+        self.app = app
         
         # Internal state
         self._connected_signals = set()  # Track connected signals for safe disconnection
@@ -189,8 +192,9 @@ class SamplePlugin(PluginInterface):
         """Initialize the plugin"""
         logger.info(f"Initializing {self.name} v{self.version}")
         
-        # Store app reference and set up plugin interface
-        self.app = app
+        # Store app reference and set up plugin interface (only if not already set)
+        if not hasattr(self, 'app') or self.app is None:
+            self.app = app
         self.device_manager = app.device_manager
         self.main_window = app.main_window
         self.config = app.config

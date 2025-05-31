@@ -288,6 +288,15 @@ class PluginManagerDialog(QDialog):
         self.refresh_button.clicked.connect(self.on_refresh_clicked)
         self.refresh_button.setToolTip("Refresh the plugin list")
         
+        # Add new buttons for plugin directory and reload all plugins
+        self.open_plugin_dir_button = QPushButton("Open Plugin Directory")
+        self.open_plugin_dir_button.clicked.connect(self.on_open_plugin_directory_clicked)
+        self.open_plugin_dir_button.setToolTip("Open the plugin directory in file explorer")
+        
+        self.reload_all_plugins_button = QPushButton("Reload All Plugins")
+        self.reload_all_plugins_button.clicked.connect(self.on_reload_all_plugins_clicked)
+        self.reload_all_plugins_button.setToolTip("Reload all plugins (discover new plugins and refresh existing ones)")
+        
         self.save_changes_button = QPushButton("Save Changes")
         self.save_changes_button.clicked.connect(self.on_save_changes_clicked)
         self.save_changes_button.setToolTip("Save all changes to plugin states and settings")
@@ -301,6 +310,8 @@ class PluginManagerDialog(QDialog):
         
         self.button_layout.addWidget(self.reload_button)
         self.button_layout.addWidget(self.refresh_button)
+        self.button_layout.addWidget(self.open_plugin_dir_button)
+        self.button_layout.addWidget(self.reload_all_plugins_button)
         self.button_layout.addWidget(self.save_changes_button)
         self.button_layout.addStretch()
         self.button_layout.addWidget(self.close_button)
@@ -672,7 +683,7 @@ class PluginManagerDialog(QDialog):
             return
             
         # Get settings from plugin
-        settings = plugin_info.instance.get_settings()
+        settings = getattr(plugin_info.instance, 'get_settings', lambda: {})()
         
         # If no settings, return
         if not settings:
@@ -997,8 +1008,8 @@ class PluginManagerDialog(QDialog):
                             # If enabling, also try to load
                             if not plugin_info.state.is_loaded:
                                 logger.info(f"Attempting to load newly enabled plugin: {plugin_id}")
-                                instance = self.plugin_manager.load_plugin(plugin_id)
-                                if instance is not None:
+                                load_success = self.plugin_manager.load_plugin(plugin_id)
+                                if load_success:
                                     results["enabled"].append(plugin_info.name)
                                     logger.info(f"Successfully enabled and loaded plugin: {plugin_id}")
                                 else:
@@ -1502,7 +1513,7 @@ class PluginManagerDialog(QDialog):
             return
             
         # Get the profiles settings from the plugin
-        settings = plugin_info.instance.get_settings()
+        settings = getattr(plugin_info.instance, 'get_settings', lambda: {})()
         if not settings or setting_id not in settings:
             logger.error(f"Cannot find setting {setting_id} for plugin {plugin_id}")
             QMessageBox.warning(
@@ -1824,7 +1835,7 @@ class PluginManagerDialog(QDialog):
             return
             
         # Get the settings from the plugin
-        settings = plugin_info.instance.get_settings()
+        settings = getattr(plugin_info.instance, 'get_settings', lambda: {})()
         if not settings or setting_id not in settings:
             logger.error(f"Cannot find setting {setting_id} for plugin {plugin_id}")
             QMessageBox.warning(
@@ -2301,35 +2312,102 @@ class PluginManagerDialog(QDialog):
 
     def on_plugin_status_changed(self, plugin_info, status_message):
         """Handle plugin status changed signal"""
-        if not plugin_info:
-            return
-            
-        # Add timestamp to status message
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted_message = f"[{timestamp}] {status_message}"
-        
-        # Store log messages for this plugin
+        # Add to plugin log
         if plugin_info.id not in self.plugin_logs:
             self.plugin_logs[plugin_info.id] = []
-            
-        self.plugin_logs[plugin_info.id].append(formatted_message)
         
-        # If this is the currently displayed plugin, update the log view
+        # Add timestamp to the message
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {status_message}"
+        self.plugin_logs[plugin_info.id].append(log_entry)
+        
+        # If this is the currently displayed plugin, update the log
         current_item = self.plugin_list.currentItem()
         if current_item and current_item.plugin_info.id == plugin_info.id:
-            self.log_text.append(formatted_message)
+            self.log_text.append(log_entry)
+            # Scroll to the bottom
             self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
+
+    @Slot()
+    def on_open_plugin_directory_clicked(self):
+        """Handle open plugin directory button clicked"""
+        import subprocess
+        import platform
+        
+        # Get the external plugins directory from plugin manager
+        plugin_dir = self.plugin_manager.external_plugins_dir
+        
+        # Ensure the directory exists
+        if not os.path.exists(plugin_dir):
+            os.makedirs(plugin_dir, exist_ok=True)
+        
+        try:
+            # Open the directory in the default file manager
+            if platform.system() == "Windows":
+                os.startfile(plugin_dir)
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", plugin_dir])
+            else:  # Linux and other Unix-like systems
+                subprocess.run(["xdg-open", plugin_dir])
+                
+            logger.info(f"Opened plugin directory: {plugin_dir}")
+        except Exception as e:
+            logger.error(f"Failed to open plugin directory: {e}")
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"Failed to open plugin directory:\n{plugin_dir}\n\nError: {str(e)}"
+            )
+
+    @Slot()
+    def on_reload_all_plugins_clicked(self):
+        """Handle reload all plugins button clicked"""
+        # Show confirmation dialog
+        reply = QMessageBox.question(
+            self,
+            "Reload All Plugins",
+            "This will reload all plugins and discover any new plugins in the plugin directories.\n\n"
+            "Any unsaved changes will be lost. Do you want to continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        try:
+            # Clear any pending changes
+            self.pending_plugin_changes.clear()
             
-            # Update status label
-            self.status_label.setText(status_message)
+            # Use the plugin manager's reload_all_plugins method
+            success = self.plugin_manager.reload_all_plugins()
             
-            # Color status based on message content
-            if "Error" in status_message or "Failed" in status_message:
-                self.status_label.setStyleSheet("color: #a94442; font-weight: bold;")
-            elif "Warning" in status_message:
-                self.status_label.setStyleSheet("color: #8a6d3b; font-weight: bold;")
-            elif "Success" in status_message:
-                self.status_label.setStyleSheet("color: #3c763d; font-weight: bold;")
+            if success:
+                # Refresh the plugin list
+                self.load_plugins()
+                
+                # Update status bar
+                self._update_status_bar()
+                
+                logger.info("Successfully reloaded all plugins")
+                QMessageBox.information(
+                    self,
+                    "Plugins Reloaded",
+                    "All plugins have been reloaded successfully.\n\n"
+                    "New plugins have been discovered and existing plugins have been refreshed."
+                )
             else:
-                self.status_label.setStyleSheet("color: #31708f; font-weight: bold;") 
+                QMessageBox.warning(
+                    self,
+                    "Reload Failed",
+                    "Failed to reload all plugins. Check the logs for details."
+                )
+            
+        except Exception as e:
+            logger.error(f"Failed to reload all plugins: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to reload all plugins:\n\n{str(e)}"
+            )

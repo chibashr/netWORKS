@@ -1604,10 +1604,8 @@ class DeviceTableView(QTableView):
     def on_context_menu(self, pos):
         """Show context menu"""
         indices = self.selectedIndexes()
-        if not indices:
-            return
-            
-        # Get unique rows
+        
+        # Get unique rows and devices
         rows = set()
         devices = []
         for index in indices:
@@ -1621,101 +1619,111 @@ class DeviceTableView(QTableView):
             device = device_index.data(Qt.UserRole)
             if device:
                 devices.append(device)
-                
-        # Exit if no devices
-        if not devices:
-            return
-            
+        
         # Create context menu
         menu = QMenu()
         
-        # SECTION 1: Device Management Actions
-        if len(devices) == 1:
-            menu.addAction("Edit Properties", lambda: self._handle_action(self._on_action_edit_properties, devices))
-        else:
-            menu.addAction(f"Edit Selected Devices ({len(devices)})", lambda: self._handle_action(self._on_action_edit_properties, devices))
-            
-        menu.addAction("Delete", lambda: self._handle_action(self._on_action_delete, devices))
-        
-        # SECTION 2: Group Management
-        menu.addSeparator()
-        
-        add_to_group_menu = menu.addMenu("Add to Group")
-        self._populate_add_to_group_menu(add_to_group_menu, devices)
-        
-        # Add "Remove from Group" submenu
-        remove_from_group_menu = menu.addMenu("Remove from Group")
-        self._populate_remove_from_group_menu(remove_from_group_menu, devices)
-        
-        menu.addAction("Create Group from Selection", lambda: self._handle_action(self._on_action_create_group, devices))
-        
-        # SECTION 3: Device Creation and Import
-        menu.addSeparator()
-        menu.addAction("Add Device", lambda: self._handle_action(self._on_action_add_device, None))
-        menu.addAction("Import Devices...", lambda: self._handle_action(self._on_action_import_devices, None))
-        
-        # SECTION 4: Selection Controls
-        menu.addSeparator()
-        menu.addAction("Select All", self._on_action_select_all)
-        menu.addAction("Deselect All", self._on_action_deselect_all)
-        
-        # SECTION 5: Custom Plugin Actions (not duplicating existing ones)
-        # Filter out registered actions we've already added directly
-        built_in_actions = {
-            "Add Device", "Import Devices...", "Edit Properties", 
-            "Add to Group", "Remove from Group", "Create New Group", "Create Group from Selection",
-            "Select All", "Deselect All", "Delete"
-        }
-        
-        # Get filtered and sorted actions
-        filtered_actions = []
-        for name, callback, priority in self._context_menu_actions:
-            if name not in built_in_actions:
-                filtered_actions.append((name, callback, priority))
+        # If devices are selected, show device-specific actions
+        if devices:
+            # SECTION 1: Device Management Actions
+            if len(devices) == 1:
+                menu.addAction("Edit Properties", lambda: self._handle_action(self._on_action_edit_properties, devices))
+            else:
+                menu.addAction(f"Edit Selected Devices ({len(devices)})", lambda: self._handle_action(self._on_action_edit_properties, devices))
                 
-        if filtered_actions:
+            menu.addAction("Delete", lambda: self._handle_action(self._on_action_delete, devices))
+            
+            # SECTION 2: Group Management
             menu.addSeparator()
-            # Group by plugin using a dictionary
-            plugin_actions = {}
             
-            for name, callback, priority in sorted(filtered_actions, key=lambda x: x[2]):
-                # Extract plugin name from function module if available
-                plugin_name = "Other Actions"
-                if hasattr(callback, '__module__'):
-                    module_parts = callback.__module__.split('.')
-                    if 'plugins' in module_parts:
-                        # Try to get plugin name from module path
-                        plugin_idx = module_parts.index('plugins')
-                        if plugin_idx + 1 < len(module_parts):
-                            plugin_name = module_parts[plugin_idx + 1].replace('_', ' ').title()
+            add_to_group_menu = menu.addMenu("Add to Group")
+            self._populate_add_to_group_menu(add_to_group_menu, devices)
+            
+            # Add "Remove from Group" submenu
+            remove_from_group_menu = menu.addMenu("Remove from Group")
+            self._populate_remove_from_group_menu(remove_from_group_menu, devices)
+            
+            menu.addAction("Create Group from Selection", lambda: self._handle_action(self._on_action_create_group, devices))
+            
+            # SECTION 3: Device Creation and Import
+            menu.addSeparator()
+            menu.addAction("Add Device", lambda: self._handle_action(self._on_action_add_device, None))
+            menu.addAction("Import Devices...", lambda: self._handle_action(self._on_action_import_devices, None))
+            
+            # SECTION 4: Selection Controls
+            menu.addSeparator()
+            menu.addAction("Select All", self._on_action_select_all)
+            menu.addAction("Deselect All", self._on_action_deselect_all)
+            
+            # SECTION 5: Custom Plugin Actions (not duplicating existing ones)
+            # Filter out registered actions we've already added directly
+            built_in_actions = {
+                "Add Device", "Import Devices...", "Edit Properties", 
+                "Add to Group", "Remove from Group", "Create New Group", "Create Group from Selection",
+                "Select All", "Deselect All", "Delete"
+            }
+            
+            # Get filtered and sorted actions
+            filtered_actions = []
+            for name, callback, priority in self._context_menu_actions:
+                if name not in built_in_actions:
+                    filtered_actions.append((name, callback, priority))
+                    
+            if filtered_actions:
+                menu.addSeparator()
+                # Group by plugin using a dictionary
+                plugin_actions = {}
                 
-                # Add to plugin group
-                if plugin_name not in plugin_actions:
-                    plugin_actions[plugin_name] = []
-                plugin_actions[plugin_name].append((name, callback, priority))
-            
-            # Add each plugin group as a submenu or directly if only one action
-            for plugin_name, actions in plugin_actions.items():
-                if len(actions) == 1:
-                    # Just one action, add directly
-                    name, callback, _ = actions[0]
-                    action = menu.addAction(name)
-                    local_callback = callback
-                    action.triggered.connect(
-                        lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
-                    )
-                else:
-                    # Multiple actions, create submenu
-                    plugin_menu = menu.addMenu(plugin_name)
-                    for name, callback, _ in sorted(actions, key=lambda x: x[2]):
-                        action = plugin_menu.addAction(name)
+                for name, callback, priority in sorted(filtered_actions, key=lambda x: x[2]):
+                    # Extract plugin name from function module if available
+                    plugin_name = "Other Actions"
+                    if hasattr(callback, '__module__'):
+                        module_parts = callback.__module__.split('.')
+                        if 'plugins' in module_parts:
+                            # Try to get plugin name from module path
+                            plugin_idx = module_parts.index('plugins')
+                            if plugin_idx + 1 < len(module_parts):
+                                plugin_name = module_parts[plugin_idx + 1].replace('_', ' ').title()
+                    
+                    # Add to plugin group
+                    if plugin_name not in plugin_actions:
+                        plugin_actions[plugin_name] = []
+                    plugin_actions[plugin_name].append((name, callback, priority))
+                
+                # Add each plugin group as a submenu or directly if only one action
+                for plugin_name, actions in plugin_actions.items():
+                    if len(actions) == 1:
+                        # Just one action, add directly
+                        name, callback, _ = actions[0]
+                        action = menu.addAction(name)
                         local_callback = callback
                         action.triggered.connect(
                             lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
                         )
-        
-        # Emit signal for plugins to add to menu
-        self.context_menu_requested.emit(devices, menu)
+                    else:
+                        # Multiple actions, create submenu
+                        plugin_menu = menu.addMenu(plugin_name)
+                        for name, callback, _ in sorted(actions, key=lambda x: x[2]):
+                            action = plugin_menu.addAction(name)
+                            local_callback = callback
+                            action.triggered.connect(
+                                lambda checked=False, cb=local_callback: self._handle_action(cb, devices)
+                            )
+            
+            # Emit signal for plugins to add to menu
+            self.context_menu_requested.emit(devices, menu)
+        else:
+            # No devices selected - show basic actions
+            menu.addAction("Add Device", lambda: self._handle_action(self._on_action_add_device, None))
+            menu.addAction("Import Devices...", lambda: self._handle_action(self._on_action_import_devices, None))
+            
+            # Add selection controls if there are any devices in the table
+            if self.model().rowCount() > 0:
+                menu.addSeparator()
+                menu.addAction("Select All", self._on_action_select_all)
+            
+            # Emit signal for plugins to add to menu (with empty devices list)
+            self.context_menu_requested.emit([], menu)
         
         # Show menu
         menu.exec(self.viewport().mapToGlobal(pos))

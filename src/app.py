@@ -11,6 +11,7 @@ import json
 from loguru import logger
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QIcon
 
 from .config import Config
 from .ui.splash_screen import SplashScreen
@@ -45,6 +46,9 @@ class Application(QApplication):
         self.setApplicationVersion(self.manifest.get("version", "0.1.0"))
         self.setOrganizationName("NetWORKS")
         self.setOrganizationDomain("networks.app")
+        
+        # Set application icon
+        self._set_application_icon()
         
         # Prevent application from quitting when windows are temporarily hidden
         self.setQuitOnLastWindowClosed(False)
@@ -301,37 +305,72 @@ class Application(QApplication):
 
     def _load_manifest(self):
         """Load the application manifest"""
-        manifest_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "manifest.json"
-        )
+        # Determine the correct base directory for the application
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller executable
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            # Running as Python script
+            base_dir = os.path.dirname(os.path.dirname(__file__))
+        
+        manifest_path = os.path.join(base_dir, "manifest.json")
         
         try:
             if os.path.exists(manifest_path):
-                with open(manifest_path, 'r') as f:
+                with open(manifest_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    # Handle both new and old format
-                    version = data.get("version_string", data.get("version", "0.1.0"))
+                    
+                    # Get version information - prioritize new format
+                    version = data.get("version", "0.1.0")
+                    version_info = data.get("version_info", {})
+                    build_number = version_info.get("build", None)
+                    
+                    # Format complete version string
+                    if build_number:
+                        full_version = f"{version} (Build {build_number})"
+                    else:
+                        full_version = version
+                    
                     return {
                         "name": data.get("name", "NetWORKS"),
                         "version": version,
-                        "description": data.get("description", "An extensible device management application"),
+                        "full_version": full_version,
+                        "build_number": build_number,
+                        "version_info": version_info,
+                        "description": data.get("description", "Network management and monitoring tool"),
                         "author": data.get("author", "NetWORKS Team"),
-                        "changelog": data.get("version_history", data.get("changelog", []))
+                        "license": data.get("license", "MIT"),
+                        "build_date": data.get("build_date", ""),
+                        "changelog": data.get("changelog", data.get("version_history", [])),
+                        "release_notes": data.get("release_notes", [])
                     }
             else:
-                self.logger.warning(f"Manifest file not found at {manifest_path}, using default values")
+                print(f"Warning: Manifest file not found at {manifest_path}")
+                # Return current build info even when manifest is not found
                 return {
                     "name": "NetWORKS",
-                    "version": "0.1.0",
-                    "description": "An extensible device management application",
-                    "author": "NetWORKS Team"
+                    "version": "0.9.12",
+                    "full_version": "0.9.12 (Build 279)",
+                    "build_number": 279,
+                    "description": "Network management and monitoring tool",
+                    "author": "NetWORKS Team",
+                    "license": "MIT",
+                    "build_date": "2025-05-29",
+                    "changelog": []
                 }
         except Exception as e:
-            self.logger.error(f"Error loading manifest: {e}")
+            # Use a basic logger since self.logger might not be available yet
+            print(f"Error loading manifest: {e}")
             return {
                 "name": "NetWORKS", 
-                "version": "0.1.0"
+                "version": "0.9.12",
+                "full_version": "0.9.12 (Build 279)",
+                "build_number": 279,
+                "description": "Network management and monitoring tool",
+                "author": "NetWORKS Team",
+                "license": "MIT",
+                "build_date": "2025-05-29",
+                "changelog": []
             }
 
     def init_application(self):
@@ -1036,17 +1075,34 @@ class Application(QApplication):
 
     def _ensure_data_directories(self):
         """Ensure data directories exist"""
+        # Determine the correct base directory for the application
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller executable
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            # Running as Python script
+            base_dir = os.path.dirname(os.path.dirname(__file__))
+        
         data_dirs = [
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"),
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "workspaces"),
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "downloads"),
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "backups"),
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "screenshots"),
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "issue_queue")
+            os.path.join(base_dir, "data"),
+            os.path.join(base_dir, "data", "workspaces"),
+            os.path.join(base_dir, "data", "downloads"),
+            os.path.join(base_dir, "data", "backups"),
+            os.path.join(base_dir, "data", "screenshots"),
+            os.path.join(base_dir, "data", "issue_queue"),
+            os.path.join(base_dir, "logs"),
+            os.path.join(base_dir, "logs", "crashes"),
+            os.path.join(base_dir, "exports"),
+            os.path.join(base_dir, "command_outputs"),
+            os.path.join(base_dir, "command_outputs", "history"),
+            os.path.join(base_dir, "command_outputs", "outputs")
         ]
         
         for directory in data_dirs:
-            os.makedirs(directory, exist_ok=True)
+            try:
+                os.makedirs(directory, exist_ok=True)
+            except Exception as e:
+                self.logger.warning(f"Could not create directory {directory}: {e}")
 
     def _check_issue_queue(self):
         """Check for queued issues and try to process them"""
@@ -1066,7 +1122,7 @@ class Application(QApplication):
 
     def get_version(self):
         """Get the application version"""
-        return self.manifest.get("version", "0.1.0")
+        return self.manifest.get("full_version", self.manifest.get("version", "0.1.0"))
         
     def get_changelog(self):
         """Get the application changelog"""
@@ -1126,3 +1182,27 @@ class Application(QApplication):
         except Exception as e:
             self.logger.error(f"Error during first run setup: {e}")
             # Don't crash if first run setup fails 
+
+    def _set_application_icon(self):
+        """Set the application icon"""
+        # Try to find the logo file in the resources directory
+        logo_paths = [
+            os.path.join(os.path.dirname(__file__), "resources", "logo.svg"),
+            os.path.join(os.path.dirname(__file__), "resources", "logo.png"),
+            os.path.join(os.path.dirname(__file__), "resources", "logo_64.png"),
+            os.path.join(os.path.dirname(__file__), "resources", "logo_32.png")
+        ]
+        
+        for logo_path in logo_paths:
+            if os.path.exists(logo_path):
+                try:
+                    icon = QIcon(logo_path)
+                    if not icon.isNull():
+                        self.setWindowIcon(icon)
+                        self.logger.debug(f"Set application icon from: {logo_path}")
+                        return
+                except Exception as e:
+                    self.logger.warning(f"Failed to load icon from {logo_path}: {e}")
+                    continue
+        
+        self.logger.warning("No application icon found in resources directory") 

@@ -18,12 +18,38 @@ An extensible device management application.
 
 ## Installation
 
-### Windows
+### Option 1: Standalone Executable (Recommended)
+
+**For end users who want the simplest installation:**
+
+1. Download the latest release (contains only 3-4 files)
+2. Extract the files to any directory
+3. Double-click `NetWORKS.exe` to run
+
+**What you get:**
+- `NetWORKS.exe` - Complete standalone application
+- `README.md` - Documentation
+- `CHANGELOG.md` - Version history  
+- `LICENSE` - License information
+
+**No Python installation required!** The executable is completely self-contained and will:
+- Automatically run a first-time setup on initial launch
+- Create all necessary data directories
+- Initialize default configuration and workspace
+- Show a welcome dialog with setup options
+
+**First-time setup features:**
+- GUI-based setup wizard with progress tracking
+- Option to create sample devices for demonstration
+- Automatic directory structure creation
+- Default workspace and settings initialization
+
+### Option 2: Windows Quick Setup
 
 1. Clone the repository or download the source code
 2. Run `Start_NetWORKS.bat` to automatically set up the environment and launch the application
 
-### Manual Setup
+### Option 3: Manual Setup
 
 1. Clone the repository or download the source code
 2. Create a Python virtual environment: `python -m venv venv`
@@ -32,6 +58,20 @@ An extensible device management application.
    - macOS/Linux: `source venv/bin/activate`
 4. Install dependencies: `pip install -r requirements.txt`
 5. Run the application: `python networks.py`
+
+## Building from Source
+
+To create your own standalone executable or development build:
+
+```bash
+# Create clean executable build (3-4 files maximum)
+build.bat
+
+# Create development build with full source
+build.bat --standard
+```
+
+See [BUILD.md](BUILD.md) for detailed build instructions.
 
 ## Workspaces
 

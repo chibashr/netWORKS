@@ -106,7 +106,7 @@ class NetworkScannerPlugin(PluginInterface):
         self.website = "https://github.com/chibashr/netWORKS"
         self.plugin_id = "network_scanner"
         
-        # Store app reference
+        # Store app reference early if provided
         self.app = app
         
         # Initialize dynamic signal registry
@@ -533,7 +533,10 @@ class NetworkScannerPlugin(PluginInterface):
     def initialize(self, app, plugin_info):
         """Initialize the plugin with the application instance"""
         logger.debug(f"Initializing Network Scanner Plugin: {plugin_info}")
-        self.app = app
+        
+        # Store app reference and set up plugin interface (only if not already set)
+        if not hasattr(self, 'app') or self.app is None:
+            self.app = app
         self.plugin_info = plugin_info
         
         # Store references to important app components

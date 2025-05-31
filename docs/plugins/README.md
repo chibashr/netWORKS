@@ -6,6 +6,7 @@ This guide provides comprehensive information for developing plugins for the Net
 
 - [Plugin System Overview](#plugin-system-overview)
 - [Plugin Structure](#plugin-structure)
+- [Plugin Loading and Workspace Persistence](#plugin-loading-and-workspace-persistence)
 - [Plugin Development Lifecycle](#plugin-development-lifecycle)
 - [Creating Your First Plugin](#creating-your-first-plugin)
 - [Plugin API Documentation](#plugin-api-documentation)
@@ -222,6 +223,140 @@ import lxml
 2. **Minimize dependencies**: Only include what you actually need
 3. **Document dependencies**: Explain why each dependency is needed in your API.md
 4. **Test isolation**: Ensure your plugin works with its isolated dependencies
+
+## Plugin Loading and Workspace Persistence
+
+NetWORKS implements a sophisticated plugin management system that ensures plugins are properly isolated between workspaces while maintaining performance and stability.
+
+### Plugin Loading Lifecycle
+
+1. **Application Startup**:
+   - Plugin Manager is initialized during application startup
+   - All available plugins are discovered from configured directories
+   - No plugins are loaded at this stage
+
+2. **Workspace Loading**:
+   - When a workspace is loaded, all currently loaded plugins are unloaded first
+   - Plugin states are restored from the workspace configuration
+   - Only plugins enabled for that specific workspace are loaded
+   - Each plugin's `initialize()` method is called with application context
+
+3. **Workspace Switching**:
+   - Current workspace plugin states are saved
+   - All plugins are cleanly unloaded (with proper `cleanup()` calls)
+   - New workspace plugin states are restored
+   - Required plugins for the new workspace are loaded
+
+4. **Application Shutdown**:
+   - All plugins are unloaded with proper cleanup
+   - Plugin states are saved to the current workspace
+
+### Plugin Directories
+
+NetWORKS supports three types of plugin directories:
+
+1. **Built-in Plugins** (`src/plugins/`):
+   - Plugins that ship with NetWORKS
+   - Always available across all installations
+   - Cannot be uninstalled, only disabled
+
+2. **External Plugins** (`plugins/`):
+   - User-installed plugins in the main application directory
+   - Shared across all workspaces
+   - Can be installed/uninstalled independently
+
+3. **Workspace-Specific Plugins** (`config/workspaces/<workspace_name>/plugins/`):
+   - Plugins specific to a particular workspace
+   - Only available when that workspace is active
+   - Useful for environment-specific tools
+
+### Workspace Persistence
+
+Each workspace maintains its own plugin configuration:
+
+```json
+{
+  "name": "production",
+  "description": "Production environment",
+  "enabled_plugins": [
+    "command_manager",
+    "network_scanner", 
+    "production_monitor"
+  ],
+  "plugin_settings": {
+    "command_manager": {
+      "auto_save": true,
+      "command_timeout": 30
+    }
+  }
+}
+```
+
+### Plugin State Management
+
+- **Plugin States**: `DISCOVERED` → `ENABLED` → `LOADED` → `ENABLED` → `DISABLED`
+- **Workspace Isolation**: Each workspace maintains separate plugin enabled/disabled states
+- **Memory Management**: Plugins are fully unloaded between workspace switches to prevent memory leaks
+- **Settings Persistence**: Plugin settings are saved per workspace in the workspace configuration
+
+### Best Practices for Plugin Developers
+
+1. **Proper Cleanup**: Always implement `cleanup()` method to release resources
+2. **Signal Disconnection**: Track and disconnect all signal connections during cleanup
+3. **Workspace Awareness**: Don't assume plugins persist between workspace switches
+4. **State Management**: Use workspace-specific data directories for plugin data
+5. **Error Handling**: Handle initialization/cleanup errors gracefully
+
+### Example Plugin with Proper Lifecycle Management
+
+```python
+from src.core.plugin_interface import PluginInterface
+
+class MyPlugin(PluginInterface):
+    def __init__(self):
+        super().__init__()
+        self._connected_signals = set()
+        self._ui_components = []
+        
+    def initialize(self, app, plugin_info):
+        """Called when plugin is loaded for a workspace"""
+        self.app = app
+        self.plugin_info = plugin_info
+        
+        # Connect to signals and track connections
+        self._connect_to_signal(
+            app.device_manager.device_added,
+            self.on_device_added
+        )
+        
+        # Register UI components
+        self._register_ui_components()
+        
+        return True
+        
+    def _connect_to_signal(self, signal, slot):
+        """Helper to track signal connections"""
+        try:
+            signal.connect(slot)
+            self._connected_signals.add((signal, slot))
+        except Exception as e:
+            logger.error(f"Failed to connect signal: {e}")
+            
+    def cleanup(self):
+        """Called when plugin is unloaded"""
+        # Disconnect all tracked signals
+        for signal, slot in self._connected_signals:
+            try:
+                signal.disconnect(slot)
+            except Exception:
+                pass  # Signal may already be disconnected
+        self._connected_signals.clear()
+        
+        # Remove UI components
+        self._remove_ui_components()
+        
+        return super().cleanup()
+```
 
 ## Plugin Development Lifecycle
 

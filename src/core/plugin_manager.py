@@ -714,8 +714,12 @@ class PluginManager(QObject):
             logger.warning(f"Cannot enable plugin: Plugin not found with ID: {plugin_id}")
             return False
             
+        # Emit status message
+        self.plugin_status_changed.emit(plugin_info, f"Starting plugin enable process...")
+            
         if plugin_info.state.is_enabled:
             logger.debug(f"Plugin {plugin_id} already enabled, no action needed")
+            self.plugin_status_changed.emit(plugin_info, f"Plugin is already enabled")
             return True
             
         # Install required Python packages
@@ -727,16 +731,25 @@ class PluginManager(QObject):
                 plugin_info.error = "Failed to install required Python packages"
                 self._registry_dirty = True
                 self._sync_registry()
+                self.plugin_status_changed.emit(plugin_info, f"Error: Failed to install requirements")
                 return False
                 
         # Notify about system requirements if any
         if plugin_info.requirements["system"]:
             system_reqs = ", ".join(plugin_info.requirements["system"])
             logger.info(f"Plugin {plugin_id} requires system dependencies: {system_reqs}")
+            self.plugin_status_changed.emit(plugin_info, f"System requirements: {system_reqs}")
             # We don't fail if system requirements aren't met as they might be installed
             # User will need to handle these manually
         
+        # Emit status message
+        self.plugin_status_changed.emit(plugin_info, f"Updating plugin state...")
+        
         success, _ = self._transition_plugin_state(plugin_id, PluginState.ENABLED, "enable")
+        if success:
+            self.plugin_status_changed.emit(plugin_info, f"Plugin enabled successfully!")
+        else:
+            self.plugin_status_changed.emit(plugin_info, f"Error: Failed to enable plugin")
         return success
         
     def disable_plugin(self, plugin_id):
@@ -748,16 +761,22 @@ class PluginManager(QObject):
             logger.warning(f"Cannot disable plugin: Plugin not found with ID: {plugin_id}")
             return False
             
+        # Emit status message
+        self.plugin_status_changed.emit(plugin_info, f"Starting plugin disable process...")
+            
         if not plugin_info.state.is_enabled:
             logger.debug(f"Plugin {plugin_id} already disabled, no action needed")
+            self.plugin_status_changed.emit(plugin_info, f"Plugin is already disabled")
             return True
             
         # ALWAYS attempt to unload the plugin first if it has an instance, regardless of state
         if plugin_info.instance is not None:
             logger.info(f"Unloading plugin {plugin_id} as part of disabling it")
+            self.plugin_status_changed.emit(plugin_info, f"Unloading plugin before disabling...")
             unload_success = self.unload_plugin(plugin_id)
             if not unload_success:
                 logger.error(f"Failed to unload plugin {plugin_id} while disabling it, will force instance to None")
+                self.plugin_status_changed.emit(plugin_info, f"Warning: Unload failed, forcing cleanup...")
                 # Force instance to None even if unload failed
                 try:
                     if hasattr(plugin_info.instance, 'cleanup') and callable(plugin_info.instance.cleanup):
@@ -775,6 +794,9 @@ class PluginManager(QObject):
                 except Exception as e:
                     logger.error(f"Error during forced instance clear: {e}")
                     plugin_info.instance = None  # Try one more time
+        
+        # Emit status message
+        self.plugin_status_changed.emit(plugin_info, f"Updating plugin state to disabled...")
         
         # Now set the state to DISABLED - this will also force instance to None again via state setter
         success, _ = self._transition_plugin_state(plugin_id, PluginState.DISABLED, "disable")
@@ -798,8 +820,10 @@ class PluginManager(QObject):
                 gc.collect()
             
             logger.info(f"Successfully disabled plugin: {plugin_id}")
+            self.plugin_status_changed.emit(plugin_info, f"Plugin disabled successfully!")
         else:
             logger.error(f"Failed to disable plugin: {plugin_id}")
+            self.plugin_status_changed.emit(plugin_info, f"Error: Failed to disable plugin")
         
         # Always sync the registry to make sure changes are saved
         self._registry_dirty = True
@@ -818,6 +842,7 @@ class PluginManager(QObject):
             bool: True if plugin loaded successfully, False otherwise
         """
         try:
+            self.logger.info(f"[PLUGIN DEBUG] ===== STARTING LOAD_PLUGIN FOR {plugin_id} =====")
             self.logger.info(f"Attempting to load plugin: {plugin_id}")
             
             # Get plugin info
@@ -826,89 +851,283 @@ class PluginManager(QObject):
                 self.logger.error(f"Plugin {plugin_id} not found")
                 return False
                 
+            self.logger.info(f"[PLUGIN DEBUG] Plugin info found: {plugin_info}")
+            self.logger.info(f"[PLUGIN DEBUG] Plugin path: {plugin_info.path}")
+            self.logger.info(f"[PLUGIN DEBUG] Plugin entry point: {plugin_info.entry_point}")
+                
+            # Emit status message
+            self.plugin_status_changed.emit(plugin_info, f"Starting plugin load process...")
+                
             # Skip if plugin is not enabled
             if not plugin_info.state.is_enabled:
                 self.logger.debug(f"Plugin {plugin_id} is not enabled, skipping load")
+                self.plugin_status_changed.emit(plugin_info, f"Plugin is not enabled, skipping load")
                 return False
+                
+            self.logger.info(f"[PLUGIN DEBUG] Plugin is enabled, proceeding with load")
                 
             # Check if plugin is already loaded
             if plugin_info.state.is_loaded:
                 self.logger.debug(f"Plugin {plugin_id} is already loaded")
+                self.plugin_status_changed.emit(plugin_info, f"Plugin is already loaded")
                 return True
+                
+            self.logger.info(f"[PLUGIN DEBUG] Plugin is not yet loaded, proceeding")
+                
+            # Emit status message
+            self.plugin_status_changed.emit(plugin_info, f"Checking dependencies...")
                 
             # Check dependencies
             if not self._check_plugin_dependencies(plugin_info):
                 self.logger.error(f"Plugin {plugin_id} dependencies not satisfied")
                 plugin_info.state = PluginState.ERROR
                 plugin_info.error = "Dependencies not satisfied"
+                self.plugin_status_changed.emit(plugin_info, f"Error: Dependencies not satisfied")
                 return False
                 
+            self.logger.info(f"[PLUGIN DEBUG] Dependencies satisfied, proceeding")
+                
             try:
-                # Import the plugin module
-                spec = importlib.util.spec_from_file_location(
-                    plugin_id,
-                    os.path.join(plugin_info.path, plugin_info.entry_point)
-                )
-                if not spec:
-                    raise ImportError(f"Could not find entry point: {plugin_info.entry_point}")
-                    
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[plugin_id] = module
-                spec.loader.exec_module(module)
+                # Emit status message
+                self.plugin_status_changed.emit(plugin_info, f"Setting up module paths...")
+                self.logger.info(f"[PLUGIN DEBUG] Setting up module paths...")
                 
-                # Find the plugin class (should implement PluginInterface)
-                plugin_class = None
-                for item_name in dir(module):
-                    item = getattr(module, item_name)
-                    if (isinstance(item, type) and 
-                        item != PluginInterface and
-                        issubclass(item, PluginInterface)):
-                        plugin_class = item
-                        break
-                        
-                if not plugin_class:
-                    raise ImportError("No plugin class found implementing PluginInterface")
-                    
-                # Create plugin instance
-                plugin_info.instance = plugin_class(self.app)
+                # Temporarily add necessary paths to sys.path for plugin imports
+                # Simple approach: just add the current working directory and plugins directory directly
+                current_dir = os.getcwd()
+                plugins_dir = os.path.join(current_dir, 'plugins')
                 
-                # Initialize the plugin
-                if hasattr(plugin_info.instance, 'initialize'):
+                # Debug logging to see what paths we're working with
+                self.logger.info(f"[PLUGIN DEBUG] Plugin manager file location: {os.path.abspath(__file__)}")
+                self.logger.info(f"[PLUGIN DEBUG] Current working directory: {current_dir}")
+                self.logger.info(f"[PLUGIN DEBUG] Plugins directory: {plugins_dir}")
+                self.logger.info(f"[PLUGIN DEBUG] Plugins directory exists: {os.path.exists(plugins_dir)}")
+                self.logger.info(f"[PLUGIN DEBUG] Plugin path: {plugin_info.path}")
+                self.logger.info(f"[PLUGIN DEBUG] Current sys.path first 3 entries: {sys.path[:3]}")
+                
+                paths_to_add = []
+                
+                # Add current working directory if not already there
+                if current_dir not in sys.path:
+                    sys.path.insert(0, current_dir)
+                    paths_to_add.append(current_dir)
+                    self.logger.info(f"[PLUGIN DEBUG] Added current_dir to sys.path: {current_dir}")
+                else:
+                    self.logger.info(f"[PLUGIN DEBUG] current_dir already in sys.path")
+                
+                # Add plugins directory if not already there
+                if plugins_dir not in sys.path:
+                    sys.path.insert(0, plugins_dir)
+                    paths_to_add.append(plugins_dir)
+                    self.logger.info(f"[PLUGIN DEBUG] Added plugins_dir to sys.path: {plugins_dir}")
+                else:
+                    self.logger.info(f"[PLUGIN DEBUG] plugins_dir already in sys.path")
+                
+                self.logger.info(f"[PLUGIN DEBUG] sys.path after additions: {sys.path[:5]}")
+                
+                # Test if plugins package can be found
+                plugins_init_path = os.path.join(plugins_dir, '__init__.py')
+                self.logger.info(f"[PLUGIN DEBUG] Looking for plugins/__init__.py at: {plugins_init_path}")
+                self.logger.info(f"[PLUGIN DEBUG] plugins/__init__.py exists: {os.path.exists(plugins_init_path)}")
+                
+                # Test if the specific plugin directory exists
+                specific_plugin_dir = os.path.join(plugins_dir, plugin_id)
+                self.logger.info(f"[PLUGIN DEBUG] Looking for plugin dir at: {specific_plugin_dir}")
+                self.logger.info(f"[PLUGIN DEBUG] Plugin dir exists: {os.path.exists(specific_plugin_dir)}")
+                specific_plugin_init = os.path.join(specific_plugin_dir, '__init__.py')
+                self.logger.info(f"[PLUGIN DEBUG] Plugin __init__.py exists: {os.path.exists(specific_plugin_init)}")
+                
+                try:
+                    # Emit status message
+                    self.plugin_status_changed.emit(plugin_info, f"Loading plugin module...")
+                    self.logger.info(f"[PLUGIN DEBUG] About to start module loading...")
+                    
+                    # First ensure the plugins package itself can be imported
+                    self.logger.info(f"[PLUGIN DEBUG] Ensuring plugins package is available...")
                     try:
-                        success = plugin_info.instance.initialize(self.app, plugin_info)
-                        if not success:
-                            raise RuntimeError("Plugin initialization returned False")
-                        self.logger.debug(f"Plugin {plugin_id} initialized successfully")
-                    except Exception as e:
-                        self.logger.error(f"Error initializing plugin {plugin_id}: {e}", exc_info=True)
-                        plugin_info.state = PluginState.ERROR
-                        plugin_info.error = f"Initialization failed: {str(e)}"
-                        return False
-                
-                # Connect signals
-                self._connect_device_manager_signals(plugin_info)
-                
-                # Update state
-                plugin_info.state = PluginState.LOADED
-                self._registry_dirty = True
-                
-                # Emit loaded signal
-                self.plugin_loaded.emit(plugin_info)
-                
-                self.logger.info(f"Plugin loaded successfully: {plugin_id}")
-                return True
+                        import plugins
+                        self.logger.info(f"[PLUGIN DEBUG] plugins package imported successfully: {plugins}")
+                        self.logger.info(f"[PLUGIN DEBUG] plugins package path: {plugins.__file__}")
+                    except ImportError as plugins_error:
+                        self.logger.error(f"[PLUGIN DEBUG] Failed to import plugins package: {plugins_error}")
+                        raise ImportError(f"Cannot import plugins package: {plugins_error}")
+                    
+                    # Now try package import since plugins have internal package imports
+                    plugin_module = None
+                    plugin_package_name = f"plugins.{plugin_id}"
+                    
+                    self.logger.info(f"[PLUGIN DEBUG] Trying package import: {plugin_package_name}")
+                    try:
+                        plugin_module = importlib.import_module(plugin_package_name)
+                        self.logger.info(f"[PLUGIN DEBUG] Successfully imported plugin package: {plugin_package_name}")
+                    except ImportError as package_error:
+                        self.logger.info(f"[PLUGIN DEBUG] Package import failed for {plugin_package_name}: {package_error}")
+                        
+                        # Check what's in the plugins directory that Python can see
+                        self.logger.info(f"[PLUGIN DEBUG] Available plugins according to Python:")
+                        try:
+                            import pkgutil
+                            for importer, modname, ispkg in pkgutil.iter_modules(plugins.__path__, plugins.__name__ + "."):
+                                self.logger.info(f"[PLUGIN DEBUG] Available plugin module: {modname} (package: {ispkg})")
+                        except Exception as e:
+                            self.logger.info(f"[PLUGIN DEBUG] Could not enumerate plugins: {e}")
+                        
+                        # Try importing the plugin module directly into the plugins namespace
+                        self.logger.info(f"[PLUGIN DEBUG] Trying to manually add plugin to plugins namespace...")
+                        try:
+                            # Import the specific plugin's __init__.py to the plugins namespace
+                            plugin_init_path = os.path.join(plugin_info.path, '__init__.py')
+                            if os.path.exists(plugin_init_path):
+                                spec = importlib.util.spec_from_file_location(
+                                    plugin_package_name,
+                                    plugin_init_path
+                                )
+                                if spec and spec.loader:
+                                    plugin_module = importlib.util.module_from_spec(spec)
+                                    sys.modules[plugin_package_name] = plugin_module
+                                    spec.loader.exec_module(plugin_module)
+                                    self.logger.info(f"[PLUGIN DEBUG] Successfully loaded plugin package manually")
+                                else:
+                                    self.logger.info(f"[PLUGIN DEBUG] Could not create spec for plugin __init__.py")
+                            else:
+                                self.logger.info(f"[PLUGIN DEBUG] Plugin __init__.py not found at: {plugin_init_path}")
+                        except Exception as manual_error:
+                            self.logger.info(f"[PLUGIN DEBUG] Manual plugin package loading failed: {manual_error}")
+                        
+                        # If still no plugin module, fallback to direct file loading
+                        if plugin_module is None:
+                            entry_point_path = os.path.join(plugin_info.path, plugin_info.entry_point)
+                            self.logger.info(f"[PLUGIN DEBUG] Falling back to direct file import: {entry_point_path}")
+                            self.logger.info(f"[PLUGIN DEBUG] Entry point file exists: {os.path.exists(entry_point_path)}")
+                            
+                            if os.path.exists(entry_point_path):
+                                # Direct file loading method
+                                self.logger.info(f"[PLUGIN DEBUG] Creating spec for file: {entry_point_path}")
+                                spec = importlib.util.spec_from_file_location(
+                                    plugin_id,
+                                    entry_point_path
+                                )
+                                if spec and spec.loader:
+                                    self.logger.info(f"[PLUGIN DEBUG] Spec created successfully, creating module...")
+                                    plugin_module = importlib.util.module_from_spec(spec)
+                                    self.logger.info(f"[PLUGIN DEBUG] Module created, adding to sys.modules...")
+                                    sys.modules[plugin_id] = plugin_module
+                                    self.logger.info(f"[PLUGIN DEBUG] Executing module...")
+                                    spec.loader.exec_module(plugin_module)
+                                    self.logger.info(f"[PLUGIN DEBUG] Successfully executed plugin module")
+                                else:
+                                    self.logger.info(f"[PLUGIN DEBUG] Could not create spec for direct file import")
+                            else:
+                                self.logger.info(f"[PLUGIN DEBUG] Entry point file does not exist!")
+                                raise ImportError(f"Could not find entry point file: {entry_point_path}")
+                    
+                    if plugin_module is None:
+                        raise ImportError(f"Failed to load plugin module for {plugin_id}")
+                    
+                    self.logger.info(f"[PLUGIN DEBUG] Plugin module loaded successfully: {plugin_module}")
+                    
+                    # Emit status message
+                    self.plugin_status_changed.emit(plugin_info, f"Finding plugin class...")
+                    
+                    # Find the plugin class (should implement PluginInterface)
+                    plugin_class = None
+                    self.logger.info(f"[PLUGIN DEBUG] Searching for plugin class in module...")
+                    for item_name in dir(plugin_module):
+                        item = getattr(plugin_module, item_name)
+                        if (isinstance(item, type) and 
+                            item != PluginInterface and
+                            issubclass(item, PluginInterface)):
+                            plugin_class = item
+                            self.logger.info(f"[PLUGIN DEBUG] Found plugin class: {item_name}")
+                            break
+                            
+                    if not plugin_class:
+                        raise ImportError("No plugin class found implementing PluginInterface")
+                        
+                    # Emit status message
+                    self.plugin_status_changed.emit(plugin_info, f"Creating plugin instance...")
+                    self.logger.info(f"[PLUGIN DEBUG] Creating plugin instance...")
+                        
+                    # Create plugin instance
+                    plugin_info.instance = plugin_class(self.app)
+                    self.logger.info(f"[PLUGIN DEBUG] Plugin instance created successfully")
+                    
+                    # Emit status message
+                    self.plugin_status_changed.emit(plugin_info, f"Initializing plugin...")
+                    
+                    # Initialize the plugin
+                    if hasattr(plugin_info.instance, 'initialize'):
+                        try:
+                            self.logger.info(f"[PLUGIN DEBUG] Calling plugin initialize method...")
+                            success = plugin_info.instance.initialize(self.app, plugin_info)
+                            if not success:
+                                raise RuntimeError("Plugin initialization returned False")
+                            self.logger.info(f"[PLUGIN DEBUG] Plugin {plugin_id} initialized successfully")
+                            self.plugin_status_changed.emit(plugin_info, f"Plugin initialized successfully")
+                        except Exception as e:
+                            self.logger.error(f"Error initializing plugin {plugin_id}: {e}", exc_info=True)
+                            plugin_info.state = PluginState.ERROR
+                            plugin_info.error = f"Initialization failed: {str(e)}"
+                            self.plugin_status_changed.emit(plugin_info, f"Error during initialization: {str(e)}")
+                            # Don't return False here, let it fall through to cleanup
+                            raise
+                    
+                    # Emit status message
+                    self.plugin_status_changed.emit(plugin_info, f"Connecting signals...")
+                    
+                    # Connect signals
+                    self._connect_device_manager_signals(plugin_info)
+                    
+                    # Update state
+                    plugin_info.state = PluginState.LOADED
+                    self._registry_dirty = True
+                    
+                    # Emit status message
+                    self.plugin_status_changed.emit(plugin_info, f"Plugin loaded successfully!")
+                    
+                    # Emit loaded signal
+                    self.plugin_loaded.emit(plugin_info)
+                    
+                    self.logger.info(f"[PLUGIN DEBUG] Plugin loading completed successfully")
+                    self.logger.info(f"Plugin loaded successfully: {plugin_id}")
+                    
+                    # Only clean up sys.path after successful completion
+                    self.logger.info(f"[PLUGIN DEBUG] Cleaning up sys.path modifications...")
+                    for path in paths_to_add:
+                        if path in sys.path:
+                            sys.path.remove(path)
+                            self.logger.info(f"[PLUGIN DEBUG] Removed {path} from sys.path")
+                    
+                    return True
+                     
+                except Exception as e:
+                    self.logger.error(f"[PLUGIN DEBUG] Exception during plugin loading: {str(e)}", exc_info=True)
+                    
+                    # Clean up sys.path on error too
+                    self.logger.info(f"[PLUGIN DEBUG] Cleaning up sys.path modifications after error...")
+                    for path in paths_to_add:
+                        if path in sys.path:
+                            sys.path.remove(path)
+                            self.logger.info(f"[PLUGIN DEBUG] Removed {path} from sys.path")
+                    
+                    # Re-raise the exception to be handled by outer try-catch
+                    raise
                 
             except Exception as e:
+                self.logger.error(f"[PLUGIN DEBUG] Exception in plugin loading section: {str(e)}", exc_info=True)
                 self.logger.error(f"Error loading plugin {plugin_id}: {str(e)}", exc_info=True)
                 plugin_info.state = PluginState.ERROR
                 plugin_info.error = str(e)
+                self.plugin_status_changed.emit(plugin_info, f"Error loading plugin: {str(e)}")
                 return False
                 
         except Exception as e:
+            self.logger.error(f"[PLUGIN DEBUG] Exception in outer try block: {str(e)}", exc_info=True)
             self.logger.error(f"Unexpected error loading plugin {plugin_id}: {str(e)}", exc_info=True)
             if plugin_id in self.plugins:
                 self.plugins[plugin_id].state = PluginState.ERROR
                 self.plugins[plugin_id].error = str(e)
+                self.plugin_status_changed.emit(self.plugins[plugin_id], f"Unexpected error: {str(e)}")
             return False
 
     def unload_plugin(self, plugin_id):
@@ -928,23 +1147,40 @@ class PluginManager(QObject):
         plugin_info = self.plugins[plugin_id]
         logger.info(f"Unloading plugin: {plugin_info}")
         
+        # Emit status message
+        self.plugin_status_changed.emit(plugin_info, f"Starting plugin unload process...")
+        
         try:
             # Keep reference to instance for cleanup
             instance = plugin_info.instance
             
+            # Emit status message
+            self.plugin_status_changed.emit(plugin_info, f"Removing UI components...")
+            
             # Remove UI components
             self._remove_plugin_ui_components(plugin_info)
+            
+            # Emit status message
+            self.plugin_status_changed.emit(plugin_info, f"Disconnecting signals...")
             
             # Disconnect all signals
             self._disconnect_device_manager_signals(plugin_info)
             self._disconnect_plugin_signals(plugin_info)
             
+            # Emit status message
+            self.plugin_status_changed.emit(plugin_info, f"Running plugin cleanup...")
+            
             # Call cleanup if needed
             if instance and hasattr(instance, 'cleanup'):
                 try:
                     instance.cleanup()
+                    self.plugin_status_changed.emit(plugin_info, f"Plugin cleanup completed")
                 except Exception as e:
                     logger.error(f"Error during plugin cleanup for {plugin_id}: {e}", exc_info=True)
+                    self.plugin_status_changed.emit(plugin_info, f"Error during cleanup: {str(e)}")
+            
+            # Emit status message
+            self.plugin_status_changed.emit(plugin_info, f"Clearing plugin instance...")
             
             # Set state first to prevent any accidental reloading
             original_state = plugin_info.state
@@ -988,13 +1224,20 @@ class PluginManager(QObject):
                 plugin_info.instance = None
                 gc.collect()
             
+            # Emit status message
+            self.plugin_status_changed.emit(plugin_info, f"Saving registry changes...")
+            
             # Save changes to the registry
             self._sync_registry()
+            
+            # Emit success message
+            self.plugin_status_changed.emit(plugin_info, f"Plugin unloaded successfully!")
             
             logger.info(f"Successfully unloaded plugin: {plugin_id}")
             return True
         except Exception as e:
             logger.error(f"Error unloading plugin {plugin_id}: {e}", exc_info=True)
+            self.plugin_status_changed.emit(plugin_info, f"Error unloading plugin: {str(e)}")
             # Make sure the instance is still cleared even on error
             if hasattr(plugin_info, 'instance') and plugin_info.instance is not None:
                 plugin_info.instance = None
@@ -1350,7 +1593,10 @@ class PluginManager(QObject):
     def _compare_versions(self, version1, version2):
         """Compare two version strings, returns -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2"""
         def parse_version(v):
-            return tuple(map(int, v.split('.')))
+            # Extract only the numeric version part, ignoring build information
+            # e.g., "0.9.12 (Build 293)" becomes "0.9.12"
+            version_part = v.split('(')[0].strip() if '(' in v else v
+            return tuple(map(int, version_part.split('.')))
             
         v1_parts = parse_version(version1)
         v2_parts = parse_version(version2)
@@ -1365,7 +1611,7 @@ class PluginManager(QObject):
             elif v1 > v2:
                 return 1
                 
-        return 0  # Versions are equal 
+        return 0  # Versions are equal
 
     def _check_plugin_dependencies(self, plugin_info):
         """Check if plugin dependencies are satisfied"""
@@ -1561,6 +1807,79 @@ class PluginManager(QObject):
                         except Exception as e:
                             logger.error(f"Error clearing __pycache__ for plugin {plugin_id}: {e}") 
 
+    def _get_python_executable(self):
+        """Get the correct Python executable, handling PyInstaller executable mode"""
+        import subprocess
+        import shutil
+        from pathlib import Path
+        
+        # If running as executable, we need to find the system Python
+        if getattr(sys, 'frozen', False):
+            logger.debug("Running as executable, detecting system Python...")
+            
+            # Candidates for Python executable in order of preference
+            python_candidates = [
+                shutil.which('python'),  # Python in PATH
+                shutil.which('python3'),  # Python3 in PATH
+                shutil.which('py'),  # Python Launcher (Windows)
+                Path(sys.prefix) / "python.exe",  # Python from sys.prefix
+            ]
+            
+            # Add Windows-specific candidates
+            if sys.platform == "win32":
+                python_candidates.extend([
+                    "python.exe",
+                    "py.exe",  # Python Launcher
+                    Path(os.environ.get('LOCALAPPDATA', '')) / "Microsoft" / "WindowsApps" / "python.exe"
+                ])
+            
+            # Test each candidate
+            for candidate in python_candidates:
+                if candidate is None:
+                    continue
+                    
+                try:
+                    candidate_str = str(candidate)
+                    
+                    # Skip candidates that don't exist as files
+                    if not shutil.which(candidate_str) and not Path(candidate_str).exists():
+                        continue
+                    
+                    logger.debug(f"Testing Python candidate: {candidate_str}")
+                    
+                    # Test if Python executable exists and works
+                    result = subprocess.run(
+                        [candidate_str, "--version"], 
+                        check=True, 
+                        capture_output=True, 
+                        text=True,
+                        timeout=10
+                    )
+                    
+                    # Test if pip is available
+                    pip_result = subprocess.run(
+                        [candidate_str, "-m", "pip", "--version"], 
+                        check=True, 
+                        capture_output=True, 
+                        text=True,
+                        timeout=10
+                    )
+                    
+                    # If both tests pass, we found our Python
+                    logger.debug(f"Found working Python executable: {candidate_str} - {result.stdout.strip()}")
+                    return candidate_str
+                        
+                except (subprocess.CalledProcessError, FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
+                    logger.debug(f"Python candidate failed: {candidate_str} - {type(e).__name__}")
+                    continue
+            
+            # If no system Python found, warn but continue with sys.executable as fallback
+            logger.warning("Could not find system Python executable, falling back to sys.executable (may cause issues)")
+            return sys.executable
+        else:
+            # Running as script, sys.executable should be fine
+            return sys.executable
+
     def _install_plugin_requirements(self, plugin_info):
         """Install Python package requirements for a plugin"""
         if not plugin_info.requirements["python"]:
@@ -1571,8 +1890,9 @@ class PluginManager(QObject):
             import subprocess
             import sys
             
-            # Get the path to the current Python executable
-            python_exe = sys.executable
+            # Get the correct Python executable (handles executable mode properly)
+            python_exe = self._get_python_executable()
+            logger.debug(f"Using Python executable for requirements: {python_exe}")
             
             # Create lib directory in plugin folder if it doesn't exist
             plugin_lib_dir = os.path.join(plugin_info.path, "lib")
@@ -1590,7 +1910,7 @@ class PluginManager(QObject):
                 self.plugin_status_changed.emit(plugin_info, f"Installing: {req}")
                 
                 # Run pip install with target directory
-                cmd = [python_exe, "-m", "pip", "install", req, "--target", plugin_lib_dir, "--upgrade"]
+                cmd = [python_exe, "-m", "pip", "install", req, "--target", plugin_lib_dir, "--upgrade", "--no-user"]
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 
                 if result.returncode != 0:
@@ -1618,8 +1938,9 @@ class PluginManager(QObject):
             import subprocess
             import sys
             
-            # Get the path to the current Python executable
-            python_exe = sys.executable
+            # Get the correct Python executable (handles executable mode properly)
+            python_exe = self._get_python_executable()
+            logger.debug(f"Using Python executable for uninstalling requirements: {python_exe}")
             
             # Use pip to uninstall the requirements
             requirements = plugin_info.requirements["python"]
@@ -1775,3 +2096,74 @@ class PluginManager(QObject):
             logger.debug(f"Successfully connected device manager signals for plugin: {plugin_info.id}")
         except Exception as e:
             logger.error(f"Error connecting device manager signals for plugin {plugin_info.id}: {e}", exc_info=True) 
+
+    def reload_all_plugins(self):
+        """
+        Reload all plugins and discover new ones.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            logger.info("Reloading all plugins...")
+            
+            # First, unload all currently loaded plugins
+            loaded_plugins = [p for p in self.plugins.values() if p.state.is_loaded]
+            
+            if loaded_plugins:
+                logger.info(f"Unloading {len(loaded_plugins)} currently loaded plugins...")
+                for plugin_info in loaded_plugins:
+                    self.plugin_status_changed.emit(plugin_info, f"Unloading for reload...")
+                    try:
+                        self.unload_plugin(plugin_info.id)
+                    except Exception as e:
+                        logger.error(f"Error unloading plugin {plugin_info.id} during reload: {e}")
+                        # Continue with other plugins
+            
+            # Clear the module cache
+            logger.info("Clearing plugin module cache...")
+            modules_to_remove = [
+                mod_name for mod_name in list(sys.modules.keys())
+                if mod_name.startswith('plugins.') or any(mod_name.startswith(pid) for pid in self.plugins.keys())
+            ]
+            
+            for mod_name in modules_to_remove:
+                try:
+                    if mod_name in sys.modules:
+                        del sys.modules[mod_name]
+                except Exception as e:
+                    logger.debug(f"Error removing module {mod_name} from cache: {e}")
+            
+            # Re-discover all plugins
+            logger.info("Re-discovering plugins...")
+            self.discover_plugins()
+            
+            # Attempt to reload previously loaded plugins
+            previously_loaded = [p.id for p in loaded_plugins]
+            reloaded_count = 0
+            
+            for plugin_id in previously_loaded:
+                if plugin_id in self.plugins:
+                    plugin_info = self.plugins[plugin_id]
+                    if plugin_info.state.is_enabled:
+                        logger.info(f"Attempting to reload plugin: {plugin_id}")
+                        self.plugin_status_changed.emit(plugin_info, f"Reloading plugin...")
+                        try:
+                            if self.load_plugin(plugin_id):
+                                reloaded_count += 1
+                                logger.info(f"Successfully reloaded plugin: {plugin_id}")
+                            else:
+                                logger.warning(f"Failed to reload plugin: {plugin_id}")
+                        except Exception as e:
+                            logger.error(f"Error reloading plugin {plugin_id}: {e}")
+                    else:
+                        logger.info(f"Plugin {plugin_id} is disabled, skipping reload")
+                else:
+                    logger.warning(f"Plugin {plugin_id} no longer exists after discovery")
+            
+            logger.info(f"Plugin reload complete: {reloaded_count}/{len(previously_loaded)} plugins reloaded successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error during reload_all_plugins: {e}", exc_info=True)
+            return False 

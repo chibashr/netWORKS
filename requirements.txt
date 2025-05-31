@@ -12,3 +12,14 @@ pandas==2.0.3
 openpyxl==3.1.2
 xlrd==2.0.1
 python-docx==0.8.11
+pyinstaller==6.3.0
+
+# Essential jaraco and packaging dependencies (fixes pkg_resources import issues)
+jaraco.text>=4.0.0
+jaraco.functools>=4.1.0
+jaraco.context>=6.0.0
+jaraco.collections>=5.1.0
+jaraco.itertools>=6.4.0
+more-itertools>=10.7.0
+zipp>=3.22.0
+importlib-metadata>=8.7.0

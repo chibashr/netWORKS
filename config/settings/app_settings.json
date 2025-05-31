@@ -1,0 +1,11 @@
+{
+  "version": "0.9.9",
+  "first_run": false,
+  "setup_date": "2025-05-29T09:11:46.304272",
+  "theme": "light",
+  "auto_save_enabled": true,
+  "auto_save_interval": 300,
+  "log_level": "INFO",
+  "check_for_updates": true,
+  "plugins_enabled": true
+}

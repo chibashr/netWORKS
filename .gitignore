@@ -1,5 +1,7 @@
 # NetWORKS .gitignore
-
+release/
+Build_Networks.bat
+BUILD*
 # Logs
 logs/
 *.log
@@ -9,7 +11,7 @@ logs/crashes/
 recent_logs.log
 
 # Python
-__pycache__/
+__pycache__/``
 *.py[cod]
 *$py.class
 *.so
