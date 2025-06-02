@@ -203,8 +203,11 @@ class ConfigMatePlugin(PluginInterface):
             }
         }
         
-        # Create actions and widgets
-        self._create_actions()
+        # Create actions and widgets - defer until proper initialization
+        self.toolbar_actions = []
+        self.menu_actions = {}
+        self.context_menu_actions = []
+        self._actions_created = False
     
     def initialize(self, app, plugin_info):
         """Initialize the plugin with application context"""
@@ -223,6 +226,9 @@ class ConfigMatePlugin(PluginInterface):
         
         # Initialize core components
         self._initialize_core_components()
+        
+        # Create actions and widgets now that we have app context
+        self._create_actions()
         
         # Create UI components
         self._create_widgets()
@@ -348,6 +354,7 @@ class ConfigMatePlugin(PluginInterface):
             ]
             
             logger.debug("ConfigMate actions created")
+            self._actions_created = True
             
         except Exception as e:
             logger.error(f"Failed to create actions: {e}")
@@ -485,10 +492,14 @@ class ConfigMatePlugin(PluginInterface):
     
     def get_toolbar_actions(self):
         """Return actions for the toolbar"""
+        if not self._actions_created:
+            self._create_actions()
         return self.toolbar_actions
     
     def get_menu_actions(self):
         """Return actions for the main menu"""
+        if not self._actions_created:
+            self._create_actions()
         # Try to find existing Tools menu
         tools_menu = self._find_existing_menu("Tools")
         return {

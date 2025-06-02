@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
     QSplitter, QTabWidget, QWidget, QListWidget, QListWidgetItem,
     QMessageBox, QFileDialog, QCheckBox, QSpinBox, QTextBrowser,
     QDialogButtonBox, QProgressBar, QScrollArea, QTableWidget, QHeaderView,
-    QMenu, QAction, QTableWidgetItem
+    QMenu, QTableWidgetItem
 )
 from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtGui import QFont, QIcon, QAction
 
 # Import syntax highlighter - try absolute import first
 try:
