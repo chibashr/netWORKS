@@ -24,6 +24,7 @@ from .device_table import DeviceTableModel, DeviceTableView, QAbstractItemView
 from .device_tree import DeviceTreeModel, DeviceTreeView
 from .plugin_manager_dialog import PluginManagerDialog
 from .log_panel import LogPanel
+from ..core.connectivity_manager import require_connectivity
 
 
 class MainWindow(QMainWindow):
@@ -38,6 +39,7 @@ class MainWindow(QMainWindow):
         self.device_manager = app.device_manager
         self.plugin_manager = app.plugin_manager
         self.config = app.config
+        self.connectivity_manager = app.connectivity_manager
         
         # Set window properties
         self.updateWindowTitle()
@@ -69,7 +71,13 @@ class MainWindow(QMainWindow):
         """Update the window title to include current workspace"""
         app_full_version = self.app.manifest.get("full_version", self.app.get_version())
         workspace = self.device_manager.current_workspace
-        self.setWindowTitle(f"NetWORKS v{app_full_version} - Workspace: {workspace}")
+        connectivity_status = self.connectivity_manager.get_status_text() if self.connectivity_manager else "Unknown"
+        
+        # Include connectivity status in window title if offline
+        if connectivity_status == "Offline":
+            self.setWindowTitle(f"NetWORKS v{app_full_version} - Workspace: {workspace} [OFFLINE]")
+        else:
+            self.setWindowTitle(f"NetWORKS v{app_full_version} - Workspace: {workspace}")
         
     def refresh_workspace_ui(self):
         """Refresh all UI components after workspace change"""
@@ -274,6 +282,12 @@ class MainWindow(QMainWindow):
         self.status_workspace = QLabel(f"Workspace: {self.device_manager.current_workspace}")
         self.status_bar.addWidget(self.status_workspace)
         
+        # Connectivity status
+        self.status_connectivity = QLabel("Checking...")
+        self.status_connectivity.setObjectName("ConnectivityStatus")
+        self.status_bar.addWidget(self.status_connectivity)
+        self._update_connectivity_status()
+        
         # Spacer
         spacer_label = QLabel()
         spacer_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -420,6 +434,10 @@ class MainWindow(QMainWindow):
         self.plugin_manager.plugin_loaded.connect(self.on_plugin_loaded)
         self.plugin_manager.plugin_unloaded.connect(self.on_plugin_unloaded)
         
+        # Connectivity manager signals
+        if self.connectivity_manager:
+            self.connectivity_manager.connectivity_changed.connect(self.on_connectivity_changed)
+    
     def update_status_bar(self):
         """Update status bar with current counts"""
         device_count = len(self.device_manager.get_devices())
@@ -1932,44 +1950,42 @@ class MainWindow(QMainWindow):
             logger.error(f"Failed to clean up old backups: {e}")
         
     def _setup_update_checker(self):
-        """Set up the update checker"""
-        from src.core.update_checker import UpdateChecker
-        
-        self.update_checker = UpdateChecker(self.config)
-        
-        # Connect signals
-        self.update_checker.update_available.connect(self.on_update_available)
-        
-        # Check for updates on startup if enabled
-        if self.config.get("general.check_updates", True):
-            # Schedule update check after a delay to not slow down startup
-            QTimer.singleShot(5000, self.check_for_updates)
-
-    def check_for_updates(self, silent=True):
-        """Check for updates
-        
-        Args:
-            silent: If True, don't show message if no updates are available
-        """
-        logger.debug("Checking for updates")
-        
-        # Get branch from configuration
-        branch = self.update_checker.get_branch()
-        
-        # Check for updates in the background
-        def check_thread():
-            result = self.update_checker.check_for_updates(branch)
+        """Initialize and setup the update checker"""
+        try:
+            from ..core.update_checker import UpdateChecker
+            self.update_checker = UpdateChecker(self.config)
             
-            # Show message if no updates available and not in silent mode
-            if not silent and not result[0]:
-                # Use invokeMethod to safely update UI from another thread
-                QTimer.singleShot(0, lambda: self.status_bar.showMessage("No updates available", 3000))
+            # Set the connectivity manager for network checks
+            if hasattr(self, 'connectivity_manager') and self.connectivity_manager:
+                self.update_checker.set_connectivity_manager(self.connectivity_manager)
+            
+            # Connect signals
+            self.update_checker.update_available.connect(self.on_update_available)
+            
+            logger.debug("Update checker initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize update checker: {e}")
+            self.update_checker = None
+
+    @require_connectivity()
+    def check_for_updates(self, silent=True):
+        """Check for updates"""
+        if not hasattr(self, 'update_checker') or not self.update_checker:
+            logger.warning("Update checker not available")
+            return
+            
+        def check_thread():
+            try:
+                branch = self.update_checker.get_branch()
+                logger.info(f"Checking for updates on branch: {branch}")
+                self.update_checker.check_for_updates(branch)
+            except Exception as e:
+                logger.error(f"Error checking for updates: {e}")
         
-        # Run in another thread to not block UI
         import threading
         thread = threading.Thread(target=check_thread)
         thread.daemon = True
-        thread.start() 
+        thread.start()
 
     def _format_property_value(self, value):
         """Format a property value for display based on type
@@ -2546,3 +2562,39 @@ class MainWindow(QMainWindow):
                 elif isinstance(raw_value, str) and (raw_value.startswith('http://') or raw_value.startswith('https://')):
                     import webbrowser
                     webbrowser.open(raw_value) 
+    
+    @Slot(bool)
+    def on_connectivity_changed(self, is_online):
+        """Handle connectivity status changes
+        
+        Args:
+            is_online: True if online, False if offline
+        """
+        logger.info(f"Connectivity changed: {'Online' if is_online else 'Offline'}")
+        self._update_connectivity_status()
+        self.updateWindowTitle()  # Update window title to reflect connectivity
+        
+        # Show a temporary message in the status bar
+        if is_online:
+            self.status_bar.showMessage("Internet connectivity restored", 3000)
+        else:
+            self.status_bar.showMessage("No internet connection detected", 5000)
+    
+    def _update_connectivity_status(self):
+        """Update the connectivity status indicator in the status bar"""
+        if not self.connectivity_manager:
+            self.status_connectivity.setText("Unknown")
+            self.status_connectivity.setStyleSheet("color: gray;")
+            return
+            
+        is_online = self.connectivity_manager.is_online()
+        status_text = self.connectivity_manager.get_status_text()
+        
+        if is_online:
+            self.status_connectivity.setText(f"🌐 {status_text}")
+            self.status_connectivity.setStyleSheet("color: green; font-weight: bold;")
+            self.status_connectivity.setToolTip("Internet connection available")
+        else:
+            self.status_connectivity.setText(f"📵 {status_text}")
+            self.status_connectivity.setStyleSheet("color: red; font-weight: bold;")
+            self.status_connectivity.setToolTip("No internet connection - some features may be limited")

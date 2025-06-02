@@ -1,0 +1,40 @@
+{
+  "id": "3e1e7dc0-fbc8-4f68-81f5-d6c8b56403a0",
+  "alias": "Device at 10.1.9.164",
+  "hostname": "",
+  "ip_address": "10.1.9.164",
+  "mac_address": "",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "type": "scanned",
+  "ipv4_address": "10.1.9.164",
+  "last_scan_time": "2025-05-27 15:33:27",
+  "nmap_raw_data": {
+    "addresses": {
+      "ipv4": "10.1.9.164"
+    },
+    "hostnames": [
+      {
+        "name": "",
+        "type": ""
+      }
+    ],
+    "status": {
+      "reason": "localhost-response",
+      "state": "up"
+    },
+    "vendor": {}
+  },
+  "scan_source": "nmap",
+  "scan_type": "quick",
+  "status_reason": "localhost-response",
+  "last_scan": "1748378008.21195",
+  "name": "New Generic Device",
+  "created": "2025-05-27 08:55:25",
+  "sample": "Sample Value",
+  "associated_files": {}
+}

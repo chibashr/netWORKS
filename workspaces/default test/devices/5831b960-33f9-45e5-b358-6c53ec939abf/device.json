@@ -1,0 +1,272 @@
+{
+  "id": "5831b960-33f9-45e5-b358-6c53ec939abf",
+  "alias": "Qingdao Intelligent&Precise Electronics Device",
+  "hostname": "",
+  "ip_address": "10.1.8.238",
+  "mac_address": "38:64:07:B7:84:EA",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "scan_source": "nmap",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:40",
+  "ipv4_address": "10.1.8.238",
+  "last_scan_time": null,
+  "mac_vendor": "Qingdao Intelligent&Precise Electronics",
+  "nmap_raw_data": {
+    "addresses": {
+      "ipv4": "10.1.8.238",
+      "mac": "38:64:07:B7:84:EA"
+    },
+    "hostnames": [
+      {
+        "name": "",
+        "type": ""
+      }
+    ],
+    "status": {
+      "reason": "arp-response",
+      "state": "up"
+    },
+    "vendor": {
+      "38:64:07:B7:84:EA": "Qingdao Intelligent&Precise Electronics"
+    }
+  },
+  "scan_type": null,
+  "status_reason": "arp-response",
+  "tcp_port_details": {
+    "21": {
+      "port": 21,
+      "state": "closed",
+      "reason": "reset",
+      "name": "ftp",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "22": {
+      "port": 22,
+      "state": "closed",
+      "reason": "reset",
+      "name": "ssh",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "23": {
+      "port": 23,
+      "state": "closed",
+      "reason": "reset",
+      "name": "telnet",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "25": {
+      "port": 25,
+      "state": "closed",
+      "reason": "reset",
+      "name": "smtp",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "53": {
+      "port": 53,
+      "state": "closed",
+      "reason": "reset",
+      "name": "domain",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "80": {
+      "port": 80,
+      "state": "closed",
+      "reason": "reset",
+      "name": "http",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "110": {
+      "port": 110,
+      "state": "closed",
+      "reason": "reset",
+      "name": "pop3",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "111": {
+      "port": 111,
+      "state": "closed",
+      "reason": "reset",
+      "name": "rpcbind",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "135": {
+      "port": 135,
+      "state": "closed",
+      "reason": "reset",
+      "name": "msrpc",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "139": {
+      "port": 139,
+      "state": "closed",
+      "reason": "reset",
+      "name": "netbios-ssn",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "143": {
+      "port": 143,
+      "state": "closed",
+      "reason": "reset",
+      "name": "imap",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "443": {
+      "port": 443,
+      "state": "closed",
+      "reason": "reset",
+      "name": "https",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "445": {
+      "port": 445,
+      "state": "closed",
+      "reason": "reset",
+      "name": "microsoft-ds",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "993": {
+      "port": 993,
+      "state": "closed",
+      "reason": "reset",
+      "name": "imaps",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "995": {
+      "port": 995,
+      "state": "closed",
+      "reason": "reset",
+      "name": "pop3s",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "1723": {
+      "port": 1723,
+      "state": "closed",
+      "reason": "reset",
+      "name": "pptp",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "3306": {
+      "port": 3306,
+      "state": "closed",
+      "reason": "reset",
+      "name": "mysql",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "3389": {
+      "port": 3389,
+      "state": "closed",
+      "reason": "reset",
+      "name": "ms-wbt-server",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "5900": {
+      "port": 5900,
+      "state": "closed",
+      "reason": "reset",
+      "name": "vnc",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "8080": {
+      "port": 8080,
+      "state": "closed",
+      "reason": "reset",
+      "name": "http-proxy",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    }
+  },
+  "vendor_info": {
+    "38:64:07:B7:84:EA": "Qingdao Intelligent&Precise Electronics"
+  },
+  "last_scan": "1748378213.143692",
+  "os": "Unknown",
+  "vendor": "Qingdao Intelligent&Precise Electronics",
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

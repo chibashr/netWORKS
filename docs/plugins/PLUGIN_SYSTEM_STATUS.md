@@ -19,9 +19,10 @@ The plugin loading system is **properly implemented** and working as designed:
 
 The system supports three types of plugin directories:
 
-1. **Built-in Plugins** (`src/plugins/`): Shipped with NetWORKS
-2. **External Plugins** (`plugins/`): User-installed, shared across workspaces
-3. **Workspace Plugins** (`config/workspaces/<workspace>/plugins/`): Workspace-specific
+1. **Built-in Plugins** (`plugins/`): Core plugins distributed with NetWORKS
+2. **External Plugins** (`plugins/`): User-installed third-party plugins
+3. **Workspace Plugins** (`workspaces/<workspace>/plugins/`): Workspace-specific
+   plugins that are only available when that workspace is active
 
 ### ✅ Workspace Integration
 

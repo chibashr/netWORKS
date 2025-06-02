@@ -101,11 +101,12 @@ class CredentialStore:
         if not workspace_found and self.workspace_name:
             logger.debug(f"CredentialStore: Attempting to construct workspace directory for workspace: {self.workspace_name}")
             
-            # Try to find the workspace directory in common locations
+            # Try to find the workspace directory in various possible locations
             possible_paths = [
-                Path.cwd() / "config" / "workspaces" / self.workspace_name,
+                # Current directory workspace
                 Path.cwd() / "workspaces" / self.workspace_name,
-                self.data_dir.parent.parent / "config" / "workspaces" / self.workspace_name
+                # Data directory workspace  
+                self.data_dir.parent.parent / "workspaces" / self.workspace_name
             ]
             
             for path in possible_paths:
@@ -343,7 +344,7 @@ class CredentialStore:
                         else:
                             # Other workspace - create target directory
                             if self.app_workspace_dir and self.app_workspace_dir.parent:
-                                # Use parent of current workspace dir to get to config/workspaces
+                                # Use parent of current workspace dir to get to workspaces
                                 target_group_dir = self.app_workspace_dir.parent / ws_name / "command_manager" / "credentials" / "groups"
                             else:
                                 # Fallback
@@ -381,7 +382,7 @@ class CredentialStore:
                         else:
                             # Other workspace - create target directory
                             if self.app_workspace_dir and self.app_workspace_dir.parent:
-                                # Use parent of current workspace dir to get to config/workspaces
+                                # Use parent of current workspace dir to get to workspaces
                                 target_subnet_dir = self.app_workspace_dir.parent / ws_name / "command_manager" / "credentials" / "subnets"
                             else:
                                 # Fallback
@@ -1424,5 +1425,4 @@ class CredentialStore:
             self._load_subnet_credentials()
             
         # Return subnet credentials for current workspace
-        return self.workspace_credentials.get(self.workspace_name, {}).get("subnets", {}) 
         return self.workspace_credentials.get(self.workspace_name, {}).get("subnets", {}) 

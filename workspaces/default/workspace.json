@@ -1,0 +1,21 @@
+{
+  "name": "default",
+  "description": "Workspace default",
+  "last_saved": "2025-05-29 09:33:18.998541",
+  "devices": [
+    "0edbe941-d234-472f-87f0-cf802b978b19",
+    "37a75566-e832-4672-908d-ba2a541b5c89",
+    "44fb0cc9-c8b9-49e7-a916-7ec25258821b",
+    "66217af8-765d-4c68-a74b-a4c5c3d7bc9b",
+    "7b1ea9c3-b7d5-4e9b-8e81-5974292d1601",
+    "9049b16c-c4ea-49c1-ace2-3436f15e5d3a",
+    "a668be73-4ee5-422d-96f9-37fc341f874f",
+    "d23dfbc3-d021-4e61-87bc-14df2c9e1690",
+    "e2888098-054b-4a7b-9632-231266d8f1a1"
+  ],
+  "groups": [
+    "All Devices"
+  ],
+  "enabled_plugins": [],
+  "recycle_bin": []
+}

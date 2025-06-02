@@ -1,0 +1,149 @@
+{
+  "id": "a857a7af-fd35-4724-b737-2d51cd56de75",
+  "alias": "Google Device",
+  "hostname": "",
+  "ip_address": "10.1.8.70",
+  "mac_address": "38:8B:59:05:EE:31",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "scan_source": "nmap",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:38",
+  "ipv4_address": "10.1.8.70",
+  "last_scan_time": null,
+  "mac_vendor": "Google",
+  "nmap_raw_data": {
+    "addresses": {
+      "ipv4": "10.1.8.70",
+      "mac": "38:8B:59:05:EE:31"
+    },
+    "hostnames": [
+      {
+        "name": "",
+        "type": ""
+      }
+    ],
+    "status": {
+      "reason": "arp-response",
+      "state": "up"
+    },
+    "vendor": {
+      "38:8B:59:05:EE:31": "Google"
+    }
+  },
+  "open_ports": [
+    8008,
+    8009,
+    8443,
+    9000,
+    10001,
+    10002
+  ],
+  "open_tcp_ports": [
+    8008,
+    8009,
+    8443,
+    9000,
+    10001,
+    10002
+  ],
+  "scan_type": null,
+  "services": {
+    "8008": "http",
+    "8009": "ajp13",
+    "8443": "https-alt",
+    "9000": "cslistener",
+    "10001": "scp-config",
+    "10002": "documentum"
+  },
+  "status_reason": "arp-response",
+  "tcp_port_details": {
+    "8008": {
+      "port": 8008,
+      "state": "open",
+      "reason": "syn-ack",
+      "name": "http",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "8009": {
+      "port": 8009,
+      "state": "open",
+      "reason": "syn-ack",
+      "name": "ajp13",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "8443": {
+      "port": 8443,
+      "state": "open",
+      "reason": "syn-ack",
+      "name": "https-alt",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "9000": {
+      "port": 9000,
+      "state": "open",
+      "reason": "syn-ack",
+      "name": "cslistener",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "10001": {
+      "port": 10001,
+      "state": "open",
+      "reason": "syn-ack",
+      "name": "scp-config",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "10002": {
+      "port": 10002,
+      "state": "open",
+      "reason": "syn-ack",
+      "name": "documentum",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    }
+  },
+  "tcp_services": {
+    "8008": "http",
+    "8009": "ajp13",
+    "8443": "https-alt",
+    "9000": "cslistener",
+    "10001": "scp-config",
+    "10002": "documentum"
+  },
+  "vendor_info": {
+    "38:8B:59:05:EE:31": "Google"
+  },
+  "os": "Unknown",
+  "vendor": "Google",
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

@@ -1,0 +1,12 @@
+{
+  "id": "37a75566-e832-4672-908d-ba2a541b5c89",
+  "alias": "test",
+  "hostname": "",
+  "ip_address": "",
+  "mac_address": "",
+  "status": "unknown",
+  "notes": "",
+  "tags": [],
+  "_credential_store_test": null,
+  "associated_files": {}
+}

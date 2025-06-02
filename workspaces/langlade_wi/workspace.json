@@ -1,0 +1,43 @@
+{
+  "name": "langlade_wi",
+  "description": "Workspace langlade_wi",
+  "last_saved": "2025-06-02 10:24:37.305668",
+  "devices": [
+    "020beacf-8e26-431b-96ff-0483dbca9c11",
+    "17fb7241-7f63-4744-a573-931d86a630a7",
+    "19f8bebd-660b-48a5-b6de-e7b21d272561",
+    "1d85eef4-c0be-4295-baf0-0840fed5f7d7",
+    "1fb293ce-4181-4ff6-874f-deb2ba7d5ef4",
+    "2a8abca4-96fd-480a-90a2-7b4aadb792e6",
+    "41534fc8-0104-4880-8283-803256c07006",
+    "46c3acd2-490c-4e04-947d-a1499a051634",
+    "5673a844-b949-4ba8-ae36-4da53cbbc455",
+    "5f850c15-0e5e-4616-9765-aa7e523b5181",
+    "68c592ce-283d-4f47-8587-1076d104b2f6",
+    "71cfe157-eaef-4b2b-9f5f-0407c528e144",
+    "7e1b70a0-040e-4895-aaaf-3d57774d9bf1",
+    "841808ef-d44c-4146-ae5a-3f6a237e52ad",
+    "8f43aece-86da-469f-8e1d-154555589356",
+    "9028a61d-20c8-4488-8097-4515cd2ed77c",
+    "bafb9bb3-8ae7-4bb1-83f0-6a5973aa03b7",
+    "c447ddda-4c1a-40dc-ba9d-1de156876c6b",
+    "c7a27310-488b-4db8-883b-e78630cf8f79",
+    "c9a808f3-d018-455b-83dd-e2b235b3c5a3",
+    "d1ae6a0a-8715-4102-a23d-1c8105c5432e",
+    "de10b7ce-de9b-497f-b5e0-d7d53eade2c1",
+    "e0d0dacd-dddc-4916-9549-401cbcb686e1",
+    "e8f44f0b-64ef-451f-9d4a-ae2e666f70fd",
+    "e9616b7a-4048-497e-8e33-929f86c287cd",
+    "f9a7a6db-7ad9-4c2c-b8e4-65ce6867c53f"
+  ],
+  "groups": [
+    "All Devices",
+    "Network Devices"
+  ],
+  "enabled_plugins": [
+    "command_manager",
+    "configmate",
+    "network_scanner"
+  ],
+  "recycle_bin": []
+}

@@ -1,0 +1,18 @@
+{
+  "id": "e8f44f0b-64ef-451f-9d4a-ae2e666f70fd",
+  "alias": "LANGLADESYSLOG",
+  "hostname": "LANGLADESYSLOG",
+  "ip_address": "172.20.10.182",
+  "mac_address": "",
+  "status": "unknown",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 10:51:55",
+  "associated_files": {}
+}

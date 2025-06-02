@@ -1,0 +1,27 @@
+{
+  "id": "7136f7b3-2aea-443b-a39a-8d1032aa112b",
+  "alias": "Device at 10.1.8.2",
+  "hostname": "",
+  "ip_address": "10.1.8.2",
+  "mac_address": "",
+  "status": "unknown",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:38",
+  "credentials": {
+    "connection_type": "ssh",
+    "username": "admin",
+    "password": "dF/Mc15ypCeqtV3Jd2Jkjw==:xcIG0bHVxUjtJSn7MweL6noedqmt8qR8KioWx7WKZUU=",
+    "enable_password": ""
+  },
+  "_recycled_groups": [],
+  "_in_recycle_bin": true,
+  "sample": "Sample Value",
+  "associated_files": {}
+}

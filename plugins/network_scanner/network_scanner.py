@@ -259,16 +259,34 @@ class NetworkScannerPlugin(PluginInterface):
             import json
             from pathlib import Path
             
-            # Get the plugin data directory
+            # Try to load from workspace first (workspace-specific profiles)
+            workspace_profiles_file = None
+            if hasattr(self, 'device_manager') and self.device_manager:
+                try:
+                    workspace_dir = self.device_manager.get_workspace_dir()
+                    if workspace_dir:
+                        workspace_profiles_dir = Path(workspace_dir) / "network_scanner"
+                        workspace_profiles_dir.mkdir(exist_ok=True)
+                        workspace_profiles_file = workspace_profiles_dir / "scan_profiles.json"
+                        
+                        if workspace_profiles_file.exists():
+                            with open(workspace_profiles_file, 'r', encoding='utf-8') as f:
+                                profiles = json.load(f)
+                                logger.debug(f"Loaded {len(profiles)} scan profiles from workspace storage")
+                                return profiles
+                except Exception as e:
+                    logger.debug(f"Could not load from workspace storage: {e}")
+            
+            # Fallback to plugin data directory (global profiles)
             plugin_data_dir = Path(__file__).parent / "data"
             plugin_data_dir.mkdir(exist_ok=True)
             
             profiles_file = plugin_data_dir / "scan_profiles.json"
             
             if profiles_file.exists():
-                with open(profiles_file, 'r') as f:
+                with open(profiles_file, 'r', encoding='utf-8') as f:
                     profiles = json.load(f)
-                    logger.debug(f"Loaded {len(profiles)} scan profiles from storage")
+                    logger.debug(f"Loaded {len(profiles)} scan profiles from plugin storage")
                     return profiles
         except Exception as e:
             logger.warning(f"Could not load scan profiles from storage: {e}")
@@ -281,18 +299,35 @@ class NetworkScannerPlugin(PluginInterface):
             import json
             from pathlib import Path
             
-            # Get the plugin data directory
+            profiles = self._settings["scan_profiles"]["value"]
+            
+            # Try to save to workspace first (workspace-specific profiles)
+            if hasattr(self, 'device_manager') and self.device_manager:
+                try:
+                    workspace_dir = self.device_manager.get_workspace_dir()
+                    if workspace_dir:
+                        workspace_profiles_dir = Path(workspace_dir) / "network_scanner"
+                        workspace_profiles_dir.mkdir(exist_ok=True)
+                        workspace_profiles_file = workspace_profiles_dir / "scan_profiles.json"
+                        
+                        with open(workspace_profiles_file, 'w', encoding='utf-8') as f:
+                            json.dump(profiles, f, indent=2)
+                            
+                        logger.debug(f"Saved {len(profiles)} scan profiles to workspace storage")
+                        return True
+                except Exception as e:
+                    logger.debug(f"Could not save to workspace storage: {e}")
+            
+            # Fallback to plugin data directory (global profiles)
             plugin_data_dir = Path(__file__).parent / "data"
             plugin_data_dir.mkdir(exist_ok=True)
             
             profiles_file = plugin_data_dir / "scan_profiles.json"
             
-            profiles = self._settings["scan_profiles"]["value"]
-            
-            with open(profiles_file, 'w') as f:
+            with open(profiles_file, 'w', encoding='utf-8') as f:
                 json.dump(profiles, f, indent=2)
                 
-            logger.debug(f"Saved {len(profiles)} scan profiles to storage")
+            logger.debug(f"Saved {len(profiles)} scan profiles to plugin storage")
             return True
         except Exception as e:
             logger.error(f"Could not save scan profiles to storage: {e}")

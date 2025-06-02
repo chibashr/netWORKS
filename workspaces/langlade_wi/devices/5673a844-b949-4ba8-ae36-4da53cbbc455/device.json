@@ -1,0 +1,18 @@
+{
+  "id": "5673a844-b949-4ba8-ae36-4da53cbbc455",
+  "alias": "Device at 172.20.10.97",
+  "hostname": "",
+  "ip_address": "172.20.10.97",
+  "mac_address": "",
+  "status": "unknown",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 10:51:59",
+  "associated_files": {}
+}

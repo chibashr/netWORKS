@@ -1,0 +1,25 @@
+{
+  "id": "677be765-fcd3-496f-a922-2d0fc1bae1ef",
+  "alias": "Unnamed Device",
+  "hostname": "",
+  "ip_address": "10.1.11.255",
+  "mac_address": "D8:EB:46:D4:64:11",
+  "status": "up",
+  "notes": "",
+  "tags": [],
+  "name": "",
+  "description": "Device discovered by network scan at 10.1.11.255",
+  "type": "network_device",
+  "created": "2025-05-28 15:12:45",
+  "os": "Unknown",
+  "vendor": "Google",
+  "last_scan_time": null,
+  "scan_type": null,
+  "ports": [],
+  "_recycled_groups": [
+    "Scan Results (20)"
+  ],
+  "_in_recycle_bin": true,
+  "sample": "Sample Value",
+  "associated_files": {}
+}

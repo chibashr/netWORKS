@@ -1,0 +1,20 @@
+{
+  "id": "0b0391ea-1938-4ada-9aba-7b351a9ba552",
+  "alias": "MarissaM",
+  "hostname": "MarissaM",
+  "ip_address": "10.1.8.161",
+  "mac_address": "",
+  "status": "unknown",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:38",
+  "_credential_store_test": null,
+  "sample": "Sample Value",
+  "associated_files": {}
+}

@@ -364,7 +364,7 @@ class PluginManager(QObject):
         
         if os.path.exists(self.registry_file):
             try:
-                with open(self.registry_file, 'r') as f:
+                with open(self.registry_file, 'r', encoding='utf-8') as f:
                     registry_data = json.load(f)
                     logger.debug(f"Successfully loaded registry with {len(registry_data)} plugins")
                     # Log the enabled status of each plugin in registry
@@ -548,7 +548,7 @@ class PluginManager(QObject):
     def _load_plugin_info_from_json(self, json_file, plugin_dir):
         """Load plugin info from JSON file"""
         try:
-            with open(json_file, 'r') as f:
+            with open(json_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
             # Validate required fields

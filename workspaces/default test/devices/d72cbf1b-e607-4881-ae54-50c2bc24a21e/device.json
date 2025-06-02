@@ -1,0 +1,36 @@
+{
+  "id": "d72cbf1b-e607-4881-ae54-50c2bc24a21e",
+  "alias": "Device at 10.1.11.49",
+  "hostname": "",
+  "ip_address": "10.1.11.49",
+  "mac_address": "",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "scan_source": "nmap",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:46",
+  "last_scan_time": null,
+  "open_ports": [
+    8008,
+    8009,
+    8443
+  ],
+  "scan_type": null,
+  "services": [
+    "http (8008)",
+    "ajp13 (8009)",
+    "https-alt (8443)"
+  ],
+  "status_reason": "arp-response",
+  "last_scan": "1748142906.299458",
+  "os": "Unknown",
+  "vendor": "Google",
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

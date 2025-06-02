@@ -1,0 +1,24 @@
+{
+  "id": "ca540f0b-4175-4e6c-a89b-889ecaaf1ea2",
+  "alias": "Device at 10.1.8.48",
+  "hostname": "",
+  "ip_address": "10.1.8.48",
+  "mac_address": "",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:38",
+  "os": "Unknown",
+  "vendor": "GD Midea Air-Conditioning Equipment",
+  "last_scan_time": null,
+  "scan_type": null,
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

@@ -31,37 +31,33 @@ class IssueReporter(QObject):
         
         Args:
             config: Config instance for accessing settings
-            app: Application instance
+            app: Application instance for accessing version and other info
         """
         super().__init__()
         self.config = config
         self.app = app
-        
-        # GitHub repository information
         self.github_repo = "https://github.com/chibashr/netWORKS"
         self.github_api_url = "https://api.github.com/repos/chibashr/netWORKS/issues"
+        self.github_token = None
+        self.is_processing = False
+        self.connectivity_manager = None  # Will be set by the app
         
-        # Set custom repository URL if configured
-        if self.config:
-            custom_repo = self.config.get("general.repository_url", "")
-            if custom_repo:
-                self.set_repository_url(custom_repo)
-        
-        # Offline queue settings
+        # Create queue directory if it doesn't exist
         self.queue_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
             "data", "issue_queue"
         )
         os.makedirs(self.queue_dir, exist_ok=True)
         
-        # Load GitHub token if exists
-        self.github_token = None
+        # Get settings from config
         if self.config:
-            self.github_token = self.config.get("general.github_token", "")
+            self.github_token = self.config.get("issue_reporter.github_token", "")
+            custom_repo = self.config.get("general.repository_url", "")
+            if custom_repo:
+                self.set_repository_url(custom_repo)
         
         # Background thread for processing queue
         self.processing_thread = None
-        self.is_processing = False
     
     def submit_issue(self, title, description, category, severity, steps_to_reproduce, 
                     expected_result, actual_result, screenshot_path=None, 
@@ -148,22 +144,32 @@ class IssueReporter(QObject):
             return False, "You are offline. Issue queued for later submission."
     
     def process_queue(self, synchronous=False):
-        """Process the offline queue
+        """Process queued issues by attempting to submit them to GitHub
         
         Args:
-            synchronous: Whether to process the queue synchronously
+            synchronous: If True, process synchronously. If False, process in a thread.
         """
         if self.is_processing:
-            logger.debug("Queue processing already in progress")
+            logger.warning("Queue processing already in progress")
+            return
+            
+        # Check connectivity before processing
+        if self.connectivity_manager and not self.connectivity_manager.is_online():
+            logger.warning("Cannot process issue queue: No internet connectivity")
+            return
+        elif not self.connectivity_manager and not self._is_online():
+            # Fallback to local connectivity check if no manager available
+            logger.warning("Cannot process issue queue: No internet connectivity")
             return
             
         if synchronous:
             self._process_queue_internal()
         else:
-            # Start a background thread to process the queue
-            self.processing_thread = threading.Thread(target=self._process_queue_internal)
-            self.processing_thread.daemon = True
-            self.processing_thread.start()
+            # Process in a separate thread
+            import threading
+            thread = threading.Thread(target=self._process_queue_internal)
+            thread.daemon = True
+            thread.start()
     
     def set_repository_url(self, url):
         """Set a custom repository URL
@@ -392,7 +398,7 @@ class IssueReporter(QObject):
         
         for queue_file in queue_files:
             try:
-                with open(queue_file, 'r') as f:
+                with open(queue_file, 'r', encoding='utf-8') as f:
                     queue_entry = json.load(f)
                     
                 # Update attempt information
@@ -473,11 +479,16 @@ class IssueReporter(QObject):
                 if f.endswith('.json') and os.path.isfile(os.path.join(self.queue_dir, f))]
     
     def _is_online(self):
-        """Check if we're online
+        """Check if we're online (fallback method if connectivity manager not available)
         
         Returns:
             bool: True if online, False if offline
         """
+        # Use connectivity manager if available
+        if self.connectivity_manager:
+            return self.connectivity_manager.is_online()
+            
+        # Fallback to local check
         try:
             # Try to connect to GitHub to check connectivity
             req = urllib.request.Request(
@@ -592,4 +603,12 @@ class IssueReporter(QObject):
             else:
                 return "Log file not found"
         except Exception as e:
-            return f"Error reading logs: {e}" 
+            return f"Error reading logs: {e}"
+    
+    def set_connectivity_manager(self, connectivity_manager):
+        """Set the connectivity manager for network checks
+        
+        Args:
+            connectivity_manager: ConnectivityManager instance
+        """
+        self.connectivity_manager = connectivity_manager 

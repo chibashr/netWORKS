@@ -1,0 +1,19 @@
+{
+  "id": "a32462a2-8ffe-41e9-9820-58f28fbe55cd",
+  "alias": "RCMLPT-MDUMEZ",
+  "hostname": "RCMLPT-MDUMEZ",
+  "ip_address": "10.1.9.9",
+  "mac_address": "",
+  "status": "unknown",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:39",
+  "sample": "Sample Value",
+  "associated_files": {}
+}

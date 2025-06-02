@@ -31,6 +31,7 @@ class UpdateChecker(QObject):
         self.github_repo = "https://github.com/chibashr/netWORKS"
         self.github_api_url = "https://api.github.com/repos/chibashr/netWORKS"
         self.current_version = self._get_current_version()
+        self.connectivity_manager = None  # Will be set by the app
         
         # Set custom repository URL if configured
         custom_repo = self.config.get("general.repository_url", "") if self.config else ""
@@ -41,7 +42,7 @@ class UpdateChecker(QObject):
         """Get the current version from the manifest file"""
         try:
             manifest_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "manifest.json")
-            with open(manifest_path, 'r') as f:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
                 manifest = json.load(f)
                 return manifest.get("version_string", "0.0.0")
         except Exception as e:
@@ -73,6 +74,12 @@ class UpdateChecker(QObject):
         """
         if branch is None:
             branch = self.get_branch()
+        
+        # Check connectivity before making network request
+        if self.connectivity_manager and not self.connectivity_manager.is_online():
+            logger.warning("Cannot check for updates: No internet connectivity")
+            self.check_complete.emit(False)
+            return False, self.current_version, "0.0.0", "No internet connection available"
             
         logger.info(f"Checking for updates on branch: {branch}")
         
@@ -162,3 +169,11 @@ class UpdateChecker(QObject):
             logger.warning(f"Unsupported repository URL format: {url}")
             
         return self 
+
+    def set_connectivity_manager(self, connectivity_manager):
+        """Set the connectivity manager for network checks
+        
+        Args:
+            connectivity_manager: ConnectivityManager instance
+        """
+        self.connectivity_manager = connectivity_manager 

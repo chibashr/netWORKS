@@ -1,0 +1,24 @@
+{
+  "id": "f225b4b8-c5a5-49e6-a931-4ffbca49e98e",
+  "alias": "Device at 10.1.11.101",
+  "hostname": "",
+  "ip_address": "10.1.11.101",
+  "mac_address": "",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:47",
+  "os": "Unknown",
+  "vendor": "The Chamberlain Group",
+  "last_scan_time": null,
+  "scan_type": null,
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

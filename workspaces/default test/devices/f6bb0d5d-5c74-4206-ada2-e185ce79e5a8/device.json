@@ -1,0 +1,288 @@
+{
+  "id": "f6bb0d5d-5c74-4206-ada2-e185ce79e5a8",
+  "alias": "WatchGuard Technologies Device",
+  "hostname": "",
+  "ip_address": "10.1.8.1",
+  "mac_address": "00:90:7F:AA:D7:4B",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "scan_source": "nmap",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:38",
+  "ipv4_address": "10.1.8.1",
+  "last_scan_time": null,
+  "mac_vendor": "WatchGuard Technologies",
+  "nmap_raw_data": {
+    "addresses": {
+      "ipv4": "10.1.8.1",
+      "mac": "00:90:7F:AA:D7:4B"
+    },
+    "hostnames": [
+      {
+        "name": "",
+        "type": ""
+      }
+    ],
+    "status": {
+      "reason": "arp-response",
+      "state": "up"
+    },
+    "vendor": {
+      "00:90:7F:AA:D7:4B": "WatchGuard Technologies"
+    }
+  },
+  "open_ports": [
+    53,
+    80
+  ],
+  "open_tcp_ports": [
+    53,
+    80
+  ],
+  "scan_type": null,
+  "services": {
+    "53": "tcpwrapped",
+    "80": "http (nginx)"
+  },
+  "status_reason": "arp-response",
+  "tcp_port_details": {
+    "21": {
+      "port": 21,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "ftp",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "22": {
+      "port": 22,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "ssh",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "23": {
+      "port": 23,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "telnet",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "25": {
+      "port": 25,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "smtp",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "53": {
+      "port": 53,
+      "state": "open",
+      "reason": "syn-ack",
+      "name": "tcpwrapped",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "8",
+      "cpe": ""
+    },
+    "80": {
+      "port": 80,
+      "state": "open",
+      "reason": "syn-ack",
+      "name": "http",
+      "product": "nginx",
+      "version": "",
+      "extrainfo": "",
+      "conf": "10",
+      "cpe": "cpe:/a:igor_sysoev:nginx"
+    },
+    "110": {
+      "port": 110,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "pop3",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "111": {
+      "port": 111,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "rpcbind",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "135": {
+      "port": 135,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "msrpc",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "139": {
+      "port": 139,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "netbios-ssn",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "143": {
+      "port": 143,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "imap",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "443": {
+      "port": 443,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "https",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "445": {
+      "port": 445,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "microsoft-ds",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "993": {
+      "port": 993,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "imaps",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "995": {
+      "port": 995,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "pop3s",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "1723": {
+      "port": 1723,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "pptp",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "3306": {
+      "port": 3306,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "mysql",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "3389": {
+      "port": 3389,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "ms-wbt-server",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "5900": {
+      "port": 5900,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "vnc",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    },
+    "8080": {
+      "port": 8080,
+      "state": "filtered",
+      "reason": "no-response",
+      "name": "http-proxy",
+      "product": "",
+      "version": "",
+      "extrainfo": "",
+      "conf": "3",
+      "cpe": ""
+    }
+  },
+  "tcp_services": {
+    "53": "tcpwrapped",
+    "80": "http (nginx)"
+  },
+  "vendor_info": {
+    "00:90:7F:AA:D7:4B": "WatchGuard Technologies"
+  },
+  "last_scan": "1747953086.092853",
+  "os": "Unknown",
+  "vendor": "WatchGuard Technologies",
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

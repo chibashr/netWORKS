@@ -1,0 +1,46 @@
+{
+  "id": "a668be73-4ee5-422d-96f9-37fc341f874f",
+  "alias": "Google Device",
+  "hostname": "",
+  "ip_address": "10.1.9.163",
+  "mac_address": "38:8B:59:4D:52:48",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "type": "scanned",
+  "ipv4_address": "10.1.9.163",
+  "last_scan_time": "2025-05-27 10:31:53",
+  "mac_vendor": "Google",
+  "nmap_raw_data": {
+    "addresses": {
+      "ipv4": "10.1.9.163",
+      "mac": "38:8B:59:4D:52:48"
+    },
+    "hostnames": [
+      {
+        "name": "",
+        "type": ""
+      }
+    ],
+    "status": {
+      "reason": "arp-response",
+      "state": "up"
+    },
+    "vendor": {
+      "38:8B:59:4D:52:48": "Google"
+    }
+  },
+  "scan_source": "nmap",
+  "scan_type": "quick",
+  "status_reason": "arp-response",
+  "vendor_info": {
+    "38:8B:59:4D:52:48": "Google"
+  },
+  "last_scan": "1748359913.620854",
+  "name": "New Generic Device",
+  "created": "2025-05-27 10:31:53",
+  "associated_files": {}
+}

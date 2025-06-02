@@ -215,10 +215,7 @@ class DeviceManager(QObject):
         self.recycle_bin = {}  # id -> Device
         
         # Base path for config and workspace data
-        self.base_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "config"
-        )
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         
         # Current workspace
         self.current_workspace = "default"
@@ -375,7 +372,7 @@ class DeviceManager(QObject):
         info_file = os.path.join(workspace_dir, "workspace.json")
         if os.path.exists(info_file):
             try:
-                with open(info_file, 'r') as f:
+                with open(info_file, 'r', encoding='utf-8') as f:
                     workspace_info = json.load(f)
                     
                 if device.id not in workspace_info.get("devices", []):
@@ -843,7 +840,7 @@ class DeviceManager(QObject):
                 device_file = os.path.join(device_dir, "device.json")
                 if os.path.exists(device_file):
                     try:
-                        with open(device_file, 'r') as f:
+                        with open(device_file, 'r', encoding='utf-8') as f:
                             device_data = json.load(f)
                             
                         device = Device.from_dict(device_data)
@@ -868,7 +865,7 @@ class DeviceManager(QObject):
     def _load_legacy_devices(self):
         """Load devices from legacy file"""
         try:
-            with open(self.devices_file, 'r') as f:
+            with open(self.devices_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
             # Load devices
@@ -900,7 +897,7 @@ class DeviceManager(QObject):
             return True  # No groups to load
             
         try:
-            with open(groups_file, 'r') as f:
+            with open(groups_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
             for group_data in data.get("groups", []):
@@ -1199,7 +1196,7 @@ class DeviceManager(QObject):
                     
                     if os.path.exists(device_data_file):
                         try:
-                            with open(device_data_file, 'r') as f:
+                            with open(device_data_file, 'r', encoding='utf-8') as f:
                                 device_data = json.load(f)
                                 
                             # Create device from data
@@ -1236,7 +1233,7 @@ class DeviceManager(QObject):
             groups_file = os.path.join(workspace_dir, "groups.json")
             if os.path.exists(groups_file):
                 try:
-                    with open(groups_file, 'r') as f:
+                    with open(groups_file, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                         
                     for group_data in data.get("groups", []):

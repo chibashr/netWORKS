@@ -1,6 +1,29 @@
 # Plugin Workspace Integration
 
-This document explains how plugins interact with NetWORKS workspaces and provides guidelines for proper workspace-aware plugin development.
+This document explains how plugins integrate with NetWORKS workspaces and how to develop workspace-aware plugins.
+
+## Workspace Plugin Types
+
+- **Global plugins**: `plugins/` (available across all workspaces)
+- **Workspace plugins**: `workspaces/<workspace>/plugins/` (workspace-specific)
+
+## Installation Locations
+
+### Global Plugins
+```bash
+plugins/
+├── my_global_plugin/
+│   ├── __init__.py
+│   ├── my_global_plugin.py
+│   └── plugin.yaml
+```
+
+### Workspace-Specific Plugins  
+```bash
+# Install a plugin for specific workspace
+mkdir -p workspaces/production/plugins/my_plugin
+cp -r my_plugin/* workspaces/production/plugins/my_plugin/
+```
 
 ## Overview
 
@@ -14,7 +37,7 @@ During application startup, the Plugin Manager discovers plugins from multiple l
 
 - **Built-in plugins**: `src/plugins/` (shipped with NetWORKS)
 - **External plugins**: `plugins/` (user-installed, shared across workspaces)  
-- **Workspace plugins**: `config/workspaces/<workspace>/plugins/` (workspace-specific)
+- **Workspace plugins**: `workspaces/<workspace>/plugins/` (workspace-specific)
 
 All plugins are discovered but none are loaded at this stage.
 
@@ -71,18 +94,6 @@ class MyPlugin(PluginInterface):
         with open(config_file, 'w') as f:
             json.dump(self.workspace_config, f, indent=2)
 ```
-
-## Workspace-Specific Plugin Installation
-
-Plugins can be installed specifically for a workspace:
-
-```bash
-# Install plugin for specific workspace
-mkdir -p config/workspaces/production/plugins/my_plugin
-cp -r my_plugin/* config/workspaces/production/plugins/my_plugin/
-```
-
-This plugin will only be available when the "production" workspace is active.
 
 ## Plugin Settings Per Workspace
 

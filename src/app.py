@@ -20,6 +20,7 @@ from .core.plugin_manager import PluginManager
 from .core.device_manager import DeviceManager
 from .core import LoggingManager
 from .core.crash_reporter import setup_global_exception_handler, show_crash_dialog
+from .core.connectivity_manager import ConnectivityManager
 
 
 class Application(QApplication):
@@ -402,6 +403,13 @@ class Application(QApplication):
         from .core.issue_reporter import IssueReporter
         self.issue_reporter = IssueReporter(self.config, self)
         
+        # Initialize connectivity manager
+        self.splash.update_progress(85, "Initializing connectivity monitoring...")
+        self.connectivity_manager = ConnectivityManager(self.config, self)
+        
+        # Connect connectivity manager to other components that need network access
+        self.issue_reporter.set_connectivity_manager(self.connectivity_manager)
+        
         # Update logging configuration based on settings
         try:
             logging_level = self.config.get("logging.level", "INFO")
@@ -712,7 +720,7 @@ class Application(QApplication):
                     
                     if os.path.exists(device_file):
                         try:
-                            with open(device_file, 'r') as f:
+                            with open(device_file, 'r', encoding='utf-8') as f:
                                 device_data = json.load(f)
                                 
                             device_item = QTreeWidgetItem(devices_tree)
@@ -726,7 +734,7 @@ class Application(QApplication):
             groups_file = os.path.join(workspace_path, "groups.json")
             if os.path.exists(groups_file):
                 try:
-                    with open(groups_file, 'r') as f:
+                    with open(groups_file, 'r', encoding='utf-8') as f:
                         groups_data = json.load(f)
                         
                     for group_data in groups_data.get('groups', []):
@@ -807,12 +815,12 @@ class Application(QApplication):
                     # Update workspace.json
                     workspace_file = os.path.join(old_path, "workspace.json")
                     if os.path.exists(workspace_file):
-                        with open(workspace_file, 'r') as f:
+                        with open(workspace_file, 'r', encoding='utf-8') as f:
                             workspace_data = json.load(f)
                             
                         workspace_data['name'] = new_name
                         
-                        with open(workspace_file, 'w') as f:
+                        with open(workspace_file, 'w', encoding='utf-8') as f:
                             json.dump(workspace_data, f, indent=2)
                     
                     # Rename directory

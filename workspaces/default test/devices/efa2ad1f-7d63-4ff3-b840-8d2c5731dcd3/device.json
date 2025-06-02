@@ -1,0 +1,44 @@
+{
+  "id": "efa2ad1f-7d63-4ff3-b840-8d2c5731dcd3",
+  "alias": "Device at 10.1.9.192",
+  "hostname": "",
+  "ip_address": "10.1.9.192",
+  "mac_address": "B0:19:21:99:4B:7E",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "scan_source": "nmap",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:43",
+  "ipv4_address": "10.1.9.192",
+  "last_scan_time": null,
+  "nmap_raw_data": {
+    "addresses": {
+      "ipv4": "10.1.9.192",
+      "mac": "B0:19:21:99:4B:7E"
+    },
+    "hostnames": [
+      {
+        "name": "",
+        "type": ""
+      }
+    ],
+    "status": {
+      "reason": "arp-response",
+      "state": "up"
+    },
+    "vendor": {}
+  },
+  "scan_type": null,
+  "status_reason": "arp-response",
+  "os": "Unknown",
+  "last_scan": "1748378008.31647",
+  "vendor": "Unknown",
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

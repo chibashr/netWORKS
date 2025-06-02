@@ -1,0 +1,18 @@
+{
+  "id": "1d85eef4-c0be-4295-baf0-0840fed5f7d7",
+  "alias": "Windows01",
+  "hostname": "Windows01",
+  "ip_address": "172.20.10.186",
+  "mac_address": "",
+  "status": "unknown",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 10:51:44",
+  "associated_files": {}
+}

@@ -1,6 +1,17 @@
-# NetWORKS Plugins Directory
+# NetWORKS Plugin System
 
-This directory contains external plugins for NetWORKS.
+NetWORKS includes a comprehensive plugin system that allows for extensible functionality. Plugins can add new tools, integrate with external systems, provide custom device types, and extend the user interface.
+
+## Plugin Types and Locations
+
+NetWORKS supports plugins from multiple locations:
+
+1. **Built-in Plugins** (`plugins/`): Core plugins distributed with NetWORKS
+2. **External Plugins** (`plugins/`): User-installed third-party plugins  
+3. **Workspace Plugins** (`workspaces/<workspace>/plugins/`): Workspace-specific
+   plugins that are only available when that workspace is active
+
+## Available Plugins
 
 ## Plugin System Status
 
@@ -28,7 +39,7 @@ NetWORKS supports three types of plugin directories:
 
 1. **Built-in Plugins** (`src/plugins/`): Shipped with NetWORKS
 2. **External Plugins** (`plugins/`): User-installed, shared across workspaces  
-3. **Workspace Plugins** (`config/workspaces/<workspace>/plugins/`): Workspace-specific
+3. **Workspace Plugins** (`workspaces/<workspace>/plugins/`): Workspace-specific
 
 ## Built-in Plugins
 

@@ -1,0 +1,21 @@
+{
+  "id": "88afd82f-2aaa-4125-b9b3-3e576d780a9f",
+  "alias": "Unnamed Device",
+  "hostname": "",
+  "ip_address": "10.1.9.174",
+  "mac_address": "Unknown",
+  "status": "up",
+  "notes": "",
+  "tags": [],
+  "name": "",
+  "description": "Device discovered by network scan at 10.1.9.174",
+  "type": "network_device",
+  "created": "2025-05-28 15:12:47",
+  "os": "Unknown",
+  "vendor": "Unknown",
+  "last_scan_time": null,
+  "scan_type": null,
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

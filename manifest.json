@@ -1,6 +1,6 @@
 {
   "name": "NetWORKS",
-  "version": "0.9.19",
+  "version": "0.9.24",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -9,12 +9,12 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-  "version_string": "0.9.19",
+  "version_string": "0.9.24",
   "version_info": {
     "major": 0,
     "minor": 9,
-    "patch": 19,
-    "build": 301
+    "patch": 24,
+    "build": 306
   },
   "app_directory": "src",
   "main_module": "main",
@@ -33,18 +33,95 @@
   "command_outputs_directory": "command_outputs",
   "directory_structure_version": "2.0",
   "persistent_directories": true,
-  "build_date": "2025-06-02",
+  "build_date": "2025-01-18",
   "release_notes": [
-    "CRITICAL FIX: Fixed automatic directory creation for plugin workspace structures",
-    "Command Manager plugin now creates required credential directories even when workspace is not properly initialized",
-    "Enhanced fallback directory logic to prevent 'workspace directory not found' errors during plugin operations",
-    "Fixed missing workspace group and subnet credential directory creation that caused plugin functionality failures",
-    "Plugins now work reliably on fresh installations and when workspace directories are missing"
+    "CONSOLIDATION: Moved all workspace data from config/workspaces/ to root workspaces/ directory for cleaner organization",
+    "CLEANUP: Eliminated duplicate workspace folders and standardized workspace storage location",
+    "DOCUMENTATION: Updated all documentation to reflect the consolidated workspace structure",
+    "MAINTENANCE: Improved workspace path resolution and simplified codebase workspace references",
+    "NEW FEATURE: Internet connectivity monitoring and offline mode indication",
+    "Added real-time connectivity status display in the application header and status bar",
+    "Automatic blocking of network operations when offline to prevent errors and improve user experience", 
+    "Connectivity checks now happen before update checks, issue reporting, and other network operations",
+    "Visual indicators show 🌐 Online or 📵 Offline status with clear tooltips",
+    "Window title shows [OFFLINE] when no internet connection is detected",
+    "Connectivity status updates automatically every 30 seconds and when network state changes"
   ],
   "release_type": "stable",
   "versioning_scheme": "semver",
   "update_channel": "stable",
   "changelog": [
+    {
+      "version": "0.9.24",
+      "build": 306,
+      "date": "2025-01-18",
+      "changes": [
+        "CRITICAL FIX: Fixed command_manager plugin error accessing non-existent app.base_dir attribute",
+        "Updated command_manager plugin to properly get workspace directory through device manager",
+        "Improved error handling and fallback logic for workspace directory access in plugins",
+        "Enhanced plugin workspace path resolution to be more robust and reliable"
+      ]
+    },
+    {
+      "version": "0.9.23",
+      "build": 305,
+      "date": "2025-01-18",
+      "changes": [
+        "CRITICAL FIX: Resolved character encoding issues when reading JSON files on Windows",
+        "Fixed 'charmap codec can't decode byte' errors in update checker, device manager, and other components",
+        "Added explicit UTF-8 encoding to all JSON file read operations throughout the application",
+        "Updated manifest.json, workspace files, device files, and plugin configuration reading to use UTF-8",
+        "Eliminated Windows-specific encoding errors that prevented application startup and operation",
+        "Enhanced file I/O robustness across different operating systems and character sets"
+      ]
+    },
+    {
+      "version": "0.9.22",
+      "build": 304,
+      "date": "2025-01-18",
+      "changes": [
+        "PLUGIN UPDATES: Updated all plugins to use workspace paths provided by the core program",
+        "Command Manager: Updated output handler to use workspace directory from plugin's get_current_workspace_dir() method",
+        "ConfigMate: Updated to get workspace paths from device manager instead of hardcoded paths",
+        "Network Scanner: Enhanced to support workspace-specific scan profiles while maintaining plugin-global fallback",
+        "Improved plugin consistency by eliminating hardcoded workspace paths across all plugins",
+        "All plugins now properly use the consolidated workspaces/ directory structure",
+        "Enhanced error handling and logging for workspace path resolution in plugins"
+      ]
+    },
+    {
+      "version": "0.9.21",
+      "build": 303,
+      "date": "2025-01-18",
+      "changes": [
+        "WORKSPACE CONSOLIDATION: Moved all workspace data from config/workspaces/ to root workspaces/ directory",
+        "Eliminated duplicate workspace storage locations and standardized on single workspaces/ directory",
+        "Updated all workspace path references in device manager, plugin system, and credential store",
+        "Removed legacy config/workspaces and data/workspaces directories after data migration",
+        "Updated all documentation (workspaces.md, plugin docs) to reflect new structure",
+        "Simplified workspace path resolution throughout the codebase",
+        "Plugin workspace data now consistently stored in workspaces/<workspace_name>/plugins/",
+        "Enhanced workspace directory management with proper error handling"
+      ]
+    },
+    {
+      "version": "0.9.20",
+      "build": 302,
+      "date": "2025-01-18",
+      "changes": [
+        "NEW FEATURE: Comprehensive internet connectivity monitoring system",
+        "Added ConnectivityManager class that monitors internet connectivity in real-time",
+        "Connectivity status displayed in application status bar with visual indicators (🌐 Online / 📵 Offline)",
+        "Window title shows [OFFLINE] when no internet connection is available",
+        "Update checker now checks connectivity before attempting to fetch updates from GitHub",
+        "Issue reporter checks connectivity before submitting issues or processing offline queue",
+        "Added @require_connectivity decorator for functions that need internet access",
+        "Connectivity status updates automatically every 30 seconds with configurable interval",
+        "Multiple reliable endpoints tested (GitHub API, Google, Cloudflare DNS) for robust connectivity detection",
+        "Network operations are gracefully blocked when offline with informative logging",
+        "Enhanced user experience by clearly indicating when features are unavailable due to connectivity"
+      ]
+    },
     {
       "version": "0.9.19",
       "build": 301,

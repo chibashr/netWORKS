@@ -427,7 +427,7 @@ class ReportIssueDialog(QDialog):
         self.queue_table.setRowCount(len(queue_files))
         for i, queue_file in enumerate(queue_files):
             try:
-                with open(queue_file, 'r') as f:
+                with open(queue_file, 'r', encoding='utf-8') as f:
                     queue_entry = json.load(f)
                     
                 # Title column

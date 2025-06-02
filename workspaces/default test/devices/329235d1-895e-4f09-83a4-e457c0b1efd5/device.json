@@ -1,0 +1,23 @@
+{
+  "id": "329235d1-895e-4f09-83a4-e457c0b1efd5",
+  "alias": "Device at 10.1.9.148",
+  "hostname": "",
+  "ip_address": "10.1.9.148",
+  "mac_address": "",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "type": "scanned",
+  "last_scan_time": "2025-05-24 22:07:33",
+  "scan_source": "nmap",
+  "scan_type": "quick",
+  "status_reason": "localhost-response",
+  "last_scan": "1748142453.595426",
+  "name": "New Generic Device",
+  "created": "2025-05-24 22:06:19",
+  "sample": "Sample Value",
+  "associated_files": {}
+}

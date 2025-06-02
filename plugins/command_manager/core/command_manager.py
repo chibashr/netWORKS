@@ -405,28 +405,30 @@ class CommandManagerPlugin(PluginInterface):
         """Get the current workspace directory
         
         Returns:
-            Path: Path to the current workspace directory
+            Path: Current workspace directory path, or None if not available
         """
         try:
-            # Try to get workspace directory from device manager
-            if hasattr(self.device_manager, 'get_workspace_dir'):
-                workspace_dir = self.device_manager.get_workspace_dir()
-                return Path(workspace_dir) if workspace_dir else None
+            # Get the current workspace from the app's device manager
+            if not hasattr(self.app, 'device_manager') or not self.app.device_manager:
+                logger.warning("Device manager not available")
+                return None
                 
-            # If device manager doesn't have the method, try to get it from app
-            if hasattr(self.app, 'base_dir'):
-                # Try to get current workspace name
-                current_workspace = "default"
-                if hasattr(self.device_manager, 'get_current_workspace_name'):
-                    try:
-                        current_workspace = self.device_manager.get_current_workspace_name()
-                    except:
-                        pass
-                
-                # Construct workspace dir from app base dir
-                workspace_dir = Path(self.app.base_dir) / "config" / "workspaces" / current_workspace
-                return workspace_dir if workspace_dir.exists() else None
-                
+            # Use the device manager's method to get workspace directory
+            workspace_dir = self.app.device_manager.get_workspace_dir()
+            if workspace_dir:
+                return Path(workspace_dir)
+            
+            # Fallback: construct the path manually if the method doesn't work
+            current_workspace = self.app.device_manager.current_workspace
+            workspaces_dir = self.app.device_manager.workspaces_dir
+            
+            if current_workspace and workspaces_dir:
+                workspace_dir = Path(workspaces_dir) / current_workspace
+                return workspace_dir
+            
+            logger.warning("Could not determine workspace directory")
+            return None
+            
         except Exception as e:
             logger.error(f"Error getting current workspace directory: {e}")
             return None

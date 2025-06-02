@@ -1,0 +1,328 @@
+{
+  "groups": [
+    {
+      "name": "test",
+      "description": "",
+      "devices": [],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "5d8ea659-5891-4dfa-845b-3ff91897204d"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (1)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "48eea2ee-d777-40cf-a050-50b3faf3296d"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (2)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "552bae3e-bf63-4a2a-9285-e47a233cd651"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (3)",
+      "description": "Devices found by network scanner",
+      "devices": [],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (4)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "5d8ea659-5891-4dfa-845b-3ff91897204d"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (5)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "846c11dc-ba54-47f4-a623-23cfffa22c85"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (6)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "48eea2ee-d777-40cf-a050-50b3faf3296d"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (7)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "552bae3e-bf63-4a2a-9285-e47a233cd651"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (8)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "efa2ad1f-7d63-4ff3-b840-8d2c5731dcd3"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (9)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "5d8ea659-5891-4dfa-845b-3ff91897204d"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (10)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "846c11dc-ba54-47f4-a623-23cfffa22c85"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (11)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "48eea2ee-d777-40cf-a050-50b3faf3296d"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (12)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "552bae3e-bf63-4a2a-9285-e47a233cd651"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (13)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "efa2ad1f-7d63-4ff3-b840-8d2c5731dcd3"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (14)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "ea7261a6-48ac-4b2f-af33-4f70e4236525"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (15)",
+      "description": "Devices found by network scanner",
+      "devices": [],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (16)",
+      "description": "Devices found by network scanner",
+      "devices": [],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (17)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "dc1ec68f-4ae7-4d1a-b035-185bfdf1a7a4"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (18)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "f225b4b8-c5a5-49e6-a931-4ffbca49e98e"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (19)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "e42d4f6f-8e93-461d-9931-7170ea34e244"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (20)",
+      "description": "Devices found by network scanner",
+      "devices": [],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (21)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "19ae3cf3-b7f3-4428-bfe5-5085f11b0d34"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (22)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "d72cbf1b-e607-4881-ae54-50c2bc24a21e"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (23)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "2f1a7939-37ae-4a8d-b892-e304d6f68a02"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (24)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "9e2a8bf8-a614-427f-a04b-11af6c331d03"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (25)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "f6bb0d5d-5c74-4206-ada2-e185ce79e5a8"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (26)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "3032cfd1-a829-4fd9-881b-765e114afcb2"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (27)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "6538b08e-c94f-42ec-9a86-03e51e2a1687"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (28)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "5831b960-33f9-45e5-b358-6c53ec939abf"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (29)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "ca540f0b-4175-4e6c-a89b-889ecaaf1ea2"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (30)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "a857a7af-fd35-4724-b737-2d51cd56de75"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (31)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "846c11dc-ba54-47f4-a623-23cfffa22c85"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (32)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "72b87496-e4cb-48ed-90af-e13fd5c5593b"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (33)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "88afd82f-2aaa-4125-b9b3-3e576d780a9f"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (34)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "5d8ea659-5891-4dfa-845b-3ff91897204d"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (35)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "963d3009-423d-4297-a2a5-e9de08459aff"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (36)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "34c0e211-7ddf-4794-bfa3-72da19d75372"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (37)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "552bae3e-bf63-4a2a-9285-e47a233cd651"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (38)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "efa2ad1f-7d63-4ff3-b840-8d2c5731dcd3"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (39)",
+      "description": "Devices found by network scanner",
+      "devices": [
+        "ea7261a6-48ac-4b2f-af33-4f70e4236525"
+      ],
+      "subgroups": []
+    },
+    {
+      "name": "Scan Results (40)",
+      "description": "Devices found by network scanner",
+      "devices": [],
+      "subgroups": []
+    }
+  ]
+}

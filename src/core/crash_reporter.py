@@ -34,7 +34,7 @@ def get_system_info():
     try:
         manifest_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "manifest.json")
         if os.path.exists(manifest_path):
-            with open(manifest_path, 'r') as f:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
                 manifest = json.load(f)
                 info["app_version"] = manifest.get("version", "unknown")
         else:

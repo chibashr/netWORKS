@@ -59,11 +59,12 @@ class TemplateEditorDialog(QDialog):
         self.template_name = template_name
         self.current_template = None
         self.syntax_highlighter = None
+        self.selected_devices = []  # Track selected devices for generation
         
         # Set up dialog
-        self.setWindowTitle("Template Editor" if not template_name else f"Edit Template: {template_name}")
+        self.setWindowTitle("ConfigMate - Template Manager" if not template_name else f"ConfigMate - Edit Template: {template_name}")
         self.setModal(True)
-        self.resize(1000, 700)
+        self.resize(1200, 800)  # Larger size to accommodate more functionality
         
         # Create UI
         self._create_ui()
@@ -74,6 +75,9 @@ class TemplateEditorDialog(QDialog):
             self._load_template(template_name)
         else:
             self._setup_new_template()
+        
+        # Get selected devices from plugin after UI is created
+        self._update_selected_devices()
         
         logger.debug("TemplateEditorDialog initialized")
     
@@ -237,6 +241,10 @@ class TemplateEditorDialog(QDialog):
         validation_layout.addWidget(self.validation_display)
         
         tab_widget.addTab(validation_tab, "Validation")
+        
+        # Device Generation tab - add this new tab
+        generation_tab = self._create_device_generation_tab()
+        tab_widget.addTab(generation_tab, "Device Generation")
         
         layout.addWidget(tab_widget)
         
@@ -689,4 +697,293 @@ class TemplateEditorDialog(QDialog):
             
         except Exception as e:
             logger.error(f"Error creating template from config: {e}")
-            QMessageBox.critical(self, "Error", f"Failed to create template: {e}") 
+            QMessageBox.critical(self, "Error", f"Failed to create template: {e}")
+
+    def _update_selected_devices(self):
+        """Update the list of selected devices from the plugin"""
+        try:
+            if hasattr(self.plugin, '_selected_devices'):
+                self.selected_devices = self.plugin._selected_devices or []
+            else:
+                self.selected_devices = []
+            
+            # Update device display if we have a device group widget
+            if hasattr(self, 'device_info_label'):
+                if self.selected_devices:
+                    device_names = [device.get_property('name', 'Unknown') for device in self.selected_devices]
+                    self.device_info_label.setText(f"Selected: {', '.join(device_names)}")
+                else:
+                    self.device_info_label.setText("No devices selected")
+            
+            logger.debug(f"Updated selected devices: {len(self.selected_devices)} devices")
+            
+        except Exception as e:
+            logger.error(f"Error updating selected devices: {e}")
+            self.selected_devices = []
+
+    def _create_device_generation_tab(self) -> QWidget:
+        """Create device configuration generation tab"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # Device selection group
+        device_group = QGroupBox("Target Devices")
+        device_layout = QVBoxLayout(device_group)
+        
+        # Device info
+        self.device_info_label = QLabel("No devices selected")
+        self.device_info_label.setWordWrap(True)
+        device_layout.addWidget(self.device_info_label)
+        
+        # Refresh devices button
+        refresh_devices_btn = QPushButton("Refresh Selected Devices")
+        refresh_devices_btn.clicked.connect(self._update_selected_devices)
+        device_layout.addWidget(refresh_devices_btn)
+        
+        layout.addWidget(device_group)
+        
+        # Variables group for generation
+        gen_variables_group = QGroupBox("Generation Variables")
+        gen_variables_layout = QVBoxLayout(gen_variables_group)
+        
+        # Auto-fill variables button
+        auto_fill_btn = QPushButton("Auto-Fill from Selected Devices")
+        auto_fill_btn.clicked.connect(self._auto_fill_variables)
+        gen_variables_layout.addWidget(auto_fill_btn)
+        
+        # Variables display
+        self.generation_variables_text = QTextEdit()
+        self.generation_variables_text.setMaximumHeight(150)
+        self.generation_variables_text.setPlaceholderText("Variables will appear here when auto-filled")
+        gen_variables_layout.addWidget(self.generation_variables_text)
+        
+        layout.addWidget(gen_variables_group)
+        
+        # Configuration preview group
+        preview_group = QGroupBox("Configuration Preview")
+        preview_layout = QVBoxLayout(preview_group)
+        
+        # Preview controls
+        preview_controls = QHBoxLayout()
+        
+        self.preview_device_combo = QComboBox()
+        self.preview_device_combo.currentTextChanged.connect(self._update_config_preview)
+        preview_controls.addWidget(QLabel("Preview for:"))
+        preview_controls.addWidget(self.preview_device_combo)
+        
+        generate_preview_btn = QPushButton("Generate Preview")
+        generate_preview_btn.clicked.connect(self._generate_config_preview)
+        preview_controls.addWidget(generate_preview_btn)
+        
+        preview_layout.addLayout(preview_controls)
+        
+        # Preview text
+        self.config_preview_text = QTextEdit()
+        self.config_preview_text.setPlaceholderText("Configuration preview will appear here")
+        preview_layout.addWidget(self.config_preview_text)
+        
+        layout.addWidget(preview_group)
+        
+        # Generation actions
+        action_layout = QHBoxLayout()
+        
+        generate_all_btn = QPushButton("Generate for All Devices")
+        generate_all_btn.clicked.connect(self._generate_for_all_devices)
+        action_layout.addWidget(generate_all_btn)
+        
+        apply_btn = QPushButton("Apply Configuration")
+        apply_btn.clicked.connect(self._apply_configuration)
+        action_layout.addWidget(apply_btn)
+        
+        layout.addLayout(action_layout)
+        
+        return tab
+
+    def _auto_fill_variables(self):
+        """Auto-fill variables from selected devices"""
+        try:
+            if not self.selected_devices:
+                QMessageBox.information(self, "Info", "No devices selected")
+                return
+            
+            # Get template name
+            template_name = self.name_edit.text().strip()
+            if not template_name:
+                QMessageBox.warning(self, "Warning", "Please enter a template name first")
+                return
+            
+            # Generate variables for all selected devices
+            all_variables = {}
+            
+            for device in self.selected_devices:
+                try:
+                    device_vars = self.plugin.config_generator.get_template_variables_for_device(
+                        device, template_name
+                    )
+                    device_name = device.get_property('name', 'Unknown')
+                    all_variables[device_name] = device_vars
+                    
+                except Exception as e:
+                    logger.error(f"Error getting variables for device {device.get_property('name')}: {e}")
+            
+            # Display variables
+            variables_text = []
+            for device_name, variables in all_variables.items():
+                variables_text.append(f"=== {device_name} ===")
+                if variables:
+                    for var_name, var_value in variables.items():
+                        variables_text.append(f"  {var_name}: {var_value}")
+                else:
+                    variables_text.append("  No variables detected")
+                variables_text.append("")
+            
+            self.generation_variables_text.setPlainText("\n".join(variables_text))
+            
+            # Update preview device combo
+            self.preview_device_combo.clear()
+            self.preview_device_combo.addItems([device.get_property('name', 'Unknown') for device in self.selected_devices])
+            
+        except Exception as e:
+            logger.error(f"Error auto-filling variables: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to auto-fill variables: {e}")
+
+    def _generate_config_preview(self):
+        """Generate configuration preview for selected device"""
+        try:
+            if not self.selected_devices:
+                QMessageBox.information(self, "Info", "No devices selected")
+                return
+            
+            current_device_name = self.preview_device_combo.currentText()
+            if not current_device_name:
+                return
+            
+            # Find the device
+            target_device = None
+            for device in self.selected_devices:
+                if device.get_property('name', 'Unknown') == current_device_name:
+                    target_device = device
+                    break
+            
+            if not target_device:
+                return
+            
+            # Get template content
+            template_content = self.template_editor.toPlainText()
+            if not template_content.strip():
+                QMessageBox.warning(self, "Warning", "Please enter template content")
+                return
+            
+            # Create temporary template
+            temp_template_name = f"temp_{int(time.time())}"
+            self.plugin.template_manager.create_template(
+                name=temp_template_name,
+                content=template_content,
+                platform=self.platform_combo.currentText(),
+                description="Temporary template for preview",
+                variables=self._get_variables_from_ui()
+            )
+            
+            try:
+                # Generate variables for device
+                variables = self.plugin.config_generator.get_template_variables_for_device(
+                    target_device, temp_template_name
+                )
+                
+                # Generate configuration
+                config = self.plugin.config_generator.generate_config(
+                    target_device, temp_template_name, variables
+                )
+                
+                if config:
+                    self.config_preview_text.setPlainText(config)
+                else:
+                    self.config_preview_text.setPlainText("Failed to generate configuration")
+                
+            finally:
+                # Clean up temporary template
+                try:
+                    self.plugin.template_manager.delete_template(temp_template_name)
+                except:
+                    pass
+            
+        except Exception as e:
+            logger.error(f"Error generating preview: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to generate preview: {e}")
+
+    def _update_config_preview(self):
+        """Update configuration preview when device selection changes"""
+        # Clear preview when device changes
+        self.config_preview_text.clear()
+
+    def _generate_for_all_devices(self):
+        """Generate configuration for all selected devices"""
+        try:
+            if not self.selected_devices:
+                QMessageBox.information(self, "Info", "No devices selected")
+                return
+            
+            # Save template first
+            self._save_template()
+            
+            template_name = self.name_edit.text().strip()
+            if not template_name:
+                return
+            
+            # Generate for all devices
+            results = []
+            for device in self.selected_devices:
+                try:
+                    device_name = device.get_property('name', 'Unknown')
+                    
+                    # Get variables for device
+                    variables = self.plugin.config_generator.get_template_variables_for_device(
+                        device, template_name
+                    )
+                    
+                    # Generate configuration
+                    config = self.plugin.config_generator.generate_config(
+                        device, template_name, variables
+                    )
+                    
+                    if config:
+                        results.append(f"✓ Generated config for '{device_name}' ({len(config.splitlines())} lines)")
+                    else:
+                        results.append(f"✗ Failed to generate config for '{device_name}'")
+                        
+                except Exception as e:
+                    device_name = device.get_property('name', 'Unknown')
+                    results.append(f"✗ Error generating config for '{device_name}': {e}")
+            
+            # Show results
+            result_text = f"Configuration Generation Results:\n\n" + "\n".join(results)
+            QMessageBox.information(self, "Generation Complete", result_text)
+            
+        except Exception as e:
+            logger.error(f"Error generating for all devices: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to generate configurations: {e}")
+
+    def _apply_configuration(self):
+        """Apply configuration to selected devices"""
+        try:
+            if not self.selected_devices:
+                QMessageBox.information(self, "Info", "No devices selected")
+                return
+            
+            # Confirm action
+            reply = QMessageBox.question(
+                self, "Confirm Apply",
+                f"Apply configuration to {len(self.selected_devices)} device(s)?\n\n"
+                "This will modify the device configuration.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            
+            QMessageBox.information(self, "Apply", "Configuration apply functionality will be implemented in a future version.")
+            
+        except Exception as e:
+            logger.error(f"Error applying configuration: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to apply configuration: {e}") 

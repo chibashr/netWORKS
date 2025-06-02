@@ -62,26 +62,31 @@ class OutputHandler:
                     logger.error(f"Error loading command outputs for device {device_id}: {e}")
                     logger.exception("Exception details:")
         
-        # Next, try to load from workspace device folders
-        workspace_device_dir = Path("config/workspaces/default/devices")
-        if workspace_device_dir.exists():
-            for device_dir in workspace_device_dir.iterdir():
-                if device_dir.is_dir():
-                    device_id = device_dir.name
-                    commands_dir = device_dir / "commands"
-                    if commands_dir.exists():
-                        output_file = commands_dir / "command_outputs.json"
-                        if output_file.exists():
-                            try:
-                                with open(output_file, "r") as f:
-                                    device_outputs = json.load(f)
-                                    # Only load if we don't already have outputs for this device
-                                    if device_id not in self.outputs:
-                                        self.outputs[device_id] = device_outputs
-                                        logger.debug(f"Loaded command outputs for device {device_id} from workspace: {output_file}")
-                            except Exception as e:
-                                logger.error(f"Error loading command outputs for device {device_id} from workspace: {e}")
-                                logger.exception("Exception details:")
+        # Next, try to load from workspace device folders using the plugin's workspace directory method
+        try:
+            workspace_dir = self.plugin.get_current_workspace_dir()
+            if workspace_dir and workspace_dir.exists():
+                workspace_device_dir = workspace_dir / "devices"
+                if workspace_device_dir.exists():
+                    for device_dir in workspace_device_dir.iterdir():
+                        if device_dir.is_dir():
+                            device_id = device_dir.name
+                            commands_dir = device_dir / "commands"
+                            if commands_dir.exists():
+                                output_file = commands_dir / "command_outputs.json"
+                                if output_file.exists():
+                                    try:
+                                        with open(output_file, "r") as f:
+                                            device_outputs = json.load(f)
+                                            # Only load if we don't already have outputs for this device
+                                            if device_id not in self.outputs:
+                                                self.outputs[device_id] = device_outputs
+                                                logger.debug(f"Loaded command outputs for device {device_id} from workspace: {output_file}")
+                                    except Exception as e:
+                                        logger.error(f"Error loading command outputs for device {device_id} from workspace: {e}")
+                                        logger.exception("Exception details:")
+        except Exception as e:
+            logger.error(f"Error accessing workspace directory: {e}")
             
         # If no device-specific outputs found, try to load from the legacy file
         if not self.outputs:
@@ -142,19 +147,21 @@ class OutputHandler:
                 
                 # Also save to workspace device folder
                 try:
-                    # Get workspace device directory
-                    workspace_device_dir = Path("config/workspaces/default/devices") / device_id
-                    if workspace_device_dir.exists():
-                        # Create commands directory if it doesn't exist
-                        commands_dir = workspace_device_dir / "commands"
-                        commands_dir.mkdir(exist_ok=True)
-                        
-                        # Save command outputs to workspace
-                        workspace_output_file = commands_dir / "command_outputs.json"
-                        with open(workspace_output_file, "w") as f:
-                            json.dump(commands, f, indent=2)
+                    # Get workspace device directory using the plugin's method
+                    workspace_dir = self.plugin.get_current_workspace_dir()
+                    if workspace_dir and workspace_dir.exists():
+                        workspace_device_dir = workspace_dir / "devices" / device_id
+                        if workspace_device_dir.exists():
+                            # Create commands directory if it doesn't exist
+                            commands_dir = workspace_device_dir / "commands"
+                            commands_dir.mkdir(exist_ok=True)
                             
-                        logger.debug(f"Saved command outputs to workspace: {workspace_output_file}")
+                            # Save command outputs to workspace
+                            workspace_output_file = commands_dir / "command_outputs.json"
+                            with open(workspace_output_file, "w") as f:
+                                json.dump(commands, f, indent=2)
+                                
+                            logger.debug(f"Saved command outputs to workspace: {workspace_output_file}")
                 except Exception as e:
                     logger.error(f"Error saving command outputs to workspace for device {device_id}: {e}")
                     logger.exception("Exception details:")

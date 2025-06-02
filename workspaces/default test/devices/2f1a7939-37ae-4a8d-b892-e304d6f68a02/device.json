@@ -1,0 +1,24 @@
+{
+  "id": "2f1a7939-37ae-4a8d-b892-e304d6f68a02",
+  "alias": "BROTHER_COLOR",
+  "hostname": "BROTHER_COLOR",
+  "ip_address": "10.1.11.83",
+  "mac_address": "",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:46",
+  "os": "Unknown",
+  "vendor": "Cloud Network Technology Singapore PTE.",
+  "last_scan_time": null,
+  "scan_type": null,
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

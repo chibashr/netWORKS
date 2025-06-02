@@ -1,0 +1,19 @@
+{
+  "groups": [
+    {
+      "name": "Network Devices",
+      "description": "",
+      "devices": [
+        "c447ddda-4c1a-40dc-ba9d-1de156876c6b",
+        "e0d0dacd-dddc-4916-9549-401cbcb686e1",
+        "c7a27310-488b-4db8-883b-e78630cf8f79",
+        "41534fc8-0104-4880-8283-803256c07006",
+        "2a8abca4-96fd-480a-90a2-7b4aadb792e6",
+        "19f8bebd-660b-48a5-b6de-e7b21d272561",
+        "841808ef-d44c-4146-ae5a-3f6a237e52ad",
+        "e9616b7a-4048-497e-8e33-929f86c287cd"
+      ],
+      "subgroups": []
+    }
+  ]
+}

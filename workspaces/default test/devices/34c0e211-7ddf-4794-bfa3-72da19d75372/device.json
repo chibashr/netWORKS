@@ -1,0 +1,21 @@
+{
+  "id": "34c0e211-7ddf-4794-bfa3-72da19d75372",
+  "alias": "Unnamed Device",
+  "hostname": "",
+  "ip_address": "10.1.9.179",
+  "mac_address": "7C:78:B2:33:41:9E",
+  "status": "up",
+  "notes": "",
+  "tags": [],
+  "name": "",
+  "description": "Device discovered by network scan at 10.1.9.179",
+  "type": "network_device",
+  "created": "2025-05-28 15:12:47",
+  "os": "Unknown",
+  "vendor": "Wyze Labs",
+  "last_scan_time": null,
+  "scan_type": null,
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

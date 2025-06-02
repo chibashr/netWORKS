@@ -265,7 +265,7 @@ NetWORKS supports three types of plugin directories:
    - Shared across all workspaces
    - Can be installed/uninstalled independently
 
-3. **Workspace-Specific Plugins** (`config/workspaces/<workspace_name>/plugins/`):
+3. **Workspace-Specific Plugins** (`workspaces/<workspace_name>/plugins/`):
    - Plugins specific to a particular workspace
    - Only available when that workspace is active
    - Useful for environment-specific tools
@@ -1074,4 +1074,15 @@ Document all properties your plugin adds to devices in your plugin's API.md file
 | Property | Type | Description |
 |----------|------|-------------|
 | your_plugin_id:property_name | string | Description of the property |
-``` 
+```
+
+## Plugin Types
+
+### By Location
+
+1. **Built-in Plugins** (`plugins/`): Core plugins distributed with NetWORKS
+2. **External Plugins** (`plugins/`): User-installed third-party plugins
+3. **Workspace-Specific Plugins** (`workspaces/<workspace_name>/plugins/`):
+   Plugins that are only available when a specific workspace is loaded
+
+### By Functionality 

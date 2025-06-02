@@ -1,176 +1,169 @@
-# Workspaces
+# NetWORKS Workspaces
 
-## Introduction
+Workspaces in NetWORKS allow you to organize your devices, groups, and settings into separate logical environments. Each workspace maintains its own set of devices, configuration templates, and plugin settings.
 
-In NetWORKS, workspaces provide a way to organize and manage different sets of devices and their configurations. Each workspace maintains its own collection of devices, groups, and settings, allowing you to switch between different configurations easily.
+## Overview
 
-## UI Layout Persistence
+A workspace is a collection of:
+- **Devices**: Network devices and their properties
+- **Groups**: Device groupings and hierarchies  
+- **Settings**: Workspace-specific configuration
+- **Plugin Data**: Plugin-specific data and configurations
+- **Templates**: Configuration templates and scripts
 
-Workspaces now save and restore UI layouts, including:
-- Main window size and position
-- Dock widget positions and sizes
-- Toolbar positions
-- Plugin panel layouts
+## Directory Structure
 
-This means that each workspace can have its own custom UI arrangement tailored to specific use cases.
-
-## Plugin Management in Workspaces
-
-### Plugin Isolation
-
-Each workspace maintains complete plugin isolation:
-
-- **Enabled Plugins**: Each workspace remembers which plugins were enabled
-- **Plugin Settings**: Plugin configurations are workspace-specific
-- **Plugin Data**: Plugin data directories are separated by workspace
-- **Clean Transitions**: Plugins are properly unloaded when switching workspaces
-
-### Plugin Loading Process
-
-When switching workspaces:
-
-1. **Save Current State**: Current workspace plugin states are saved
-2. **Unload Plugins**: All loaded plugins are cleanly unloaded with proper cleanup
-3. **Load New Workspace**: Target workspace configuration is loaded
-4. **Restore Plugins**: Only plugins enabled for the new workspace are loaded
-
-This ensures:
-- No memory leaks between workspace switches
-- Complete isolation of plugin states
-- Consistent plugin behavior per workspace
-
-### Plugin Directory Structure
-
-Workspaces support multiple plugin sources:
+Workspaces are stored in the `workspaces/` directory in the root of your NetWORKS installation:
 
 ```
-plugins/                           # Global plugins (shared across workspaces)
-├── command_manager/
-├── network_scanner/
-└── sample/
+workspaces/
+├── default/                  # Default workspace
+│   ├── devices/             # Device storage
+│   ├── settings/            # Workspace settings
+│   ├── command_manager/     # Command manager plugin data
+│   ├── configmate/          # ConfigMate plugin data
+│   └── workspace.json       # Workspace metadata
+├── production/              # Production workspace example
+│   ├── devices/
+│   ├── settings/
+│   ├── plugins/            # Workspace-specific plugins
+│   └── workspace.json
+└── staging/                 # Staging workspace example
+    └── ...
+```
 
-config/workspaces/production/      # Workspace-specific plugins
-├── plugins/
-│   └── production_monitor/        # Only available in 'production' workspace
-└── workspace.json                 # Includes enabled_plugins list
+Each workspace is stored in the `workspaces` directory with the following structure:
+
+```
+workspaces/
+├── default/                   # Workspace name
+│   ├── devices/              # Device definitions and data
+│   ├── groups.json           # Device groups
+│   ├── workspace.json        # Workspace metadata
+│   ├── settings/             # UI layouts and preferences
+│   └── plugins/              # Plugin-specific data
+└── production/               # Another workspace
+    └── ...
 ```
 
 ## Workspace Structure
 
-Each workspace is stored in the `config/workspaces` directory with the following structure:
+### Core Files
 
-```
-config/workspaces/
-├── default/                   # Default workspace
-│   ├── workspace.json         # Workspace metadata
-│   ├── groups.json            # Group structure
-│   ├── plugins/               # Workspace-specific plugins (optional)
-│   └── devices/               # Device references
-│       ├── device1.ref        # Reference to device1
-│       └── device2.ref        # Reference to device2
-└── production/                # Another workspace
-    ├── workspace.json
-    ├── groups.json
-    ├── plugins/               # Production-specific plugins
-    └── devices/
-```
+- `workspace.json`: Contains workspace metadata including name, description, enabled plugins, and settings
+- `groups.json`: Defines device groups and their relationships
+- `recycle_bin.json`: Stores deleted devices for potential recovery
 
-The actual device data is stored in the `config/devices` directory and shared across workspaces. Each workspace contains references to devices rather than duplicating device data.
+### Directories
 
-## Workspace File Format
+- `devices/`: Individual device folders, each containing `device.json` and any associated files
+- `settings/`: UI preferences like window layouts (`window_layout.ini`)
+- Plugin directories: Each plugin can store workspace-specific data (e.g., `command_manager/`, `configmate/`)
 
-### workspace.json
+## Creating Workspaces
 
-```json
-{
-  "name": "production",
-  "description": "Production network devices",
-  "created": "2023-11-14 10:00:00",
-  "last_saved": "2023-11-14 15:30:45",
-  "devices": [
-    "920a4f34-c1bc-4504-9283-e20738a88203",
-    "b5c12e8f-945a-4f2a-9b27-f12d89a24c67"
-  ],
-  "groups": [
-    "All Devices",
-    "Core Routers",
-    "Edge Switches"
-  ],
-  "enabled_plugins": [
-    "sample",
-    "network_scanner",
-    "device_backup"
-  ]
-}
-```
+### Using the UI
 
-## Workspace Operations
+1. Go to **File → Workspaces → Create Workspace**
+2. Enter a name and description
+3. Click **Create**
 
-### Creating a Workspace
-
-To create a new workspace:
-
-1. Go to "File" → "Workspaces" → "New Workspace"
-2. Enter a name and optional description
-3. Click "Create"
-
-A new workspace will be created with default settings and an empty device list. The UI layout of your current workspace will be copied to the new workspace as a starting point.
-
-### Switching Workspaces
-
-To switch to a different workspace:
-
-1. Go to "File" → "Workspaces" → "Open Workspace"
-2. Select a workspace from the list
-3. Click "Open"
-
-When switching workspaces, the UI layout will automatically change to match the saved layout for that workspace.
-
-**Important**: When switching workspaces, all plugins are unloaded and reloaded according to the new workspace's configuration. This ensures complete isolation between workspace environments.
-
-### Saving Workspace State
+### Programmatically
 
 ```python
-device_manager.save_workspace()
+# Create a new workspace
+device_manager.create_workspace("production", "Production environment")
+
+# Switch to the workspace
+device_manager.load_workspace("production")
 ```
 
-### Listing Available Workspaces
+## Switching Workspaces
+
+### Using the UI
+
+1. Go to **File → Workspaces → Switch Workspace**
+2. Select the desired workspace from the list
+3. Click **Switch**
+
+### Programmatically
 
 ```python
+# List available workspaces
 workspaces = device_manager.list_workspaces()
-for workspace in workspaces:
-    print(f"{workspace['name']} - {workspace.get('description', '')}")
+
+# Switch to a workspace
+success = device_manager.load_workspace("production")
 ```
 
-### Deleting a Workspace
+## Workspace Management
+
+### Backing Up Workspaces
+
+Workspaces can be backed up by copying their entire directory:
+
+```bash
+# Backup a workspace
+cp -r workspaces/production workspaces/production-backup
+
+# Or backup all workspaces
+cp -r workspaces/ workspaces-backup/
+```
+
+### Deleting Workspaces
 
 ```python
-workspace_name = "test"
-device_manager.delete_workspace(workspace_name)
+# Delete a workspace (moves to recycle bin first)
+device_manager.delete_workspace("old-workspace")
 ```
 
-## Default Workspace
+### Importing/Exporting
 
-The "default" workspace is created automatically when the application starts for the first time. This workspace cannot be deleted.
+Workspaces can be shared by copying their directories between NetWORKS installations.
+
+## Plugin Integration
+
+Plugins can store workspace-specific data in their own subdirectories within each workspace:
+
+```
+workspaces/production/
+├── command_manager/
+│   ├── credentials/
+│   └── command_sets.json
+├── configmate/
+│   └── templates/
+└── my_plugin/
+    └── plugin_data.json
+```
 
 ## Best Practices
 
-1. **Use descriptive names**: Choose workspace names that clearly indicate their purpose.
-2. **Save often**: Call `save_workspace()` after making significant changes.
-3. **Create workspaces for different environments**: For example, create separate workspaces for development, testing, and production environments.
-4. **Document workspaces**: Use the description field to document the purpose and contents of each workspace.
-5. **Share workspaces**: Copy workspace directories between installations to share configurations.
-6. **Customize layouts per workspace**: Arrange UI elements differently based on the workspace's purpose.
-7. **Plugin Configuration**: Configure different plugins for different workspaces based on your needs (e.g., monitoring plugins for production, testing plugins for development).
-8. **Resource Management**: Be aware that switching workspaces unloads all plugins, which helps prevent memory leaks but may require some initialization time.
+1. **Naming**: Use descriptive names that reflect the environment (e.g., "production", "staging", "lab")
+2. **Organization**: Keep related devices in the same workspace
+3. **Backups**: Regularly backup important workspaces
+4. **Plugin Data**: Be aware that switching workspaces changes plugin data context
+5. **Templates**: Store environment-specific templates in the appropriate workspace
 
-## Plugin Development Considerations
+## Migration
 
-When developing plugins for NetWORKS:
+When upgrading NetWORKS, workspace data is automatically migrated to maintain compatibility. The workspace structure is designed to be forward-compatible with future versions.
 
-1. **Implement proper cleanup**: Always implement the `cleanup()` method to prevent memory leaks
-2. **Use workspace-specific data**: Store plugin data in workspace-specific directories
-3. **Handle initialization gracefully**: Be prepared for plugins to be loaded/unloaded frequently
-4. **Test workspace transitions**: Verify your plugin works correctly when switching between workspaces
+## Troubleshooting
 
-See [Plugin Workspace Integration](plugins/workspace_integration.md) for detailed information on developing workspace-aware plugins. 
+### Workspace Won't Load
+
+1. Check that the workspace directory exists in `workspaces/`
+2. Verify `workspace.json` is valid JSON
+3. Check the NetWORKS log files for specific errors
+
+### Missing Devices
+
+1. Ensure the workspace's `devices/` directory contains device folders
+2. Check that each device folder has a valid `device.json` file
+3. Verify workspace permissions
+
+### Plugin Data Missing
+
+1. Confirm the plugin is enabled for the workspace (check `workspace.json`)
+2. Verify plugin-specific directories exist in the workspace
+3. Check plugin logs for initialization errors 

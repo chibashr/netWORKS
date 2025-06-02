@@ -1,0 +1,19 @@
+{
+  "id": "b02d3583-ea72-4786-9fa6-a57d108afd31",
+  "alias": "DESKTOP-4JF8NTJ.chibashr.local",
+  "hostname": "DESKTOP-4JF8NTJ.chibashr.local",
+  "ip_address": "10.1.9.81",
+  "mac_address": "",
+  "status": "unknown",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:36",
+  "sample": "Sample Value",
+  "associated_files": {}
+}

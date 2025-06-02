@@ -1,0 +1,24 @@
+{
+  "id": "19ae3cf3-b7f3-4428-bfe5-5085f11b0d34",
+  "alias": "Device at 10.1.11.47",
+  "hostname": "",
+  "ip_address": "10.1.11.47",
+  "mac_address": "",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "ping"
+  ],
+  "scan_source": "ping",
+  "type": "scanned",
+  "name": "New Scanned Device",
+  "created": "2025-05-16 09:18:46",
+  "os": "Unknown",
+  "vendor": "Google",
+  "last_scan_time": null,
+  "scan_type": null,
+  "ports": [],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

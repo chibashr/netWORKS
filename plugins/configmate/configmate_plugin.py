@@ -126,6 +126,9 @@ class ConfigMatePlugin(PluginInterface):
         self._templates_path = None
         self._data_path = None
         
+        # Track device selection
+        self._selected_devices = []
+        
         # Core components
         self.template_manager = None
         self.config_generator = None
@@ -248,8 +251,18 @@ class ConfigMatePlugin(PluginInterface):
     def _setup_data_paths(self):
         """Set up data storage paths for the plugin"""
         try:
-            # Get workspace path
-            workspace_path = Path(self.config.get('workspace_path', 'workspaces/default'))
+            # Get workspace path from device manager if available
+            workspace_path = None
+            if hasattr(self, 'device_manager') and self.device_manager:
+                workspace_path = self.device_manager.get_workspace_dir()
+                logger.debug(f"ConfigMate: Got workspace path from device manager: {workspace_path}")
+            
+            # Fallback to config setting if device manager not available or returns None
+            if not workspace_path:
+                workspace_path = Path(self.config.get('workspace_path', 'workspaces/default'))
+                logger.debug(f"ConfigMate: Using fallback workspace path: {workspace_path}")
+            else:
+                workspace_path = Path(workspace_path)
             
             # Create plugin data directories
             self._data_path = workspace_path / 'configmate'
@@ -378,6 +391,13 @@ class ConfigMatePlugin(PluginInterface):
                 "device_changed"
             )
             
+            # Connect to selection changed signal - this is the proper way to track device selection
+            self._connect_to_signal(
+                self.device_manager.selection_changed,
+                self.on_selection_changed,
+                "selection_changed"
+            )
+            
             logger.debug("ConfigMate signals connected")
             
         except Exception as e:
@@ -483,7 +503,8 @@ class ConfigMatePlugin(PluginInterface):
     
     def get_device_panels(self):
         """Return panels for device details"""
-        return []  # Not needed for this plugin
+        # All functionality moved to Template Manager dialog
+        return []
     
     def get_dock_widgets(self):
         """Return dock widgets for main window"""
@@ -542,13 +563,40 @@ class ConfigMatePlugin(PluginInterface):
         if self.config_preview_widget:
             self.config_preview_widget.on_device_changed(device)
     
+    def on_selection_changed(self, devices):
+        """Handle device selection changed event"""
+        self._selected_devices = devices if devices else []
+        logger.debug(f"ConfigMate: Device selection changed - {len(self._selected_devices)} devices selected")
+        
+        # Update config preview widget with new selection
+        if self.config_preview_widget:
+            if hasattr(self.config_preview_widget, 'set_selected_devices'):
+                self.config_preview_widget.set_selected_devices(self._selected_devices)
+            elif hasattr(self.config_preview_widget, 'refresh_device_list'):
+                self.config_preview_widget.refresh_device_list()
+    
     # Action handlers
     
     @safe_action_wrapper
     def open_template_manager(self):
         """Open the template management dialog"""
+        # Ensure we have the latest device selection
+        self._update_selection_if_needed()
+        
         dialog = TemplateEditorDialog(self, template_name=None, parent=self.main_window)
         dialog.exec()
+    
+    def _update_selection_if_needed(self):
+        """Update selection from device manager if needed"""
+        try:
+            # This ensures we have the latest selection in case the signal wasn't received
+            if hasattr(self.device_manager, 'get_selected_devices'):
+                current_selection = self.device_manager.get_selected_devices()
+                if current_selection is not None:
+                    self._selected_devices = current_selection
+                    logger.debug(f"ConfigMate: Updated selection to {len(self._selected_devices)} devices")
+        except Exception as e:
+            logger.debug(f"ConfigMate: Could not update selection directly: {e}")
     
     @safe_action_wrapper
     def test_device_info(self):
@@ -741,97 +789,26 @@ class ConfigMatePlugin(PluginInterface):
     # Helper methods
     
     def _get_selected_devices(self):
-        """Get currently selected devices from the device table"""
+        """Get currently selected devices from stored selection"""
         try:
-            # Try different ways to access the device table (same as context menu registration)
-            device_table = None
+            # Return stored selection if available
+            if self._selected_devices:
+                logger.debug(f"ConfigMate: Returning {len(self._selected_devices)} selected devices")
+                return self._selected_devices
             
-            # Try common method names
-            if hasattr(self.main_window, 'get_device_table'):
-                device_table = self.main_window.get_device_table()
-            elif hasattr(self.main_window, 'device_table'):
-                device_table = self.main_window.device_table
-            elif hasattr(self.main_window, 'deviceTable'):
-                device_table = self.main_window.deviceTable
-            elif hasattr(self.main_window, 'central_widget'):
-                # Try to find device table in central widget
-                central = self.main_window.central_widget
-                if hasattr(central, 'device_table'):
-                    device_table = central.device_table
-                elif hasattr(central, 'get_device_table'):
-                    device_table = central.get_device_table()
+            # Fallback: if no selection, try to get all devices (limited for safety)
+            if hasattr(self.device_manager, 'get_all_devices'):
+                all_devices = self.device_manager.get_all_devices()
+                if all_devices:
+                    logger.info(f"ConfigMate: No selection, using first 3 of {len(all_devices)} devices for testing")
+                    return all_devices[:3]  # Limit for safety
             
-            if device_table:
-                # Try different methods to get selected devices
-                if hasattr(device_table, 'get_selected_devices'):
-                    return device_table.get_selected_devices()
-                elif hasattr(device_table, 'selectedDevices'):
-                    return device_table.selectedDevices()
-                elif hasattr(device_table, 'selected_devices'):
-                    return device_table.selected_devices
-                elif hasattr(device_table, 'selection'):
-                    # Try to get selection and map to devices
-                    selection = device_table.selection()
-                    if hasattr(selection, 'selectedRows'):
-                        # Get devices from selected rows
-                        selected_rows = selection.selectedRows()
-                        devices = []
-                        for row in selected_rows:
-                            # Try to get device from row
-                            device = self._get_device_from_row(device_table, row.row())
-                            if device:
-                                devices.append(device)
-                        return devices
-                else:
-                    logger.warning("Device table found but no method to get selected devices")
-                    # Fallback: return all devices if available
-                    if hasattr(self.device_manager, 'get_all_devices'):
-                        all_devices = self.device_manager.get_all_devices()
-                        logger.info(f"No selection method found, using all {len(all_devices)} devices")
-                        return all_devices[:5]  # Limit to first 5 for safety
-            else:
-                logger.warning("Device table not found, using device manager fallback")
-                # Fallback to device manager
-                if hasattr(self.device_manager, 'get_all_devices'):
-                    all_devices = self.device_manager.get_all_devices()
-                    logger.info(f"Using all {len(all_devices)} devices from device manager")
-                    return all_devices[:5]  # Limit to first 5 for safety
-            
+            logger.warning("ConfigMate: No devices selected and no devices available")
             return []
             
         except Exception as e:
-            logger.error(f"Failed to get selected devices: {e}")
-            # Try fallback to device manager
-            try:
-                if hasattr(self.device_manager, 'get_all_devices'):
-                    all_devices = self.device_manager.get_all_devices()
-                    logger.info(f"Using fallback: all {len(all_devices)} devices from device manager")
-                    return all_devices[:3]  # Limit to first 3 for safety
-            except Exception as fallback_error:
-                logger.error(f"Fallback also failed: {fallback_error}")
+            logger.error(f"ConfigMate: Failed to get selected devices: {e}")
             return []
-    
-    def _get_device_from_row(self, device_table, row_index):
-        """Get device object from table row index"""
-        try:
-            # Try different ways to get device from row
-            if hasattr(device_table, 'get_device_at_row'):
-                return device_table.get_device_at_row(row_index)
-            elif hasattr(device_table, 'deviceAtRow'):
-                return device_table.deviceAtRow(row_index)
-            elif hasattr(device_table, 'item'):
-                # Try to get item and extract device data
-                item = device_table.item(row_index, 0)  # First column
-                if item and hasattr(item, 'data'):
-                    device_data = item.data(Qt.ItemDataRole.UserRole)
-                    if device_data:
-                        return device_data
-            
-            return None
-            
-        except Exception as e:
-            logger.debug(f"Error getting device from row {row_index}: {e}")
-            return None
     
     def _get_device_config(self, device):
         """Get device configuration using command manager plugin

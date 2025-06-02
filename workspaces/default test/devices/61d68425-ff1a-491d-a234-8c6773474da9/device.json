@@ -1,0 +1,29 @@
+{
+  "id": "61d68425-ff1a-491d-a234-8c6773474da9",
+  "alias": "Device at 10.1.9.147",
+  "hostname": "",
+  "ip_address": "10.1.9.147",
+  "mac_address": "",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "type": "scanned",
+  "last_scan_time": "2025-05-24 22:10:28",
+  "scan_source": "nmap",
+  "scan_type": "Service Detection",
+  "status_reason": "arp-response",
+  "last_scan": "1748142628.891461",
+  "name": "New Generic Device",
+  "created": "2025-05-24 22:06:19",
+  "open_ports": [
+    80
+  ],
+  "services": [
+    "tcpwrapped (80)"
+  ],
+  "sample": "Sample Value",
+  "associated_files": {}
+}

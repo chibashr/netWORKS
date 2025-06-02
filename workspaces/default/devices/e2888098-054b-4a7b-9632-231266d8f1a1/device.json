@@ -1,0 +1,46 @@
+{
+  "id": "e2888098-054b-4a7b-9632-231266d8f1a1",
+  "alias": "Apple Device",
+  "hostname": "",
+  "ip_address": "10.1.9.139",
+  "mac_address": "A4:83:E7:34:DA:86",
+  "status": "up",
+  "notes": "",
+  "tags": [
+    "scanned",
+    "nmap"
+  ],
+  "type": "scanned",
+  "ipv4_address": "10.1.9.139",
+  "last_scan_time": "2025-05-27 10:31:53",
+  "mac_vendor": "Apple",
+  "nmap_raw_data": {
+    "addresses": {
+      "ipv4": "10.1.9.139",
+      "mac": "A4:83:E7:34:DA:86"
+    },
+    "hostnames": [
+      {
+        "name": "",
+        "type": ""
+      }
+    ],
+    "status": {
+      "reason": "arp-response",
+      "state": "up"
+    },
+    "vendor": {
+      "A4:83:E7:34:DA:86": "Apple"
+    }
+  },
+  "scan_source": "nmap",
+  "scan_type": "quick",
+  "status_reason": "arp-response",
+  "vendor_info": {
+    "A4:83:E7:34:DA:86": "Apple"
+  },
+  "last_scan": "1748359913.557346",
+  "name": "New Generic Device",
+  "created": "2025-05-27 10:31:53",
+  "associated_files": {}
+}

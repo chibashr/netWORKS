@@ -204,7 +204,7 @@ class Config(QObject):
         """Load YAML configuration from a file"""
         try:
             if os.path.exists(path):
-                with open(path, 'r') as f:
+                with open(path, 'r', encoding='utf-8') as f:
                     return yaml.safe_load(f) or {}
         except Exception as e:
             self.logger.error(f"Error loading configuration from {path}: {e}")
