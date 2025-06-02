@@ -340,17 +340,11 @@ class ConfigMatePlugin(PluginInterface):
             self.compare_action.setToolTip("Compare device configurations")
             self.compare_action.triggered.connect(self.compare_configurations)
             
-            # Test Device Info Action (for debugging)
-            self.test_device_info_action = QAction("Test Device Info", self)
-            self.test_device_info_action.setToolTip("Show device information for debugging")
-            self.test_device_info_action.triggered.connect(self.test_device_info)
-            
             # Store actions for toolbar
             self.toolbar_actions = [
                 self.template_action,
                 self.quick_generate_action,
-                self.compare_action,
-                self.test_device_info_action
+                self.compare_action
             ]
             
             logger.debug("ConfigMate actions created")
@@ -599,47 +593,6 @@ class ConfigMatePlugin(PluginInterface):
             logger.debug(f"ConfigMate: Could not update selection directly: {e}")
     
     @safe_action_wrapper
-    def test_device_info(self):
-        """Test device information extraction and display"""
-        selected_devices = self._get_selected_devices()
-        if not selected_devices:
-            QMessageBox.information(
-                self.main_window,
-                "No Selection",
-                "Please select one or more devices to test device information extraction."
-            )
-            return
-        
-        # Show device information for all selected devices
-        info_text = []
-        for i, device in enumerate(selected_devices):
-            info_text.append(f"=== Device {i+1} ===")
-            info_text.append(self.get_device_info_summary(device))
-            info_text.append("")
-            
-            # Test template variable extraction
-            if self.template_manager and self.config_generator:
-                templates = self.template_manager.get_template_list()
-                if templates:
-                    template_name = templates[0]
-                    info_text.append(f"--- Template Variables for '{template_name}' ---")
-                    variables = self.config_generator.get_template_variables_for_device(device, template_name)
-                    if variables:
-                        for var_name, var_value in variables.items():
-                            info_text.append(f"  {var_name}: {var_value}")
-                    else:
-                        info_text.append("  No variables extracted")
-                    info_text.append("")
-        
-        # Show in dialog
-        dialog = QMessageBox(self.main_window)
-        dialog.setWindowTitle("Device Information Test")
-        dialog.setText("Device Information and Variable Extraction Test")
-        dialog.setDetailedText("\n".join(info_text))
-        dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
-        dialog.exec()
-    
-    @safe_action_wrapper
     def quick_generate_config(self):
         """Quick generate configuration for selected devices"""
         selected_devices = self._get_selected_devices()
@@ -843,15 +796,22 @@ class ConfigMatePlugin(PluginInterface):
                 return None
             
             # Try to get cached show run output first
-            # Check different possible command IDs
+            # Check different possible command IDs with more comprehensive patterns
             command_ids_to_try = [
                 "show running-config",
+                "show run",
                 "show_run", 
                 "Show Running Config",
-                "show run"
+                "Show Running-Config",
+                "show running",
+                "sh run",
+                "sh running-config",
+                "running-config",
+                "running_config"
             ]
             
             if hasattr(command_manager_instance, 'get_command_outputs'):
+                # Try exact command ID matches first
                 for command_id in command_ids_to_try:
                     try:
                         outputs = command_manager_instance.get_command_outputs(device.device_id, command_id)
@@ -862,34 +822,68 @@ class ConfigMatePlugin(PluginInterface):
                                 latest_timestamp = max(timestamps)
                                 output_data = outputs[latest_timestamp]
                                 if isinstance(output_data, dict) and 'output' in output_data:
-                                    logger.info(f"Found cached command output for {command_id}")
-                                    return output_data['output']
-                                elif isinstance(output_data, str):
-                                    # Sometimes the output might be stored directly as string
-                                    logger.info(f"Found cached command output for {command_id}")
+                                    config_text = output_data['output']
+                                    if config_text and len(config_text.strip()) > 50:  # Ensure it's substantial
+                                        logger.info(f"Found cached command output for '{command_id}' ({len(config_text)} chars)")
+                                        return config_text
+                                elif isinstance(output_data, str) and len(output_data.strip()) > 50:
+                                    logger.info(f"Found cached command output for '{command_id}' ({len(output_data)} chars)")
                                     return output_data
                     except Exception as e:
-                        logger.debug(f"Error checking command ID {command_id}: {e}")
+                        logger.debug(f"Error checking command ID '{command_id}': {e}")
                         continue
                 
-                # Also try getting all outputs for the device to see what's available
+                # Try fuzzy matching on all available outputs
                 try:
                     all_outputs = command_manager_instance.get_command_outputs(device.device_id)
                     if all_outputs:
-                        logger.info(f"Available command outputs for device {device.device_id}: {list(all_outputs.keys())}")
-                        # Look for any command that might contain "show" and "run" or "config"
+                        logger.debug(f"Available command outputs for device {device.device_id}: {list(all_outputs.keys())}")
+                        
+                        # Score commands by how likely they are to contain running config
+                        candidates = []
                         for cmd_id, cmd_outputs in all_outputs.items():
-                            if any(keyword in cmd_id.lower() for keyword in ['show', 'run', 'config']):
-                                if cmd_outputs and isinstance(cmd_outputs, dict):
+                            if cmd_outputs and isinstance(cmd_outputs, dict):
+                                cmd_lower = cmd_id.lower()
+                                score = 0
+                                
+                                # Higher scores for better matches
+                                if 'running' in cmd_lower and 'config' in cmd_lower:
+                                    score += 100
+                                elif 'running' in cmd_lower:
+                                    score += 50
+                                elif 'config' in cmd_lower:
+                                    score += 30
+                                elif 'show' in cmd_lower and ('run' in cmd_lower or 'conf' in cmd_lower):
+                                    score += 40
+                                elif any(keyword in cmd_lower for keyword in ['show', 'run', 'conf']):
+                                    score += 10
+                                
+                                if score > 0:
                                     timestamps = list(cmd_outputs.keys())
                                     if timestamps:
                                         latest_timestamp = max(timestamps)
                                         output_data = cmd_outputs[latest_timestamp]
+                                        
+                                        # Get the actual text content
+                                        config_text = ""
                                         if isinstance(output_data, dict) and 'output' in output_data:
-                                            logger.info(f"Using output from similar command: {cmd_id}")
-                                            return output_data['output']
+                                            config_text = output_data['output']
+                                        elif isinstance(output_data, str):
+                                            config_text = output_data
+                                        
+                                        # Only consider substantial configs
+                                        if config_text and len(config_text.strip()) > 50:
+                                            candidates.append((score, cmd_id, config_text, latest_timestamp))
+                        
+                        # Sort by score (highest first) and use the best match
+                        if candidates:
+                            candidates.sort(reverse=True, key=lambda x: x[0])
+                            best_score, best_cmd, best_config, best_timestamp = candidates[0]
+                            logger.info(f"Using best match command '{best_cmd}' (score: {best_score}, {len(best_config)} chars, timestamp: {best_timestamp})")
+                            return best_config
+                            
                 except Exception as e:
-                    logger.debug(f"Error getting all outputs: {e}")
+                    logger.debug(f"Error in fuzzy matching: {e}")
             
             # If no cached output, try to run command
             if hasattr(command_manager_instance, 'run_command'):
