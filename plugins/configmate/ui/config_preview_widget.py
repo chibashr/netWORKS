@@ -796,7 +796,7 @@ class ConfigPreviewWidget(QWidget):
                 try:
                     self.preview_device_combo.currentTextChanged.disconnect()
                 except:
-                    pass
+                    pass  # Signal wasn't connected, that's fine
                 self.preview_device_combo.currentTextChanged.connect(self._on_preview_device_changed)
                 
                 if self.auto_preview_check.isChecked():

@@ -734,7 +734,7 @@ class ConfigMatePlugin(PluginInterface):
         
         device = devices[0]  # Use first device
         
-        # Get device configuration from command manager
+        # Get device configuration from cached command outputs
         config_text = self._get_device_config(device)
         if not config_text:
             QMessageBox.warning(
@@ -775,35 +775,26 @@ class ConfigMatePlugin(PluginInterface):
             return []
     
     def _get_device_config(self, device):
-        """Get device configuration using command manager plugin
+        """Get device configuration from cached command outputs
         
-        This method retrieves device configuration by:
-        1. First checking for cached command outputs (show running-config, etc.)
-        2. If no cached output is found, attempting to run the command directly
-        
-        Fixed: Access plugin manager through self.app.plugin_manager instead of 
-               non-existent self.plugin_manager attribute.
+        This method retrieves device configuration by looking directly at device data
+        for cached command outputs (show running-config, etc.)
         """
         try:
-            # Get command manager plugin through the app's plugin manager
-            if not hasattr(self, 'app') or not self.app:
-                logger.error("App reference not available")
+            # Check if device has command outputs stored
+            if not hasattr(device, 'command_outputs') and not hasattr(device, 'get_command_outputs'):
+                logger.debug(f"Device {device.device_id} has no command outputs available")
                 return None
-                
-            if not hasattr(self.app, 'plugin_manager') or not self.app.plugin_manager:
-                logger.error("Plugin manager not available")
-                return None
-                
-            command_manager = self.app.plugin_manager.get_plugin("command_manager")
-            if not command_manager:
-                logger.error("Command manager plugin not found")
-                return None
-                
-            # Get the actual plugin instance
-            if hasattr(command_manager, 'instance') and command_manager.instance:
-                command_manager_instance = command_manager.instance
-            else:
-                logger.error("Command manager plugin instance not available")
+            
+            # Get command outputs from device
+            command_outputs = None
+            if hasattr(device, 'command_outputs') and device.command_outputs:
+                command_outputs = device.command_outputs
+            elif hasattr(device, 'get_command_outputs'):
+                command_outputs = device.get_command_outputs()
+            
+            if not command_outputs:
+                logger.debug(f"No command outputs found for device {device.device_id}")
                 return None
             
             # Try to get cached show run output first
@@ -821,91 +812,72 @@ class ConfigMatePlugin(PluginInterface):
                 "running_config"
             ]
             
-            if hasattr(command_manager_instance, 'get_command_outputs'):
-                # Try exact command ID matches first
-                for command_id in command_ids_to_try:
-                    try:
-                        outputs = command_manager_instance.get_command_outputs(device.device_id, command_id)
-                        if outputs and isinstance(outputs, dict):
-                            # Get the most recent output (latest timestamp)
-                            timestamps = list(outputs.keys())
-                            if timestamps:
-                                latest_timestamp = max(timestamps)
-                                output_data = outputs[latest_timestamp]
-                                if isinstance(output_data, dict) and 'output' in output_data:
-                                    config_text = output_data['output']
-                                    if config_text and len(config_text.strip()) > 50:  # Ensure it's substantial
-                                        logger.info(f"Found cached command output for '{command_id}' ({len(config_text)} chars)")
-                                        return config_text
-                                elif isinstance(output_data, str) and len(output_data.strip()) > 50:
-                                    logger.info(f"Found cached command output for '{command_id}' ({len(output_data)} chars)")
-                                    return output_data
-                    except Exception as e:
-                        logger.debug(f"Error checking command ID '{command_id}': {e}")
-                        continue
-                
-                # Try fuzzy matching on all available outputs
-                try:
-                    all_outputs = command_manager_instance.get_command_outputs(device.device_id)
-                    if all_outputs:
-                        logger.debug(f"Available command outputs for device {device.device_id}: {list(all_outputs.keys())}")
-                        
-                        # Score commands by how likely they are to contain running config
-                        candidates = []
-                        for cmd_id, cmd_outputs in all_outputs.items():
-                            if cmd_outputs and isinstance(cmd_outputs, dict):
-                                cmd_lower = cmd_id.lower()
-                                score = 0
-                                
-                                # Higher scores for better matches
-                                if 'running' in cmd_lower and 'config' in cmd_lower:
-                                    score += 100
-                                elif 'running' in cmd_lower:
-                                    score += 50
-                                elif 'config' in cmd_lower:
-                                    score += 30
-                                elif 'show' in cmd_lower and ('run' in cmd_lower or 'conf' in cmd_lower):
-                                    score += 40
-                                elif any(keyword in cmd_lower for keyword in ['show', 'run', 'conf']):
-                                    score += 10
-                                
-                                if score > 0:
-                                    timestamps = list(cmd_outputs.keys())
-                                    if timestamps:
-                                        latest_timestamp = max(timestamps)
-                                        output_data = cmd_outputs[latest_timestamp]
-                                        
-                                        # Get the actual text content
-                                        config_text = ""
-                                        if isinstance(output_data, dict) and 'output' in output_data:
-                                            config_text = output_data['output']
-                                        elif isinstance(output_data, str):
-                                            config_text = output_data
-                                        
-                                        # Only consider substantial configs
-                                        if config_text and len(config_text.strip()) > 50:
-                                            candidates.append((score, cmd_id, config_text, latest_timestamp))
-                        
-                        # Sort by score (highest first) and use the best match
-                        if candidates:
-                            candidates.sort(reverse=True, key=lambda x: x[0])
-                            best_score, best_cmd, best_config, best_timestamp = candidates[0]
-                            logger.info(f"Using best match command '{best_cmd}' (score: {best_score}, {len(best_config)} chars, timestamp: {best_timestamp})")
-                            return best_config
+            # Try exact command ID matches first
+            for command_id in command_ids_to_try:
+                if command_id in command_outputs:
+                    cmd_outputs = command_outputs[command_id]
+                    if cmd_outputs and isinstance(cmd_outputs, dict):
+                        # Get the most recent output (latest timestamp)
+                        timestamps = list(cmd_outputs.keys())
+                        if timestamps:
+                            latest_timestamp = max(timestamps)
+                            output_data = cmd_outputs[latest_timestamp]
+                            if isinstance(output_data, dict) and 'output' in output_data:
+                                config_text = output_data['output']
+                                if config_text and len(config_text.strip()) > 50:  # Ensure it's substantial
+                                    logger.info(f"Found cached command output for '{command_id}' ({len(config_text)} chars)")
+                                    return config_text
+                            elif isinstance(output_data, str) and len(output_data.strip()) > 50:
+                                logger.info(f"Found cached command output for '{command_id}' ({len(output_data)} chars)")
+                                return output_data
+            
+            # Try fuzzy matching on all available outputs
+            logger.debug(f"Available command outputs for device {device.device_id}: {list(command_outputs.keys())}")
+            
+            # Score commands by how likely they are to contain running config
+            candidates = []
+            for cmd_id, cmd_outputs in command_outputs.items():
+                if cmd_outputs and isinstance(cmd_outputs, dict):
+                    cmd_lower = cmd_id.lower()
+                    score = 0
+                    
+                    # Higher scores for better matches
+                    if 'running' in cmd_lower and 'config' in cmd_lower:
+                        score += 100
+                    elif 'running' in cmd_lower:
+                        score += 50
+                    elif 'config' in cmd_lower:
+                        score += 30
+                    elif 'show' in cmd_lower and ('run' in cmd_lower or 'conf' in cmd_lower):
+                        score += 40
+                    elif any(keyword in cmd_lower for keyword in ['show', 'run', 'conf']):
+                        score += 10
+                    
+                    if score > 0:
+                        timestamps = list(cmd_outputs.keys())
+                        if timestamps:
+                            latest_timestamp = max(timestamps)
+                            output_data = cmd_outputs[latest_timestamp]
                             
-                except Exception as e:
-                    logger.debug(f"Error in fuzzy matching: {e}")
+                            # Get the actual text content
+                            config_text = ""
+                            if isinstance(output_data, dict) and 'output' in output_data:
+                                config_text = output_data['output']
+                            elif isinstance(output_data, str):
+                                config_text = output_data
+                            
+                            # Only consider substantial configs
+                            if config_text and len(config_text.strip()) > 50:
+                                candidates.append((score, cmd_id, config_text, latest_timestamp))
             
-            # If no cached output, try to run command
-            if hasattr(command_manager_instance, 'run_command'):
-                logger.info("No cached configuration found, attempting to run show running-config")
-                result = command_manager_instance.run_command(device, "show running-config")
-                if result and result.get('success'):
-                    return result.get('output', '')
-                else:
-                    logger.warning(f"Failed to run show running-config: {result}")
+            # Sort by score (highest first) and use the best match
+            if candidates:
+                candidates.sort(reverse=True, key=lambda x: x[0])
+                best_score, best_cmd, best_config, best_timestamp = candidates[0]
+                logger.info(f"Using best match command '{best_cmd}' (score: {best_score}, {len(best_config)} chars, timestamp: {best_timestamp})")
+                return best_config
             
-            logger.warning("No method available to retrieve device configuration")
+            logger.debug(f"No suitable configuration commands found for device {device.device_id}")
             return None
             
         except Exception as e:

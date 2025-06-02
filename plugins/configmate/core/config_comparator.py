@@ -444,10 +444,48 @@ class ConfigComparator:
         logger.debug("Reset ignore patterns to defaults")
     
     def _get_device_config(self, device: Any, command: str) -> str:
-        """Get configuration from device via command manager"""
+        """Get configuration from device's cached command outputs"""
         try:
-            # This would interface with the command manager plugin
-            # For now, return empty string as placeholder
+            # Check if device has command outputs stored
+            command_outputs = None
+            if hasattr(device, 'command_outputs') and device.command_outputs:
+                command_outputs = device.command_outputs
+            elif hasattr(device, 'get_command_outputs'):
+                command_outputs = device.get_command_outputs()
+            
+            if not command_outputs:
+                logger.debug(f"No command outputs found for device {getattr(device, 'device_id', 'Unknown')}")
+                return ""
+            
+            # Try exact command match first
+            if command in command_outputs:
+                cmd_outputs = command_outputs[command]
+                if cmd_outputs and isinstance(cmd_outputs, dict):
+                    # Get the most recent output
+                    timestamps = list(cmd_outputs.keys())
+                    if timestamps:
+                        latest_timestamp = max(timestamps)
+                        output_data = cmd_outputs[latest_timestamp]
+                        if isinstance(output_data, dict) and 'output' in output_data:
+                            return output_data['output']
+                        elif isinstance(output_data, str):
+                            return output_data
+            
+            # Try fuzzy matching for similar commands
+            command_lower = command.lower()
+            for cmd_id, cmd_outputs in command_outputs.items():
+                if cmd_id.lower() == command_lower or command_lower in cmd_id.lower():
+                    if cmd_outputs and isinstance(cmd_outputs, dict):
+                        timestamps = list(cmd_outputs.keys())
+                        if timestamps:
+                            latest_timestamp = max(timestamps)
+                            output_data = cmd_outputs[latest_timestamp]
+                            if isinstance(output_data, dict) and 'output' in output_data:
+                                return output_data['output']
+                            elif isinstance(output_data, str):
+                                return output_data
+            
+            logger.debug(f"No output found for command '{command}' on device {getattr(device, 'device_id', 'Unknown')}")
             return ""
             
         except Exception as e:
@@ -455,15 +493,9 @@ class ConfigComparator:
             return ""
     
     def _get_command_output(self, device: Any, command: str) -> str:
-        """Get command output from device via command manager"""
-        try:
-            # This would interface with the command manager plugin
-            # For now, return empty string as placeholder
-            return ""
-            
-        except Exception as e:
-            logger.error(f"Error getting command output: {e}")
-            return ""
+        """Get command output from device's cached command outputs"""
+        # Use the same logic as _get_device_config since they're essentially the same
+        return self._get_device_config(device, command)
     
     def _preprocess_config(self, config: str, ignore_timestamps: bool = True, 
                           ignore_comments: bool = True) -> str:

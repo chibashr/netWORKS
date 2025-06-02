@@ -86,11 +86,11 @@ class ComparisonWorker(QObject):
             # Get configurations for all devices
             configs = {}
             for i, device in enumerate(self.devices):
-                device_id = device.get_property('id')
+                device_id = device.device_id  # Use device_id instead of get_property('id')
                 config = self.plugin._get_device_config(device)
                 configs[device_id] = {
                     'device': device,
-                    'config': config
+                    'config': config or "No configuration available"
                 }
                 progress = 10 + (i + 1) * 40 // len(self.devices)
                 self.progress_updated.emit(progress)
@@ -99,19 +99,20 @@ class ComparisonWorker(QObject):
             
             # Perform comparison
             if len(self.devices) == 2:
-                # Two-device comparison
+                # Two-device comparison using the correct method
                 device1, device2 = self.devices
-                config1 = configs[device1.get_property('id')]['config']
-                config2 = configs[device2.get_property('id')]['config']
-                
-                result = self.plugin.config_comparator.compare_configs(
-                    config1, config2, device1, device2
+                result = self.plugin.config_comparator.compare_devices(
+                    device1, device2, 
+                    command="show running-config",
+                    ignore_timestamps=True,
+                    ignore_comments=True,
+                    context_lines=3
                 )
             else:
-                # Multi-device comparison
-                result = self.plugin.config_comparator.compare_multiple_configs(
-                    [(device, configs[device.get_property('id')]['config']) 
-                     for device in self.devices]
+                # Multi-device comparison using the correct method
+                result = self.plugin.config_comparator.compare_multiple_devices(
+                    self.devices, 
+                    command="show running-config"
                 )
             
             self.progress_updated.emit(100)
@@ -210,6 +211,46 @@ class ConfigComparisonDialog(QDialog):
         """Create UI for two-device side-by-side comparison"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        
+        # Device and Command Selection
+        selection_group = QGroupBox("Device and Command Selection")
+        selection_layout = QGridLayout(selection_group)
+        
+        # Device 1 selection
+        self.device1_combo = QComboBox()
+        self.device1_combo.addItems([device.get_property('name', f'Device {i+1}') for i, device in enumerate(self.devices)])
+        self.device1_combo.setCurrentIndex(0)
+        selection_layout.addWidget(QLabel("Device 1:"), 0, 0)
+        selection_layout.addWidget(self.device1_combo, 0, 1)
+        
+        # Device 2 selection
+        self.device2_combo = QComboBox()
+        self.device2_combo.addItems([device.get_property('name', f'Device {i+1}') for i, device in enumerate(self.devices)])
+        if len(self.devices) > 1:
+            self.device2_combo.setCurrentIndex(1)
+        selection_layout.addWidget(QLabel("Device 2:"), 0, 2)
+        selection_layout.addWidget(self.device2_combo, 0, 3)
+        
+        # Command selection for Device 1
+        self.command1_combo = QComboBox()
+        self.command1_combo.setEditable(True)
+        self._populate_command_combo(self.command1_combo, 0 if self.devices else None)
+        selection_layout.addWidget(QLabel("Command 1:"), 1, 0)
+        selection_layout.addWidget(self.command1_combo, 1, 1)
+        
+        # Command selection for Device 2
+        self.command2_combo = QComboBox()
+        self.command2_combo.setEditable(True)
+        self._populate_command_combo(self.command2_combo, 1 if len(self.devices) > 1 else None)
+        selection_layout.addWidget(QLabel("Command 2:"), 1, 2)
+        selection_layout.addWidget(self.command2_combo, 1, 3)
+        
+        # Refresh button for selections
+        refresh_selection_btn = QPushButton("Update Comparison")
+        refresh_selection_btn.clicked.connect(self._update_comparison_from_selection)
+        selection_layout.addWidget(refresh_selection_btn, 2, 0, 1, 4)
+        
+        layout.addWidget(selection_group)
         
         # Comparison options
         options_group = QGroupBox("Comparison Options")
@@ -530,4 +571,170 @@ class ConfigComparisonDialog(QDialog):
         text_content = self.comparison_result.to_text()
         
         with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(text_content) 
+            f.write(text_content)
+
+    def _populate_command_combo(self, combo, device_index):
+        """Populate the command combo with available commands for a device"""
+        try:
+            # Default commands
+            default_commands = [
+                "show running-config",
+                "show startup-config", 
+                "show version",
+                "show interfaces",
+                "show ip route",
+                "show vlan",
+                "show mac address-table",
+                "show arp",
+                "show cdp neighbors",
+                "show inventory"
+            ]
+            
+            # Add default commands
+            combo.addItems(default_commands)
+            combo.setCurrentText("show running-config")  # Default selection
+            
+            # If device index is provided, get actual commands from device
+            if device_index is not None and device_index < len(self.devices):
+                device = self.devices[device_index]
+                available_commands = self._get_device_commands(device)
+                
+                if available_commands:
+                    # Add separator
+                    combo.addItem("--- Device Commands ---")
+                    # Add actual device commands
+                    for cmd in available_commands:
+                        if cmd not in default_commands:
+                            combo.addItem(cmd)
+                            
+        except Exception as e:
+            logger.error(f"Error populating command combo: {e}")
+    
+    def _get_device_commands(self, device):
+        """Get available commands for a device from cached outputs"""
+        try:
+            # Check if device has command outputs stored
+            if hasattr(device, 'command_outputs') and device.command_outputs:
+                return list(device.command_outputs.keys())
+            elif hasattr(device, 'get_command_outputs'):
+                outputs = device.get_command_outputs()
+                if outputs:
+                    return list(outputs.keys())
+            return []
+        except Exception as e:
+            logger.debug(f"Error getting device commands: {e}")
+            return []
+    
+    def _update_comparison_from_selection(self):
+        """Update comparison based on selected devices and commands"""
+        try:
+            # Get selected devices
+            device1_index = self.device1_combo.currentIndex()
+            device2_index = self.device2_combo.currentIndex()
+            
+            if device1_index >= len(self.devices) or device2_index >= len(self.devices):
+                QMessageBox.warning(self, "Selection Error", "Invalid device selection")
+                return
+            
+            device1 = self.devices[device1_index]
+            device2 = self.devices[device2_index]
+            
+            # Get selected commands
+            command1 = self.command1_combo.currentText().strip()
+            command2 = self.command2_combo.currentText().strip()
+            
+            if not command1 or not command2:
+                QMessageBox.warning(self, "Selection Error", "Please select commands for both devices")
+                return
+            
+            # Show progress
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setValue(0)
+            
+            # Get command outputs
+            config1 = self._get_device_command_output(device1, command1)
+            config2 = self._get_device_command_output(device2, command2)
+            
+            if not config1:
+                config1 = f"No output available for command: {command1}"
+            if not config2:
+                config2 = f"No output available for command: {command2}"
+            
+            self.progress_bar.setValue(50)
+            
+            # Perform comparison using show command comparison
+            if command1 == command2:
+                # Same command, use show command comparison
+                result = self.plugin.config_comparator.compare_show_commands(
+                    device1, device2, command1
+                )
+            else:
+                # Different commands, use template comparison
+                result = self.plugin.config_comparator.compare_templates(
+                    config1, config2,
+                    f"{device1.get_property('name', 'Device 1')} - {command1}",
+                    f"{device2.get_property('name', 'Device 2')} - {command2}"
+                )
+            
+            self.progress_bar.setValue(100)
+            
+            # Store result and update display
+            self.comparison_result = result
+            self._display_comparison_results()
+            
+            # Hide progress bar
+            self.progress_bar.setVisible(False)
+            
+            logger.info(f"Updated comparison: {command1} vs {command2}")
+            
+        except Exception as e:
+            logger.error(f"Error updating comparison from selection: {e}")
+            QMessageBox.critical(self, "Comparison Error", f"Failed to update comparison: {e}")
+            self.progress_bar.setVisible(False)
+    
+    def _get_device_command_output(self, device, command):
+        """Get specific command output from device"""
+        try:
+            # Check if device has command outputs stored
+            command_outputs = None
+            if hasattr(device, 'command_outputs') and device.command_outputs:
+                command_outputs = device.command_outputs
+            elif hasattr(device, 'get_command_outputs'):
+                command_outputs = device.get_command_outputs()
+            
+            if not command_outputs:
+                return None
+            
+            # Try exact match first
+            if command in command_outputs:
+                cmd_outputs = command_outputs[command]
+                if cmd_outputs and isinstance(cmd_outputs, dict):
+                    # Get the most recent output
+                    timestamps = list(cmd_outputs.keys())
+                    if timestamps:
+                        latest_timestamp = max(timestamps)
+                        output_data = cmd_outputs[latest_timestamp]
+                        if isinstance(output_data, dict) and 'output' in output_data:
+                            return output_data['output']
+                        elif isinstance(output_data, str):
+                            return output_data
+            
+            # Try fuzzy match for similar commands
+            command_lower = command.lower()
+            for cmd_id, cmd_outputs in command_outputs.items():
+                if cmd_id.lower() == command_lower or command_lower in cmd_id.lower():
+                    if cmd_outputs and isinstance(cmd_outputs, dict):
+                        timestamps = list(cmd_outputs.keys())
+                        if timestamps:
+                            latest_timestamp = max(timestamps)
+                            output_data = cmd_outputs[latest_timestamp]
+                            if isinstance(output_data, dict) and 'output' in output_data:
+                                return output_data['output']
+                            elif isinstance(output_data, str):
+                                return output_data
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting command output: {e}")
+            return None 
