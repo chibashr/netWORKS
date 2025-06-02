@@ -71,6 +71,9 @@ data/
 command_outputs/
 exports/
 
+# Plugin fallback directories created when workspace dirs are not available
+plugins/*/data/workspace_fallback/
+
 # Test files
 test_*.py
 

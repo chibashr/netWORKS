@@ -165,35 +165,85 @@ class CredentialStore:
         
     def _get_workspace_group_dir(self):
         """Get the directory for the current workspace's group credentials"""
-        if self.app_workspace_dir and self.app_workspace_dir.exists():
-            try:
-                # Use app workspace directory structure
+        try:
+            # First try using the app_workspace_dir if it exists
+            if self.app_workspace_dir and self.app_workspace_dir.exists():
                 workspace_dir = self.app_workspace_dir / "command_manager" / "credentials" / "groups"
                 workspace_dir.mkdir(parents=True, exist_ok=True)
                 return workspace_dir
-            except Exception as e:
-                logger.error(f"Error creating workspace group directory: {e}")
+                
+            # If not, try getting workspace from device_manager
+            if self.device_manager:
+                if hasattr(self.device_manager, 'get_workspace_dir'):
+                    try:
+                        workspace_path = Path(self.device_manager.get_workspace_dir())
+                        if workspace_path and workspace_path.exists():
+                            # Create credential directory structure
+                            workspace_dir = workspace_path / "command_manager" / "credentials" / "groups"
+                            workspace_dir.mkdir(parents=True, exist_ok=True)
+                            # Update our reference for future use
+                            self.app_workspace_dir = workspace_path
+                            return workspace_dir
+                    except Exception as e:
+                        logger.debug(f"Could not get workspace directory from device_manager: {e}")
+                
+            # Last resort: use fallback in data directory
+            fallback_dir = self.data_dir / "workspace_fallback" / self.workspace_name / "credentials" / "groups"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            logger.warning(f"Using fallback workspace group directory: {fallback_dir}")
+            return fallback_dir
+            
+        except Exception as e:
+            logger.error(f"Error creating workspace group directory: {e}")
+            # Ultimate fallback - use plugin data directory
+            try:
+                fallback = self.data_dir / "credentials" / "groups"
+                fallback.mkdir(parents=True, exist_ok=True)
+                return fallback
+            except:
+                logger.error("Cannot create workspace group directory: all fallback options failed")
                 return None
-        else:
-            # If no workspace directory, log an error and return None
-            logger.error("Cannot get workspace group directory: app_workspace_dir is not set or doesn't exist")
-            return None
         
     def _get_workspace_subnet_dir(self):
         """Get the directory for the current workspace's subnet credentials"""
-        if self.app_workspace_dir and self.app_workspace_dir.exists():
-            try:
-                # Use app workspace directory structure
+        try:
+            # First try using the app_workspace_dir if it exists
+            if self.app_workspace_dir and self.app_workspace_dir.exists():
                 workspace_dir = self.app_workspace_dir / "command_manager" / "credentials" / "subnets"
                 workspace_dir.mkdir(parents=True, exist_ok=True)
                 return workspace_dir
-            except Exception as e:
-                logger.error(f"Error creating workspace subnet directory: {e}")
+                
+            # If not, try getting workspace from device_manager
+            if self.device_manager:
+                if hasattr(self.device_manager, 'get_workspace_dir'):
+                    try:
+                        workspace_path = Path(self.device_manager.get_workspace_dir())
+                        if workspace_path and workspace_path.exists():
+                            # Create credential directory structure
+                            workspace_dir = workspace_path / "command_manager" / "credentials" / "subnets"
+                            workspace_dir.mkdir(parents=True, exist_ok=True)
+                            # Update our reference for future use
+                            self.app_workspace_dir = workspace_path
+                            return workspace_dir
+                    except Exception as e:
+                        logger.debug(f"Could not get workspace directory from device_manager: {e}")
+                
+            # Last resort: use fallback in data directory
+            fallback_dir = self.data_dir / "workspace_fallback" / self.workspace_name / "credentials" / "subnets"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            logger.warning(f"Using fallback workspace subnet directory: {fallback_dir}")
+            return fallback_dir
+            
+        except Exception as e:
+            logger.error(f"Error creating workspace subnet directory: {e}")
+            # Ultimate fallback - use plugin data directory
+            try:
+                fallback = self.data_dir / "credentials" / "subnets"
+                fallback.mkdir(parents=True, exist_ok=True)
+                return fallback
+            except:
+                logger.error("Cannot create workspace subnet directory: all fallback options failed")
                 return None
-        else:
-            # If no workspace directory, log an error and return None
-            logger.error("Cannot get workspace subnet directory: app_workspace_dir is not set or doesn't exist")
-            return None
 
     def _cleanup_legacy_credentials(self):
         """Delete all credential files from the legacy plugin directories"""

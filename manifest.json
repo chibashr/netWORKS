@@ -1,6 +1,6 @@
 {
   "name": "NetWORKS",
-  "version": "0.9.18",
+  "version": "0.9.19",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -9,12 +9,12 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-  "version_string": "0.9.18",
+  "version_string": "0.9.19",
   "version_info": {
     "major": 0,
     "minor": 9,
-    "patch": 18,
-    "build": 300
+    "patch": 19,
+    "build": 301
   },
   "app_directory": "src",
   "main_module": "main",
@@ -35,17 +35,31 @@
   "persistent_directories": true,
   "build_date": "2025-06-02",
   "release_notes": [
-    "CRITICAL FIX: Fixed application portability across different systems",
-    "Removed hardcoded D:\\ drive paths from configuration files that caused 'The device is not ready' errors on new systems",
-    "Application now generates configuration files with relative paths dynamically based on current system",
-    "Enhanced .gitignore to prevent system-specific configuration files from being committed",
-    "Fixed plugin manager external plugins directory path resolution for cross-system deployment",
-    "Application is now fully portable and will work on any system without hardcoded path dependencies"
+    "CRITICAL FIX: Fixed automatic directory creation for plugin workspace structures",
+    "Command Manager plugin now creates required credential directories even when workspace is not properly initialized",
+    "Enhanced fallback directory logic to prevent 'workspace directory not found' errors during plugin operations",
+    "Fixed missing workspace group and subnet credential directory creation that caused plugin functionality failures",
+    "Plugins now work reliably on fresh installations and when workspace directories are missing"
   ],
   "release_type": "stable",
   "versioning_scheme": "semver",
   "update_channel": "stable",
   "changelog": [
+    {
+      "version": "0.9.19",
+      "build": 301,
+      "date": "2025-06-02",
+      "changes": [
+        "CRITICAL FIX: Fixed automatic directory creation for plugin workspace structures",
+        "Enhanced Command Manager credential store to automatically create required directories when workspace is not properly initialized",
+        "Fixed _get_workspace_group_dir() and _get_workspace_subnet_dir() methods to have robust fallback logic like _get_workspace_device_dir()",
+        "Added comprehensive fallback directory creation: try app_workspace_dir → device_manager workspace → data directory fallback → plugin data directory",
+        "Eliminated 'Cannot get workspace group/subnet directory: app_workspace_dir is not set or doesn't exist' errors",
+        "Plugin functionality now works reliably on fresh installations and when workspace directories are missing",
+        "Improved error handling and directory creation for all credential storage operations",
+        "Command Manager plugin can now save and load group/subnet credentials even without proper workspace initialization"
+      ]
+    },
     {
       "version": "0.9.18",
       "build": 300,
