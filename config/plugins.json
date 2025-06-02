@@ -1,12 +1,18 @@
 {
   "command_manager": {
-    "state": "DISABLED",
+    "state": "ENABLED",
     "last_loaded": "",
     "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\command_manager",
     "version": "1.0.3"
   },
+  "configmate": {
+    "state": "ENABLED",
+    "last_loaded": "",
+    "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\configmate",
+    "version": "1.0.0"
+  },
   "network_scanner": {
-    "state": "DISABLED",
+    "state": "ENABLED",
     "last_loaded": "",
     "path": "D:\\SynologyDrive\\Development\\New folder (2)\\plugins\\network_scanner",
     "version": "1.3.0"

@@ -435,7 +435,25 @@ class PluginManagerDialog(QDialog):
         self.author_label.setText(plugin_info.author or "Unknown")
         self.min_version_label.setText(plugin_info.min_app_version or "")
         self.max_version_label.setText(plugin_info.max_app_version or "")
-        self.deps_label.setText("\n".join([f"{dep['id']} ({dep['version']})" for dep in plugin_info.dependencies]) or "")
+        
+        # Handle dependencies - support both string and object formats for backward compatibility
+        deps_text = ""
+        if plugin_info.dependencies:
+            deps_list = []
+            for dep in plugin_info.dependencies:
+                if isinstance(dep, str):
+                    # Legacy format: dependency is just a string
+                    deps_list.append(dep)
+                elif isinstance(dep, dict) and 'id' in dep:
+                    # New format: dependency is an object with id and version
+                    version = dep.get('version', '*')
+                    deps_list.append(f"{dep['id']} ({version})")
+                else:
+                    # Fallback: convert to string
+                    deps_list.append(str(dep))
+            deps_text = "\n".join(deps_list)
+        
+        self.deps_label.setText(deps_text)
         self.reqs_label.setText("\n".join(plugin_info.requirements["python"]) or "")
         self.sys_reqs_label.setText("\n".join(plugin_info.requirements["system"]) or "")
         self.entry_point_label.setText(plugin_info.entry_point or "")

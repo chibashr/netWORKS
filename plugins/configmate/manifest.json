@@ -1,0 +1,49 @@
+{
+  "id": "configmate",
+  "name": "ConfigMate Plugin",
+  "version": "1.0.0",
+  "description": "Configuration and template management tool for network engineers. Creates, generates, and compares device configurations with template support and intuitive GUI integration.",
+  "author": "NetWORKS Team",
+  "entry_point": "configmate_plugin.py",
+  "min_app_version": "0.8.16",
+  "requirements": {
+    "python": [
+      "jinja2>=3.1.0"
+    ],
+    "system": [
+      "Python 3.8+",
+      "Qt 6.5+"
+    ]
+  },
+  "dependencies": [
+    {
+      "id": "command_manager",
+      "version": "*"
+    }
+  ],
+  "capabilities": [
+    "template_management",
+    "configuration_generation",
+    "configuration_comparison",
+    "variable_detection",
+    "batch_operations"
+  ],
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2025-05-30",
+      "changes": [
+        "Initial release of ConfigMate plugin",
+        "Template creation and management with syntax highlighting",
+        "Intelligent template generation from device configurations",
+        "Configuration generation and preview functionality", 
+        "Side-by-side configuration comparison with diff highlighting",
+        "Integration with command_manager plugin for device operations",
+        "GUI integration with toolbar, context menus, and right panel widget",
+        "Variable detection and substitution system",
+        "Batch operations support for multiple devices",
+        "Export capabilities for templates and comparison results"
+      ]
+    }
+  ]
+} 

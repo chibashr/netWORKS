@@ -718,8 +718,9 @@ class CredentialManager(QDialog):
         if not current:
             return
             
-        # Get device ID
-        device_id = current.data(Qt.UserRole)
+        # Get device object and extract ID
+        device = current.data(Qt.UserRole)
+        device_id = device.id
         
         # Validate form
         username = self.device_username.text().strip()
@@ -756,8 +757,9 @@ class CredentialManager(QDialog):
         if not current:
             return
             
-        # Get device ID
-        device_id = current.data(Qt.UserRole)
+        # Get device object and extract ID
+        device = current.data(Qt.UserRole)
+        device_id = device.id
         
         # Confirm deletion
         result = QMessageBox.question(

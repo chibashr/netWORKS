@@ -49,36 +49,11 @@ class CredentialStore:
         
     def set_device_manager(self, device_manager):
         """Set the device manager reference"""
-        self.device_manager = device_manager
-        logger.debug(f"CredentialStore: Device manager reference set: {device_manager is not None}")
-        
-        if self.device_manager:
-            # Test device manager functionality
-            try:
-                device_count = len(self.device_manager.get_devices())
-                logger.debug(f"CredentialStore: Device manager has {device_count} devices")
-                
-                # Try to get a device to test functionality
-                if device_count > 0:
-                    first_device_id = self.device_manager.get_devices()[0].id
-                    test_device = self.device_manager.get_device(first_device_id)
-                    logger.debug(f"CredentialStore: Test get_device: {'Success' if test_device else 'Failed'}")
-                    
-                    # Test setting a property on a device
-                    if test_device:
-                        try:
-                            # Use a temporary property for testing
-                            test_device.set_property("_credential_store_test", True)
-                            logger.debug("CredentialStore: Test set_property: Success")
-                            # Remove the test property
-                            test_device.set_property("_credential_store_test", None)
-                        except Exception as e:
-                            logger.error(f"CredentialStore: Test set_property failed: {e}")
-            except Exception as e:
-                logger.error(f"CredentialStore: Error testing device manager: {e}")
-        
-        workspace_found = False
         old_workspace_name = self.workspace_name
+        workspace_found = False
+        
+        self.device_manager = device_manager
+        logger.debug(f"CredentialStore: Device manager set: {device_manager is not None}")
         
         # Update workspace name and directory if device_manager is available
         if self.device_manager:
@@ -92,102 +67,61 @@ class CredentialStore:
                     logger.debug(f"CredentialStore: Current workspace set to {self.workspace_name}")
                 except Exception as e:
                     logger.warning(f"Error getting current workspace name: {e}")
+            else:
+                logger.warning("Device manager does not have get_current_workspace_name method")
             
             # Get workspace directory
             if hasattr(self.device_manager, 'get_workspace_dir'):
                 try:
                     workspace_dir = self.device_manager.get_workspace_dir()
+                    logger.debug(f"CredentialStore: Device manager returned workspace_dir: {workspace_dir}")
                     if workspace_dir:
                         self.app_workspace_dir = Path(workspace_dir)
                         workspace_found = True
                         logger.debug(f"CredentialStore: Using workspace directory: {self.app_workspace_dir}")
+                        logger.debug(f"CredentialStore: Workspace directory exists: {self.app_workspace_dir.exists()}")
+                        
+                        # Check if the command_manager subdirectory exists
+                        cmd_mgr_dir = self.app_workspace_dir / "command_manager"
+                        logger.debug(f"CredentialStore: Command manager directory exists: {cmd_mgr_dir.exists()}")
+                        
+                        # Check if credentials subdirectory exists
+                        creds_dir = cmd_mgr_dir / "credentials"
+                        logger.debug(f"CredentialStore: Credentials directory exists: {creds_dir.exists()}")
+                    else:
+                        logger.warning("Device manager returned None for workspace directory")
                 except Exception as e:
                     logger.warning(f"Error getting workspace directory: {e}")
-                    
-            # If we still don't have a workspace directory, try to infer it
-            if not workspace_found:
-                try:
-                    # Try to get app base directory
-                    app_dir = None
-                    if hasattr(self.device_manager, 'app') and hasattr(self.device_manager.app, 'base_dir'):
-                        app_dir = Path(self.device_manager.app.base_dir)
-                    elif hasattr(self.device_manager, 'get_app_dir'):
-                        app_dir = Path(self.device_manager.get_app_dir())
-                        
-                    if app_dir and app_dir.exists():
-                        # Construct workspace dir from app dir
-                        self.app_workspace_dir = app_dir / "config" / "workspaces" / self.workspace_name
-                        if self.app_workspace_dir.exists():
-                            workspace_found = True
-                            logger.debug(f"CredentialStore: Inferred workspace directory: {self.app_workspace_dir}")
-                except Exception as e:
-                    logger.warning(f"Error inferring workspace directory: {e}")
-            
-            # Fallback if we still don't have a valid workspace directory
-            if not workspace_found:
-                # Try to find the config directory relative to the current directory
-                try:
-                    current_dir = Path.cwd()
-                    config_dir = current_dir / "config"
-                    if config_dir.exists():
-                        self.app_workspace_dir = config_dir / "workspaces" / self.workspace_name
-                        if self.app_workspace_dir.exists():
-                            workspace_found = True
-                            logger.debug(f"CredentialStore: Using fallback workspace directory: {self.app_workspace_dir}")
-                except Exception as e:
-                    logger.warning(f"Error setting fallback workspace directory: {e}")
-        
-        # Create the workspace directory if it doesn't exist
-        if self.app_workspace_dir:
-            try:
-                self.app_workspace_dir.mkdir(parents=True, exist_ok=True)
-                workspace_found = True
-            except Exception as e:
-                logger.error(f"Error creating workspace directory: {e}")
-        
-        # Last resort - use data directory as fallback
-        if not workspace_found:
-            logger.warning("No workspace directory found - using data directory as fallback")
-            try:
-                # Use a workspace-like structure within the data directory
-                self.app_workspace_dir = self.data_dir / "workspace_fallback" / self.workspace_name
-                self.app_workspace_dir.mkdir(parents=True, exist_ok=True)
-                logger.info(f"Created fallback workspace directory: {self.app_workspace_dir}")
-            except Exception as e:
-                logger.error(f"Error creating fallback workspace directory: {e}")
-                # If we still can't create a workspace, use the data directory directly
-                self.app_workspace_dir = self.data_dir
-                logger.warning(f"Using data directory directly: {self.app_workspace_dir}")
-        
-        # Initialize workspace credentials cache if needed
-        if self.workspace_name not in self.workspace_credentials:
-            self.workspace_credentials[self.workspace_name] = {
-                "groups": {},
-                "subnets": {}
-            }
-            
-        # Only try to migrate if we have a valid workspace directory
-        if self.app_workspace_dir and self.app_workspace_dir.exists():
-            # Migrate any legacy credentials
-            try:
-                self._migrate_legacy_credentials()
-            except Exception as e:
-                logger.error(f"Error migrating legacy credentials: {e}")
-                
-            # Clean up legacy credentials
-            try:
-                self._cleanup_legacy_credentials()
-            except Exception as e:
-                logger.error(f"Error cleaning up legacy credentials: {e}")
-            
-            # Reload credentials
-            try:
-                self._load_credentials()
-            except Exception as e:
-                logger.error(f"Error loading credentials: {e}")
+            else:
+                logger.warning("Device manager does not have get_workspace_dir method")
         else:
-            logger.error("No valid workspace directory available - credential functionality will be limited")
+            logger.warning("No device manager provided to credential store")
+        
+        # If we couldn't get workspace directory from device manager, try to construct it
+        if not workspace_found and self.workspace_name:
+            logger.debug(f"CredentialStore: Attempting to construct workspace directory for workspace: {self.workspace_name}")
             
+            # Try to find the workspace directory in common locations
+            possible_paths = [
+                Path.cwd() / "config" / "workspaces" / self.workspace_name,
+                Path.cwd() / "workspaces" / self.workspace_name,
+                self.data_dir.parent.parent / "config" / "workspaces" / self.workspace_name
+            ]
+            
+            for path in possible_paths:
+                logger.debug(f"CredentialStore: Checking possible workspace path: {path}")
+                if path.exists():
+                    self.app_workspace_dir = path
+                    workspace_found = True
+                    logger.info(f"CredentialStore: Found workspace directory at: {self.app_workspace_dir}")
+                    break
+            
+            if not workspace_found:
+                logger.warning(f"CredentialStore: Could not find workspace directory for workspace: {self.workspace_name}")
+        
+        # Load credentials after setting device manager
+        self._load_credentials()
+        
     def _get_workspace_device_dir(self):
         """Get the directory for the current workspace's device credentials"""
         try:
@@ -1200,6 +1134,26 @@ class CredentialStore:
         # Check if we have a device manager reference
         if self.device_manager:
             logger.debug(f"Device manager exists, attempting to get device {device_id}")
+            
+            # Add detailed logging for debugging
+            try:
+                all_devices = self.device_manager.get_devices()
+                device_count = len(all_devices)
+                logger.debug(f"Device manager has {device_count} devices loaded")
+                
+                # Log some device IDs for comparison
+                if device_count > 0:
+                    device_ids = [d.id for d in all_devices[:5]]  # First 5 device IDs
+                    logger.debug(f"Sample device IDs: {device_ids}")
+                    
+                    # Check if the requested device ID exists in the list
+                    matching_devices = [d for d in all_devices if d.id == device_id]
+                    logger.debug(f"Found {len(matching_devices)} devices with ID {device_id}")
+                else:
+                    logger.warning("No devices loaded in device manager")
+            except Exception as e:
+                logger.error(f"Error querying device manager state: {e}")
+            
             device = self.device_manager.get_device(device_id)
             if device:
                 logger.debug(f"Found device {device_id}, attempting to save credentials to device properties")
