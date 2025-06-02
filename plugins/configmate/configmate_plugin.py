@@ -31,6 +31,12 @@ from PySide6.QtGui import QIcon, QFont, QColor, QTextCharFormat, QSyntaxHighligh
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.core.plugin_interface import PluginInterface
 
+# Add the local lib directory to sys.path for bundled dependencies
+plugin_dir = os.path.dirname(os.path.abspath(__file__))
+lib_dir = os.path.join(plugin_dir, 'lib')
+if lib_dir not in sys.path:
+    sys.path.insert(0, lib_dir)
+
 # Import ConfigMate core modules - using absolute imports
 try:
     # Try to import as if the plugin directory is in sys.path
@@ -268,6 +274,14 @@ class ConfigMatePlugin(PluginInterface):
     def _initialize_core_components(self):
         """Initialize the core ConfigMate components"""
         try:
+            # Verify jinja2 is available from local lib
+            try:
+                import jinja2
+                logger.info(f"ConfigMate: Using Jinja2 version {jinja2.__version__} from {jinja2.__file__}")
+            except ImportError as e:
+                logger.error(f"ConfigMate: Failed to import jinja2: {e}")
+                raise
+            
             # Initialize template manager
             self.template_manager = TemplateManager(self._templates_path)
             
