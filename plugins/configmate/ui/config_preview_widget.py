@@ -157,39 +157,76 @@ class ConfigPreviewWidget(QWidget):
         return group
     
     def _create_variables_group(self) -> QGroupBox:
-        """Create variables editing group"""
+        """Create variables editing group with global and device variable separation"""
         group = QGroupBox("Variables")
         layout = QVBoxLayout(group)
         
-        # Variables scroll area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setMaximumHeight(150)
+        # Global Variables section
+        global_label = QLabel("Global Variables (apply to all devices):")
+        global_label.setStyleSheet("font-weight: bold; color: #2c5282;")
+        layout.addWidget(global_label)
         
-        self.variables_widget = QWidget()
-        self.variables_layout = QFormLayout(self.variables_widget)
-        scroll.setWidget(self.variables_widget)
+        # Global variables scroll area
+        global_scroll = QScrollArea()
+        global_scroll.setWidgetResizable(True)
+        global_scroll.setMaximumHeight(100)
         
-        layout.addWidget(scroll)
+        self.global_variables_widget = QWidget()
+        self.global_variables_layout = QFormLayout(self.global_variables_widget)
+        global_scroll.setWidget(self.global_variables_widget)
+        layout.addWidget(global_scroll)
+        
+        # Separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(separator)
+        
+        # Device Variables section
+        device_label = QLabel("Device Variables (per device):")
+        device_label.setStyleSheet("font-weight: bold; color: #2d5016;")
+        layout.addWidget(device_label)
+        
+        # Device variables scroll area
+        device_scroll = QScrollArea()
+        device_scroll.setWidgetResizable(True)
+        device_scroll.setMaximumHeight(100)
+        
+        self.device_variables_widget = QWidget()
+        self.device_variables_layout = QFormLayout(self.device_variables_widget)
+        device_scroll.setWidget(self.device_variables_widget)
+        layout.addWidget(device_scroll)
         
         # Auto-fill button
-        self.auto_fill_btn = QPushButton("Auto-fill from Device")
-        self.auto_fill_btn.setToolTip("Automatically fill variables from selected device properties")
+        self.auto_fill_btn = QPushButton("Auto-fill Device Variables")
+        self.auto_fill_btn.setToolTip("Automatically fill device variables from selected device properties")
         self.auto_fill_btn.setEnabled(False)
         layout.addWidget(self.auto_fill_btn)
         
         return group
     
     def _create_preview_group(self) -> QGroupBox:
-        """Create configuration preview group"""
-        group = QGroupBox("Preview")
+        """Create configuration preview group with multi-device support"""
+        group = QGroupBox("Configuration Preview")
         layout = QVBoxLayout(group)
+        
+        # Preview device selector (for multi-device preview)
+        preview_device_layout = QHBoxLayout()
+        preview_device_layout.addWidget(QLabel("Preview for:"))
+        
+        self.preview_device_combo = QComboBox()
+        self.preview_device_combo.addItem("All Devices")
+        self.preview_device_combo.setToolTip("Select which device to preview configuration for")
+        preview_device_layout.addWidget(self.preview_device_combo)
+        
+        preview_device_layout.addStretch()
+        layout.addLayout(preview_device_layout)
         
         # Preview text area
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
-        self.preview_text.setMaximumHeight(200)
-        self.preview_text.setPlaceholderText("Configuration preview will appear here...")
+        self.preview_text.setMaximumHeight(250)
+        self.preview_text.setPlaceholderText("Select a template and devices to preview configuration...")
         
         # Use monospace font for configuration text
         font = QFont("Consolas", 9)
@@ -202,10 +239,12 @@ class ConfigPreviewWidget(QWidget):
         # Preview options
         preview_options = QHBoxLayout()
         
-        self.auto_preview_cb = QCheckBox("Auto-preview")
-        self.auto_preview_cb.setToolTip("Automatically update preview when changes are made")
-        self.auto_preview_cb.setChecked(True)
-        preview_options.addWidget(self.auto_preview_cb)
+        self.auto_preview_check = QCheckBox("Auto-preview")
+        self.auto_preview_check.setChecked(True)
+        self.auto_preview_check.setToolTip("Automatically update preview when variables change")
+        preview_options.addWidget(self.auto_preview_check)
+        
+        preview_options.addStretch()
         
         self.refresh_preview_btn = QPushButton("Refresh")
         self.refresh_preview_btn.setToolTip("Manually refresh the configuration preview")
@@ -251,7 +290,7 @@ class ConfigPreviewWidget(QWidget):
             self.auto_fill_btn.clicked.connect(self._on_auto_fill_variables)
             
             # Preview
-            self.auto_preview_cb.stateChanged.connect(self._on_auto_preview_changed)
+            self.auto_preview_check.stateChanged.connect(self._on_auto_preview_changed)
             self.refresh_preview_btn.clicked.connect(self._on_refresh_preview)
             
             # Actions
@@ -302,11 +341,16 @@ class ConfigPreviewWidget(QWidget):
             logger.error(f"Error updating template info: {e}")
     
     def _update_variables_form(self, template_name: str):
-        """Update the variables form based on selected template"""
+        """Update the variables form based on selected template with global/device separation"""
         try:
             # Clear existing variables
-            for i in reversed(range(self.variables_layout.count())):
-                child = self.variables_layout.itemAt(i).widget()
+            for i in reversed(range(self.global_variables_layout.count())):
+                child = self.global_variables_layout.itemAt(i).widget()
+                if child:
+                    child.setParent(None)
+                    
+            for i in reversed(range(self.device_variables_layout.count())):
+                child = self.device_variables_layout.itemAt(i).widget()
                 if child:
                     child.setParent(None)
             
@@ -317,25 +361,58 @@ class ConfigPreviewWidget(QWidget):
             if not template:
                 return
             
-            # Get template variables
-            variables = template.get_variables_from_content()
+            # Get template variables from content
+            all_variables = template.get_variables_from_content()
             
-            # Create form fields for each variable
-            for var_name in variables:
-                line_edit = QLineEdit()
-                line_edit.setPlaceholderText(f"Enter {var_name}")
-                line_edit.setObjectName(f"var_{var_name}")
+            # Separate into global and device variables based on template data
+            global_vars = getattr(template, 'global_variables', {})
+            device_vars = getattr(template, 'device_variables', {})
+            
+            # If template doesn't have separated variables, use patterns to categorize
+            if not global_vars and not device_vars and all_variables:
+                global_patterns = {
+                    'PASSWORD', 'SECRET', 'COMMUNITY', 'SNMP_COMMUNITY', 'NTP_SERVER', 
+                    'DNS_SERVER', 'DOMAIN_NAME', 'BANNER', 'TIMEZONE', 'CONTACT',
+                    'ENABLE_PASSWORD', 'ENABLE_SECRET'
+                }
                 
-                # Set default value if available
-                default_value = template.variables.get(var_name, "")
+                for var_name in all_variables:
+                    if any(pattern in var_name.upper() for pattern in global_patterns):
+                        global_vars[var_name] = template.variables.get(var_name, "")
+                    else:
+                        device_vars[var_name] = template.variables.get(var_name, "")
+            
+            # Create global variable fields
+            for var_name, default_value in global_vars.items():
+                line_edit = QLineEdit()
+                line_edit.setPlaceholderText(f"Enter {var_name} (applies to all devices)")
+                line_edit.setObjectName(f"global_var_{var_name}")
+                line_edit.setStyleSheet("border-left: 3px solid #2c5282;")
+                
                 if default_value:
                     line_edit.setText(str(default_value))
                 
                 # Connect to auto-preview
-                if self.auto_preview_cb.isChecked():
+                if self.auto_preview_check.isChecked():
                     line_edit.textChanged.connect(self._on_variable_changed)
                 
-                self.variables_layout.addRow(var_name + ":", line_edit)
+                self.global_variables_layout.addRow(var_name + ":", line_edit)
+            
+            # Create device variable fields
+            for var_name, default_value in device_vars.items():
+                line_edit = QLineEdit()
+                line_edit.setPlaceholderText(f"Enter {var_name} (per device)")
+                line_edit.setObjectName(f"device_var_{var_name}")
+                line_edit.setStyleSheet("border-left: 3px solid #2d5016;")
+                
+                if default_value:
+                    line_edit.setText(str(default_value))
+                
+                # Connect to auto-preview
+                if self.auto_preview_check.isChecked():
+                    line_edit.textChanged.connect(self._on_variable_changed)
+                
+                self.device_variables_layout.addRow(var_name + ":", line_edit)
             
             # Enable auto-fill if devices are selected
             self.auto_fill_btn.setEnabled(bool(self.selected_devices))
@@ -343,18 +420,36 @@ class ConfigPreviewWidget(QWidget):
         except Exception as e:
             logger.error(f"Error updating variables form: {e}")
     
-    def _get_current_variables(self) -> Dict[str, str]:
+    def _get_current_variables(self) -> Dict[str, Any]:
         """Get current variable values from the form"""
-        variables = {}
+        variables = {
+            'global_variables': {},
+            'device_variables': {},
+            'all_variables': {}  # Combined for backward compatibility
+        }
         
         try:
-            for i in range(self.variables_layout.count()):
-                item = self.variables_layout.itemAt(i)
+            # Get global variables
+            for i in range(self.global_variables_layout.count()):
+                item = self.global_variables_layout.itemAt(i)
                 if item and hasattr(item, 'widget'):
                     widget = item.widget()
-                    if isinstance(widget, QLineEdit) and widget.objectName().startswith("var_"):
-                        var_name = widget.objectName()[4:]  # Remove "var_" prefix
-                        variables[var_name] = widget.text()
+                    if isinstance(widget, QLineEdit) and widget.objectName().startswith("global_var_"):
+                        var_name = widget.objectName()[11:]  # Remove "global_var_" prefix
+                        value = widget.text()
+                        variables['global_variables'][var_name] = value
+                        variables['all_variables'][var_name] = value
+            
+            # Get device variables
+            for i in range(self.device_variables_layout.count()):
+                item = self.device_variables_layout.itemAt(i)
+                if item and hasattr(item, 'widget'):
+                    widget = item.widget()
+                    if isinstance(widget, QLineEdit) and widget.objectName().startswith("device_var_"):
+                        var_name = widget.objectName()[11:]  # Remove "device_var_" prefix
+                        value = widget.text()
+                        variables['device_variables'][var_name] = value
+                        variables['all_variables'][var_name] = value
         
         except Exception as e:
             logger.error(f"Error getting current variables: {e}")
@@ -362,36 +457,83 @@ class ConfigPreviewWidget(QWidget):
         return variables
     
     def _update_preview(self):
-        """Update the configuration preview"""
+        """Update the configuration preview with multi-device support"""
         try:
             if not self.current_template or not self.selected_devices:
                 self.preview_text.clear()
-                self.preview_text.setPlaceholderText("Select template and device to see preview...")
+                self.preview_text.setPlaceholderText("Select template and device(s) to see preview...")
                 return
             
-            device = self.selected_devices[0]  # Use first selected device
             variables = self._get_current_variables()
+            selected_preview_device = self.preview_device_combo.currentText()
             
             # Generate preview
             if self.plugin.config_generator:
-                config = self.plugin.config_generator.preview_config(
-                    device, self.current_template, variables
-                )
+                preview_content = ""
                 
-                if config:
-                    # Show first N lines based on settings
-                    max_lines = self.plugin.get_setting_value("max_preview_lines") or 100
-                    lines = config.splitlines()
+                if selected_preview_device == "All Devices" and len(self.selected_devices) > 1:
+                    # Show preview for all selected devices
+                    for i, device in enumerate(self.selected_devices):
+                        device_name = device.get_property('name', f'Device {i+1}')
+                        
+                        # Get device-specific variables
+                        device_variables = self._get_device_specific_variables(device, variables['device_variables'])
+                        combined_vars = {**variables['global_variables'], **device_variables}
+                        
+                        config = self.plugin.config_generator.preview_config(
+                            device, self.current_template, combined_vars
+                        )
+                        
+                        if config:
+                            preview_content += f"=== Configuration for {device_name} ===\n"
+                            
+                            # Show first N lines based on settings
+                            max_lines = (self.plugin.get_setting_value("max_preview_lines") or 100) // len(self.selected_devices)
+                            lines = config.splitlines()
+                            
+                            if len(lines) > max_lines:
+                                preview_lines = lines[:max_lines]
+                                preview_lines.append(f"... ({len(lines) - max_lines} more lines)")
+                                config = '\n'.join(preview_lines)
+                            
+                            preview_content += config + "\n\n"
+                        else:
+                            preview_content += f"=== Error generating config for {device_name} ===\n\n"
+                else:
+                    # Show preview for selected device or first device
+                    if selected_preview_device != "All Devices":
+                        # Find the selected device by name
+                        device = next((d for d in self.selected_devices 
+                                     if d.get_property('name') == selected_preview_device), 
+                                    self.selected_devices[0])
+                    else:
+                        device = self.selected_devices[0]
                     
-                    if len(lines) > max_lines:
-                        preview_lines = lines[:max_lines]
-                        preview_lines.append(f"\n... ({len(lines) - max_lines} more lines)")
-                        config = '\n'.join(preview_lines)
+                    # Get device-specific variables
+                    device_variables = self._get_device_specific_variables(device, variables['device_variables'])
+                    combined_vars = {**variables['global_variables'], **device_variables}
                     
-                    self.preview_text.setPlainText(config)
-                    self.current_config = config
+                    config = self.plugin.config_generator.preview_config(
+                        device, self.current_template, combined_vars
+                    )
                     
-                    # Enable generation button
+                    if config:
+                        # Show first N lines based on settings
+                        max_lines = self.plugin.get_setting_value("max_preview_lines") or 100
+                        lines = config.splitlines()
+                        
+                        if len(lines) > max_lines:
+                            preview_lines = lines[:max_lines]
+                            preview_lines.append(f"\n... ({len(lines) - max_lines} more lines)")
+                            config = '\n'.join(preview_lines)
+                        
+                        preview_content = config
+                    else:
+                        preview_content = "Error generating configuration preview"
+                
+                if preview_content:
+                    self.preview_text.setPlainText(preview_content)
+                    self.current_config = preview_content
                     self.generate_btn.setEnabled(True)
                 else:
                     self.preview_text.setPlainText("Error generating configuration preview")
@@ -400,6 +542,33 @@ class ConfigPreviewWidget(QWidget):
         except Exception as e:
             logger.error(f"Error updating preview: {e}")
             self.preview_text.setPlainText(f"Preview error: {e}")
+    
+    def _get_device_specific_variables(self, device, device_variables: Dict[str, str]) -> Dict[str, str]:
+        """Get device-specific variable values, auto-filling from device properties where possible"""
+        result = {}
+        
+        try:
+            for var_name, var_value in device_variables.items():
+                if var_value:  # Use user-provided value if available
+                    result[var_name] = var_value
+                else:
+                    # Try to auto-fill from device properties
+                    var_lower = var_name.lower()
+                    if 'hostname' in var_lower or 'name' in var_lower:
+                        result[var_name] = device.get_property('name', var_value)
+                    elif 'ip' in var_lower and 'address' in var_lower:
+                        result[var_name] = device.get_property('ip_address', var_value)
+                    elif 'management' in var_lower or 'mgmt' in var_lower:
+                        result[var_name] = device.get_property('management_ip', 
+                                                              device.get_property('ip_address', var_value))
+                    else:
+                        result[var_name] = var_value
+        
+        except Exception as e:
+            logger.error(f"Error getting device-specific variables: {e}")
+            result = device_variables
+        
+        return result
     
     # Signal handlers
     
@@ -410,7 +579,7 @@ class ConfigPreviewWidget(QWidget):
             self._update_template_info(template_name)
             self._update_variables_form(template_name)
             
-            if self.auto_preview_cb.isChecked():
+            if self.auto_preview_check.isChecked():
                 self._update_preview()
             
             self.template_selected.emit(template_name)
@@ -480,7 +649,7 @@ class ConfigPreviewWidget(QWidget):
                     if widget:
                         widget.setText(str(value))
                 
-                if self.auto_preview_cb.isChecked():
+                if self.auto_preview_check.isChecked():
                     self._update_preview()
                 
                 self.status_label.setText("Variables auto-filled from device properties")
@@ -520,7 +689,7 @@ class ConfigPreviewWidget(QWidget):
     def _on_variable_changed(self):
         """Handle variable field change"""
         try:
-            if self.auto_preview_cb.isChecked():
+            if self.auto_preview_check.isChecked():
                 # Debounce preview updates
                 if hasattr(self, '_preview_timer'):
                     self._preview_timer.stop()
@@ -599,12 +768,22 @@ class ConfigPreviewWidget(QWidget):
     # Public methods
     
     def set_selected_devices(self, devices: List[Any]):
-        """Set the selected devices"""
+        """Set the selected devices and update preview device selector"""
         try:
             self.selected_devices = devices
             
+            # Update preview device combo
+            self.preview_device_combo.clear()
+            self.preview_device_combo.addItem("All Devices")
+            
             if devices:
-                device_names = [device.get_property('name', 'Unknown') for device in devices]
+                device_names = []
+                for device in devices:
+                    device_name = device.get_property('name', 'Unknown')
+                    device_names.append(device_name)
+                    self.preview_device_combo.addItem(device_name)
+                
+                # Update display text
                 if len(device_names) > 3:
                     display_text = f"{', '.join(device_names[:3])} and {len(device_names) - 3} more"
                 else:
@@ -613,7 +792,14 @@ class ConfigPreviewWidget(QWidget):
                 self.selected_devices_label.setText(display_text)
                 self.auto_fill_btn.setEnabled(bool(self.current_template))
                 
-                if self.auto_preview_cb.isChecked():
+                # Connect preview device combo signal if not already connected
+                try:
+                    self.preview_device_combo.currentTextChanged.disconnect()
+                except:
+                    pass
+                self.preview_device_combo.currentTextChanged.connect(self._on_preview_device_changed)
+                
+                if self.auto_preview_check.isChecked():
                     self._update_preview()
             else:
                 self.selected_devices_label.setText("No devices selected")
@@ -623,6 +809,14 @@ class ConfigPreviewWidget(QWidget):
             
         except Exception as e:
             logger.error(f"Error setting selected devices: {e}")
+    
+    def _on_preview_device_changed(self, device_name: str):
+        """Handle preview device selection change"""
+        try:
+            if self.auto_preview_check.isChecked():
+                self._update_preview()
+        except Exception as e:
+            logger.error(f"Error handling preview device change: {e}")
     
     def refresh_device_list(self):
         """Refresh the device list (called when devices are added/removed)"""
@@ -636,7 +830,7 @@ class ConfigPreviewWidget(QWidget):
         try:
             if device in self.selected_devices:
                 # Update device info if it's one of our selected devices
-                if self.auto_preview_cb.isChecked():
+                if self.auto_preview_check.isChecked():
                     self._update_preview()
             
         except Exception as e:

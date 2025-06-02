@@ -669,8 +669,9 @@ class TemplateEditorDialog(QDialog):
             self.platform_combo.setCurrentText(platform)
             
             # Use variable detector to create template
+            template_format = self.plugin.get_setting_value("template_format") or "text"
             template_content = self.plugin.variable_detector.create_template_from_config(
-                config_text, device
+                config_text, device, template_format
             )
             
             self.template_editor.setPlainText(template_content)

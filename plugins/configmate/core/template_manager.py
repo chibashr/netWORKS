@@ -21,13 +21,25 @@ class Template:
     
     def __init__(self, name: str, content: str, platform: str = "generic", 
                  description: str = "", variables: Dict[str, Any] = None,
+                 global_variables: Dict[str, Any] = None,
+                 device_variables: Dict[str, Any] = None,
                  created_date: float = None, modified_date: float = None,
                  created_from_device: str = None):
         self.name = name
         self.content = content
         self.platform = platform
         self.description = description
-        self.variables = variables or {}
+        
+        # Legacy support - if variables is provided but not global/device, split them
+        if variables and not global_variables and not device_variables:
+            self.global_variables, self.device_variables = self._categorize_variables(variables)
+        else:
+            self.global_variables = global_variables or {}
+            self.device_variables = device_variables or {}
+        
+        # Keep legacy variables property for backward compatibility
+        self.variables = {**self.global_variables, **self.device_variables}
+        
         self.created_date = created_date or time.time()
         self.modified_date = modified_date or time.time()
         self.created_from_device = created_from_device
@@ -39,19 +51,84 @@ class Template:
             lstrip_blocks=True
         )
     
-    def render(self, variables: Dict[str, Any]) -> str:
+    def _categorize_variables(self, variables: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Categorize variables into global and device-specific based on common patterns
+        
+        Args:
+            variables: Dictionary of all variables
+            
+        Returns:
+            Tuple of (global_variables, device_variables)
+        """
+        # Common global variable patterns
+        global_patterns = {
+            'password', 'passwd', 'secret', 'key', 'community', 'snmp_community',
+            'domain', 'domain_name', 'dns_server', 'ntp_server', 'syslog_server',
+            'timezone', 'contact', 'location_prefix', 'organization', 'company'
+        }
+        
+        # Common device-specific patterns  
+        device_patterns = {
+            'hostname', 'name', 'device_name', 'ip_address', 'management_ip', 'mgmt_ip',
+            'mac_address', 'interface', 'mgmt_interface', 'vlan_id', 'subnet_mask',
+            'gateway', 'location', 'site', 'rack', 'position', 'serial_number'
+        }
+        
+        global_vars = {}
+        device_vars = {}
+        
+        for var_name, var_value in variables.items():
+            var_lower = var_name.lower()
+            
+            # Check if it matches a global pattern
+            if any(pattern in var_lower for pattern in global_patterns):
+                global_vars[var_name] = var_value
+            # Check if it matches a device pattern
+            elif any(pattern in var_lower for pattern in device_patterns):
+                device_vars[var_name] = var_value
+            else:
+                # Default to device-specific for unknown variables
+                device_vars[var_name] = var_value
+        
+        return global_vars, device_vars
+    
+    def render(self, global_variables: Dict[str, Any] = None, 
+               device_variables: Dict[str, Any] = None,
+               variables: Dict[str, Any] = None) -> str:
         """
         Render the template with provided variables
         
         Args:
-            variables: Dictionary of variables to substitute
+            global_variables: Global variables (apply to all devices)
+            device_variables: Device-specific variables  
+            variables: Legacy - all variables combined (for backward compatibility)
             
         Returns:
             Rendered configuration string
         """
         try:
+            # Combine variables with precedence: device > global > template defaults
+            render_vars = {}
+            
+            # Start with template defaults
+            render_vars.update(self.global_variables)
+            render_vars.update(self.device_variables)
+            
+            # Apply provided global variables
+            if global_variables:
+                render_vars.update(global_variables)
+            
+            # Apply provided device variables (highest precedence)
+            if device_variables:
+                render_vars.update(device_variables)
+            
+            # Legacy support - if variables provided, use them
+            if variables:
+                render_vars.update(variables)
+            
             template = self._jinja_env.from_string(self.content)
-            return template.render(**variables)
+            return template.render(**render_vars)
         except Exception as e:
             logger.error(f"Error rendering template '{self.name}': {e}")
             raise
@@ -118,7 +195,9 @@ class Template:
             'content': self.content,
             'platform': self.platform,
             'description': self.description,
-            'variables': self.variables,
+            'variables': self.variables,  # Legacy field
+            'global_variables': self.global_variables,
+            'device_variables': self.device_variables,
             'created_date': self.created_date,
             'modified_date': self.modified_date,
             'created_from_device': self.created_from_device
@@ -132,7 +211,9 @@ class Template:
             content=data.get('content', ''),
             platform=data.get('platform', 'generic'),
             description=data.get('description', ''),
-            variables=data.get('variables', {}),
+            variables=data.get('variables', {}),  # Legacy field
+            global_variables=data.get('global_variables', {}),
+            device_variables=data.get('device_variables', {}),
             created_date=data.get('created_date'),
             modified_date=data.get('modified_date'),
             created_from_device=data.get('created_from_device')
@@ -170,6 +251,8 @@ class TemplateManager:
     
     def create_template(self, name: str, content: str, platform: str = "generic",
                        description: str = "", variables: Dict[str, Any] = None,
+                       global_variables: Dict[str, Any] = None,
+                       device_variables: Dict[str, Any] = None,
                        created_from_device: str = None) -> Template:
         """
         Create a new template
@@ -179,7 +262,9 @@ class TemplateManager:
             content: Template content (Jinja2 format)
             platform: Target platform (cisco_ios, cisco_nxos, etc.)
             description: Template description
-            variables: Default variable values
+            variables: Default variable values (legacy - will be categorized)
+            global_variables: Global variable values (apply to all devices)
+            device_variables: Device-specific variable values
             created_from_device: Device ID if created from device config
             
         Returns:
@@ -200,7 +285,9 @@ class TemplateManager:
                 content=content,
                 platform=platform,
                 description=description,
-                variables=variables or {},
+                variables=variables,
+                global_variables=global_variables,
+                device_variables=device_variables,
                 created_from_device=created_from_device
             )
             

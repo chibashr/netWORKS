@@ -1,6 +1,6 @@
 {
   "name": "NetWORKS",
-  "version": "0.9.17",
+  "version": "0.9.18",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -9,12 +9,12 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-  "version_string": "0.9.17",
+  "version_string": "0.9.18",
   "version_info": {
     "major": 0,
     "minor": 9,
-    "patch": 17,
-    "build": 299
+    "patch": 18,
+    "build": 300
   },
   "app_directory": "src",
   "main_module": "main",
@@ -33,19 +33,47 @@
   "command_outputs_directory": "command_outputs",
   "directory_structure_version": "2.0",
   "persistent_directories": true,
-  "build_date": "2025-05-30",
+  "build_date": "2025-06-02",
   "release_notes": [
-    "CRITICAL FIX: Fixed workspace root path calculation in plugin manager",
-    "Plugin manager was calculating workspace_root incorrectly (going up 3 levels instead of 2)",
-    "This caused sys.path to point to wrong directory, preventing plugin imports",
-    "Fixed path calculation: src/core/plugin_manager.py -> go up 2 levels to workspace root",
-    "All three plugins (sample, network_scanner, command_manager) now load successfully",
-    "Plugin import errors completely resolved"
+    "CRITICAL FIX: Fixed application portability across different systems",
+    "Removed hardcoded D:\\ drive paths from configuration files that caused 'The device is not ready' errors on new systems",
+    "Application now generates configuration files with relative paths dynamically based on current system",
+    "Enhanced .gitignore to prevent system-specific configuration files from being committed",
+    "Fixed plugin manager external plugins directory path resolution for cross-system deployment",
+    "Application is now fully portable and will work on any system without hardcoded path dependencies"
   ],
   "release_type": "stable",
   "versioning_scheme": "semver",
   "update_channel": "stable",
   "changelog": [
+    {
+      "version": "0.9.18",
+      "build": 300,
+      "date": "2025-06-02",
+      "changes": [
+        "CRITICAL FIX: Fixed application portability across different systems",
+        "Removed hardcoded D:\\ drive paths from config/user.yaml and config/default.yaml that caused 'PermissionError: [WinError 21] The device is not ready: D:\\' on systems without D:\\ drive",
+        "Configuration files are now generated dynamically with relative paths based on application location",
+        "Enhanced .gitignore to exclude system-specific configuration files (config/user.yaml, config/default.yaml, config/plugins.yaml, config/plugins.json, config/.setup_completed)",
+        "Added data/, command_outputs/, and exports/ directories to .gitignore as they contain system-specific generated data",
+        "Fixed plugin manager external_plugins_dir path calculation to use relative paths instead of absolute hardcoded paths",
+        "Application now works correctly when copied between different systems and drive configurations",
+        "Eliminates 'The device is not ready' errors when launching on new systems without specific drive letters"
+      ]
+    },
+    {
+      "version": "0.9.17",
+      "build": 299,
+      "date": "2025-05-30",
+      "changes": [
+        "CRITICAL FIX: Fixed workspace root path calculation in plugin manager",
+        "Plugin manager was calculating workspace_root incorrectly (going up 3 levels instead of 2)",
+        "This caused sys.path to point to wrong directory, preventing plugin imports",
+        "Fixed path calculation: src/core/plugin_manager.py -> go up 2 levels to workspace root",
+        "All three plugins (sample, network_scanner, command_manager) now load successfully",
+        "Plugin import errors completely resolved"
+      ]
+    },
     {
       "version": "0.9.15",
       "build": 295,

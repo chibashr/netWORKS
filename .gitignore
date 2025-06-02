@@ -57,9 +57,19 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
-# Configuration and workspace files
+# Configuration and workspace files - these contain system-specific paths and should be generated per system
+config/user.yaml
+config/default.yaml
+config/plugins.yaml
+config/plugins.json
+config/.setup_completed
 config/workspaces/*/devices/
 config/workspaces/*/*.bak
+
+# Data directories that are generated per system
+data/
+command_outputs/
+exports/
 
 # Test files
 test_*.py

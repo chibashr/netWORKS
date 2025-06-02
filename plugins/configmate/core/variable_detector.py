@@ -14,18 +14,21 @@ import difflib
 from typing import Dict, List, Any, Optional, Set, Tuple, Union
 from loguru import logger
 from collections import defaultdict, Counter
+import time
 
 
 class VariableCandidate:
     """Represents a potential template variable"""
     
     def __init__(self, name: str, pattern: str, description: str = "",
-                 confidence: float = 0.0, examples: List[str] = None):
+                 confidence: float = 0.0, examples: List[str] = None,
+                 variable_type: str = "device"):
         self.name = name
         self.pattern = pattern
         self.description = description
         self.confidence = confidence
         self.examples = examples or []
+        self.variable_type = variable_type  # "global" or "device"
         self.occurrences = []  # List of (line_number, matched_text) tuples
     
     def add_occurrence(self, line_number: int, matched_text: str):
@@ -40,6 +43,7 @@ class VariableCandidate:
             'description': self.description,
             'confidence': self.confidence,
             'examples': self.examples,
+            'variable_type': self.variable_type,
             'occurrence_count': len(self.occurrences)
         }
 
@@ -64,72 +68,110 @@ class VariableDetector:
             'hostname': {
                 'pattern': r'^hostname\s+(\S+)',
                 'description': 'Device hostname',
-                'confidence': 0.95
+                'confidence': 0.95,
+                'variable_type': 'device'
             },
             'ip_address': {
                 'pattern': r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b',
                 'description': 'IP address',
-                'confidence': 0.8
+                'confidence': 0.8,
+                'variable_type': 'device'
             },
             'interface_name': {
                 'pattern': r'^interface\s+(\S+)',
                 'description': 'Interface name',
-                'confidence': 0.9
+                'confidence': 0.9,
+                'variable_type': 'device'
             },
             'vlan_id': {
                 'pattern': r'\bvlan\s+(\d+)\b',
                 'description': 'VLAN ID',
-                'confidence': 0.85
+                'confidence': 0.85,
+                'variable_type': 'device'
             },
             'subnet_mask': {
                 'pattern': r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}',
                 'description': 'Subnet mask',
-                'confidence': 0.75
+                'confidence': 0.75,
+                'variable_type': 'device'
             },
             'mac_address': {
                 'pattern': r'\b([0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}|[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2})\b',
                 'description': 'MAC address',
-                'confidence': 0.9
+                'confidence': 0.9,
+                'variable_type': 'device'
             },
             'description': {
                 'pattern': r'description\s+(.+)',
                 'description': 'Interface or device description',
-                'confidence': 0.7
+                'confidence': 0.7,
+                'variable_type': 'device'
             },
             'snmp_community': {
                 'pattern': r'snmp-server community\s+(\S+)',
                 'description': 'SNMP community string',
-                'confidence': 0.8
+                'confidence': 0.8,
+                'variable_type': 'global'
             },
             'ntp_server': {
                 'pattern': r'ntp server\s+(\S+)',
                 'description': 'NTP server address',
-                'confidence': 0.85
+                'confidence': 0.85,
+                'variable_type': 'global'
             },
             'dns_server': {
                 'pattern': r'ip name-server\s+(\S+)',
                 'description': 'DNS server address',
-                'confidence': 0.85
+                'confidence': 0.85,
+                'variable_type': 'global'
             },
             'domain_name': {
                 'pattern': r'ip domain-name\s+(\S+)',
                 'description': 'Domain name',
-                'confidence': 0.9
+                'confidence': 0.9,
+                'variable_type': 'global'
             },
             'banner': {
                 'pattern': r'banner\s+\w+\s+(.+?)(?=banner|\n\S|\Z)',
                 'description': 'Banner text',
-                'confidence': 0.6
+                'confidence': 0.6,
+                'variable_type': 'global'
             },
             'access_list_number': {
                 'pattern': r'access-list\s+(\d+)',
                 'description': 'Access list number',
-                'confidence': 0.8
+                'confidence': 0.8,
+                'variable_type': 'device'
             },
             'route_target': {
                 'pattern': r'ip route\s+\S+\s+\S+\s+(\S+)',
                 'description': 'Static route next hop',
-                'confidence': 0.75
+                'confidence': 0.75,
+                'variable_type': 'device'
+            },
+            'enable_password': {
+                'pattern': r'enable password\s+(\S+)',
+                'description': 'Enable password',
+                'confidence': 0.9,
+                'variable_type': 'global'
+            },
+            'enable_secret': {
+                'pattern': r'enable secret\s+(\S+)',
+                'description': 'Enable secret',
+                'confidence': 0.9,
+                'variable_type': 'global'
+            },
+            'timezone': {
+                'pattern': r'clock timezone\s+(\S+)',
+                'description': 'Timezone setting',
+                'confidence': 0.8,
+                'variable_type': 'global'
+            },
+            'contact': {
+                'pattern': r'snmp-server contact\s+(.+)',
+                'description': 'SNMP contact information',
+                'confidence': 0.8,
+                'variable_type': 'global'
             }
         }
         
@@ -356,29 +398,48 @@ class VariableDetector:
             pattern = pattern_info['pattern']
             confidence = pattern_info['confidence']
             description = pattern_info['description']
+            variable_type = pattern_info.get('variable_type', 'device')
+            
+            match_count = 0  # Track matches manually
             
             for line_num, line in enumerate(lines, 1):
-                matches = re.finditer(pattern, line, re.IGNORECASE | re.MULTILINE)
+                matches = list(re.finditer(pattern, line, re.IGNORECASE | re.MULTILINE))
                 
                 for match in matches:
                     if match.groups():
-                        matched_value = match.group(1)
-                        
-                        # Create variable candidate
-                        var_name = pattern_name
-                        if pattern_name in ['ip_address', 'interface_name'] and len(matches) > 1:
-                            var_name = f"{pattern_name}_{line_num}"
-                        
-                        candidate = VariableCandidate(
-                            name=var_name,
-                            pattern=pattern,
-                            description=description,
-                            confidence=confidence,
-                            examples=[matched_value]
-                        )
-                        candidate.add_occurrence(line_num, matched_value)
-                        candidates.append(candidate)
-                        
+                        matched_value = match.group(1).strip()
+                        if matched_value and len(matched_value) > 0:
+                            match_count += 1
+                            
+                            # Create unique variable name
+                            var_name = self._create_variable_name(pattern_name, matched_value, device_name)
+                            
+                            # Find existing candidate or create new one
+                            existing_candidate = None
+                            for candidate in candidates:
+                                if candidate.name == var_name:
+                                    existing_candidate = candidate
+                                    break
+                            
+                            if existing_candidate:
+                                existing_candidate.add_occurrence(line_num, matched_value)
+                                # Update confidence based on occurrence count
+                                occurrence_boost = min(len(existing_candidate.occurrences) * 0.05, 0.2)
+                                existing_candidate.confidence = min(confidence + occurrence_boost, 1.0)
+                            else:
+                                candidate = VariableCandidate(
+                                    name=var_name,
+                                    pattern=pattern,
+                                    description=description,
+                                    confidence=confidence,
+                                    examples=[matched_value],
+                                    variable_type=variable_type
+                                )
+                                candidate.add_occurrence(line_num, matched_value)
+                                candidates.append(candidate)
+            
+            logger.debug(f"Found {match_count} matches for pattern '{pattern_name}' in {device_name} config")
+            
         except Exception as e:
             logger.error(f"Error finding pattern matches for {pattern_name}: {e}")
         
@@ -411,7 +472,8 @@ class VariableDetector:
                         pattern=re.escape(value),
                         description=f"Device-specific value: {value}",
                         confidence=min(0.6 + (count * 0.1), 0.9),
-                        examples=[value]
+                        examples=[value],
+                        variable_type="device"
                     )
                     
                     for line_num, line in value_lines[value]:
@@ -489,7 +551,8 @@ class VariableDetector:
                             pattern=re.escape(diff_part),
                             description=f"Detected variable from line differences",
                             confidence=0.7,
-                            examples=line_texts
+                            examples=line_texts,
+                            variable_type="device"
                         )
                         candidates.append(candidate)
                         
@@ -614,4 +677,195 @@ class VariableDetector:
             'snmp_community': ['public', 'readonly']
         }
         
-        return defaults.get(variable_name, [f"<{variable_name}>"]) 
+        return defaults.get(variable_name, [f"<{variable_name}>"])
+
+    def create_template_from_config(self, config_text: str, device, template_format: str = "text") -> str:
+        """
+        Create a template from device configuration
+        
+        Args:
+            config_text: Original configuration text
+            device: Device object containing device properties
+            template_format: Format for template ("text" or "jinja2")
+            
+        Returns:
+            Template text with variable substitutions or placeholders
+        """
+        try:
+            device_name = device.get_property('name', 'Unknown Device')
+            logger.info(f"Creating template from {device_name} configuration")
+            
+            # Detect variables in the configuration
+            candidates = self.detect_variables_single_config(config_text, device_name)
+            
+            if template_format == "text":
+                template_content = self._generate_text_template_from_config(config_text, candidates)
+                
+                # Separate variables by type
+                global_variables = {}
+                device_variables = {}
+                
+                for candidate in candidates:
+                    if candidate.variable_type == "global":
+                        global_variables[candidate.name] = candidate.examples[0] if candidate.examples else ""
+                    else:
+                        device_variables[candidate.name] = candidate.examples[0] if candidate.examples else ""
+                
+                # Store the separated variables for the calling code to use
+                self._last_global_variables = global_variables
+                self._last_device_variables = device_variables
+                
+                return template_content
+            else:
+                return self._generate_jinja_template_from_config(config_text, candidates)
+            
+        except Exception as e:
+            logger.error(f"Error creating template from config: {e}")
+            return config_text  # Return original if failed
+
+    def _generate_text_template_from_config(self, config_text: str, 
+                                          variables: List[VariableCandidate],
+                                          device, device_name: str) -> str:
+        """
+        Generate a plain text template with placeholder comments
+        
+        Args:
+            config_text: Original configuration text
+            variables: List of detected variables to substitute  
+            device: Device object for extracting values
+            device_name: Device name for context
+            
+        Returns:
+            Plain text template with comment placeholders for variables
+        """
+        try:
+            template = config_text
+            substitutions_made = 0
+            device_properties = {}
+            
+            # Extract device properties
+            if hasattr(device, 'properties'):
+                device_properties = device.properties
+            
+            # Sort variables by confidence (highest first)
+            sorted_vars = sorted(variables, key=lambda x: x.confidence, reverse=True)
+            
+            # Apply substitutions with placeholders
+            for variable in sorted_vars:
+                # Skip low-confidence variables
+                if variable.confidence < 0.6:
+                    continue
+                
+                # Get suggested value for this variable
+                suggested_values = self.suggest_variable_values(variable.name, device_properties)
+                suggested_value = suggested_values[0] if suggested_values else f"<{variable.name.upper()}>"
+                
+                # Create placeholder comment
+                placeholder = f"<{variable.name.upper()}>"
+                
+                try:
+                    # Apply substitution based on pattern
+                    if variable.name in self.patterns:
+                        # Use the defined pattern for replacement
+                        pattern = self.patterns[variable.name]['pattern']
+                        
+                        def replace_match(match):
+                            original = match.group(0)
+                            replaced = original.replace(match.group(1), placeholder)
+                            return replaced
+                        
+                        template, count = re.subn(pattern, replace_match, template)
+                        substitutions_made += count
+                    else:
+                        # Use the variable's specific occurrences
+                        for line_num, matched_text in variable.occurrences:
+                            if matched_text in template:
+                                template = template.replace(matched_text, placeholder)
+                                substitutions_made += 1
+                                
+                except Exception as e:
+                    logger.warning(f"Error substituting variable {variable.name}: {e}")
+            
+            # Add template header with variable information
+            header = f"""! Configuration Template for {device_name}
+! Generated from device configuration on {time.strftime('%Y-%m-%d %H:%M:%S')}
+! Variables detected: {len([v for v in variables if v.confidence >= 0.6])}
+! Substitutions made: {substitutions_made}
+!
+! Variables to customize:
+"""
+            
+            for variable in sorted_vars:
+                if variable.confidence >= 0.6:
+                    suggested_values = self.suggest_variable_values(variable.name, device_properties)
+                    example_value = suggested_values[0] if suggested_values else "value"
+                    header += f"!   <{variable.name.upper()}>: {variable.description} (example: {example_value})\n"
+            
+            header += "!\n"
+            
+            template = header + template
+            
+            logger.info(f"Generated plain text template with {substitutions_made} variable substitutions")
+            return template
+            
+        except Exception as e:
+            logger.error(f"Error generating plain text template: {e}")
+            return config_text
+
+    def detect_variables_in_template(self, template_content: str) -> List[str]:
+        """
+        Detect variable placeholders in template content
+        
+        Args:
+            template_content: Template content to analyze
+            
+        Returns:
+            List of variable names found in the template
+        """
+        try:
+            variable_names = []
+            
+            # Check for Jinja2 variables: {{ variable_name }}
+            jinja_pattern = r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*[|\}]'
+            jinja_matches = re.findall(jinja_pattern, template_content)
+            variable_names.extend(jinja_matches)
+            
+            # Check for plain text placeholders: <VARIABLE_NAME>
+            text_pattern = r'<([A-Z_][A-Z0-9_]*)>'
+            text_matches = re.findall(text_pattern, template_content)
+            # Convert to lowercase for consistency
+            text_matches = [name.lower() for name in text_matches]
+            variable_names.extend(text_matches)
+            
+            # Remove duplicates and return
+            return list(set(variable_names))
+            
+        except Exception as e:
+            logger.error(f"Error detecting variables in template: {e}")
+            return []
+
+    def _create_variable_name(self, pattern_name: str, matched_value: str, device_name: str) -> str:
+        """
+        Create a unique variable name based on pattern and matched value
+        
+        Args:
+            pattern_name: Name of the pattern that matched
+            matched_value: The actual matched value
+            device_name: Name of the device
+            
+        Returns:
+            Unique variable name
+        """
+        # For certain patterns, use generic names
+        if pattern_name in ['hostname', 'domain_name', 'ntp_server', 'dns_server', 'snmp_community', 
+                          'enable_password', 'enable_secret', 'timezone', 'contact', 'banner']:
+            return pattern_name.upper()
+        
+        # For patterns that can have multiple instances, create unique names
+        elif pattern_name in ['ip_address', 'interface_name', 'vlan_id', 'description']:
+            # Create a simplified version of the matched value for naming
+            simplified_value = re.sub(r'[^a-zA-Z0-9]', '_', matched_value).upper()
+            return f"{pattern_name.upper()}_{simplified_value}"
+        
+        else:
+            return pattern_name.upper() 

@@ -188,9 +188,9 @@ class ConfigMatePlugin(PluginInterface):
                 "name": "Template Format",
                 "description": "Default format for saved templates",
                 "type": "choice",
-                "default": "jinja2",
-                "value": "jinja2",
-                "choices": ["jinja2", "simple", "python"]
+                "default": "text",
+                "value": "text",
+                "choices": ["text", "jinja2", "simple", "python"]
             }
         }
         
@@ -820,25 +820,96 @@ class ConfigMatePlugin(PluginInterface):
             return None
     
     def _get_device_config(self, device):
-        """Get device configuration using command manager plugin"""
+        """Get device configuration using command manager plugin
+        
+        This method retrieves device configuration by:
+        1. First checking for cached command outputs (show running-config, etc.)
+        2. If no cached output is found, attempting to run the command directly
+        
+        Fixed: Access plugin manager through self.app.plugin_manager instead of 
+               non-existent self.plugin_manager attribute.
+        """
         try:
-            # Get command manager plugin
-            command_manager = self.plugin_manager.get_plugin("command_manager")
+            # Get command manager plugin through the app's plugin manager
+            if not hasattr(self, 'app') or not self.app:
+                logger.error("App reference not available")
+                return None
+                
+            if not hasattr(self.app, 'plugin_manager') or not self.app.plugin_manager:
+                logger.error("Plugin manager not available")
+                return None
+                
+            command_manager = self.app.plugin_manager.get_plugin("command_manager")
             if not command_manager:
-                logger.error("Command manager plugin not available")
+                logger.error("Command manager plugin not found")
+                return None
+                
+            # Get the actual plugin instance
+            if hasattr(command_manager, 'instance') and command_manager.instance:
+                command_manager_instance = command_manager.instance
+            else:
+                logger.error("Command manager plugin instance not available")
                 return None
             
             # Try to get cached show run output first
-            outputs = command_manager.get_command_outputs(device.device_id, "show_run")
-            if outputs:
-                # Use most recent output
-                return outputs[-1].get('output', '')
+            # Check different possible command IDs
+            command_ids_to_try = [
+                "show running-config",
+                "show_run", 
+                "Show Running Config",
+                "show run"
+            ]
+            
+            if hasattr(command_manager_instance, 'get_command_outputs'):
+                for command_id in command_ids_to_try:
+                    try:
+                        outputs = command_manager_instance.get_command_outputs(device.device_id, command_id)
+                        if outputs and isinstance(outputs, dict):
+                            # Get the most recent output (latest timestamp)
+                            timestamps = list(outputs.keys())
+                            if timestamps:
+                                latest_timestamp = max(timestamps)
+                                output_data = outputs[latest_timestamp]
+                                if isinstance(output_data, dict) and 'output' in output_data:
+                                    logger.info(f"Found cached command output for {command_id}")
+                                    return output_data['output']
+                                elif isinstance(output_data, str):
+                                    # Sometimes the output might be stored directly as string
+                                    logger.info(f"Found cached command output for {command_id}")
+                                    return output_data
+                    except Exception as e:
+                        logger.debug(f"Error checking command ID {command_id}: {e}")
+                        continue
+                
+                # Also try getting all outputs for the device to see what's available
+                try:
+                    all_outputs = command_manager_instance.get_command_outputs(device.device_id)
+                    if all_outputs:
+                        logger.info(f"Available command outputs for device {device.device_id}: {list(all_outputs.keys())}")
+                        # Look for any command that might contain "show" and "run" or "config"
+                        for cmd_id, cmd_outputs in all_outputs.items():
+                            if any(keyword in cmd_id.lower() for keyword in ['show', 'run', 'config']):
+                                if cmd_outputs and isinstance(cmd_outputs, dict):
+                                    timestamps = list(cmd_outputs.keys())
+                                    if timestamps:
+                                        latest_timestamp = max(timestamps)
+                                        output_data = cmd_outputs[latest_timestamp]
+                                        if isinstance(output_data, dict) and 'output' in output_data:
+                                            logger.info(f"Using output from similar command: {cmd_id}")
+                                            return output_data['output']
+                except Exception as e:
+                    logger.debug(f"Error getting all outputs: {e}")
             
             # If no cached output, try to run command
-            result = command_manager.run_command(device, "show running-config")
-            if result and result.get('success'):
-                return result.get('output', '')
+            if hasattr(command_manager_instance, 'run_command'):
+                logger.info("No cached configuration found, attempting to run show running-config")
+                result = command_manager_instance.run_command(device, "show running-config")
+                if result and result.get('success'):
+                    return result.get('output', '')
+                else:
+                    logger.warning(f"Failed to run show running-config: {result}")
             
+            logger.warning("No method available to retrieve device configuration")
             return None
             
         except Exception as e:
@@ -950,44 +1021,44 @@ class ConfigMatePlugin(PluginInterface):
 ! Sample Cisco IOS Configuration Template
 ! Generated by ConfigMate
 !
-hostname {{ hostname | default('UNKNOWN-HOST') }}
+hostname <HOSTNAME>
 !
 ! Management Interface
-interface {{ mgmt_interface | default('GigabitEthernet0/0') }}
+interface <MGMT_INTERFACE>
  description Management Interface
- ip address {{ ip_address | default('192.168.1.100') }} {{ subnet_mask | default('255.255.255.0') }}
+ ip address <IP_ADDRESS> <SUBNET_MASK>
  no shutdown
 !
 ! Default Gateway
-ip route 0.0.0.0 0.0.0.0 {{ gateway | default('192.168.1.1') }}
+ip route 0.0.0.0 0.0.0.0 <GATEWAY>
 !
 ! DNS Configuration
-ip name-server {{ dns_server | default('8.8.8.8') }}
-ip domain-name {{ domain | default('example.com') }}
+ip name-server <DNS_SERVER>
+ip domain-name <DOMAIN>
 !
 ! NTP Configuration
-ntp server {{ ntp_server | default('pool.ntp.org') }}
+ntp server <NTP_SERVER>
 !
 ! SNMP Configuration
-snmp-server community {{ snmp_community | default('public') }} RO
-snmp-server location {{ location | default('Unknown Location') }}
-snmp-server contact {{ contact | default('admin@example.com') }}
+snmp-server community <SNMP_COMMUNITY> RO
+snmp-server location <LOCATION>
+snmp-server contact <CONTACT>
 !
 ! Banner
 banner motd ^
-Device: {{ hostname | default('UNKNOWN') }}
-Location: {{ location | default('Unknown') }}
-Contact: {{ contact | default('N/A') }}
+Device: <HOSTNAME>
+Location: <LOCATION>
+Contact: <CONTACT>
 ^
 !
 end"""
 
             # Create the sample template
             self.template_manager.create_template(
-                name="sample_cisco_basic",
+                name="sample_cisco_basic_text",
                 content=sample_template_content,
                 platform="cisco_ios",
-                description="Basic Cisco IOS configuration template with common settings",
+                description="Basic Cisco IOS configuration template with text placeholders",
                 variables={
                     'hostname': 'SW01',
                     'mgmt_interface': 'GigabitEthernet0/0',
@@ -1003,7 +1074,7 @@ end"""
                 }
             )
             
-            logger.info("Created sample template: sample_cisco_basic")
+            logger.info("Created sample template: sample_cisco_basic_text")
             return True
             
         except Exception as e:

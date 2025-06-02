@@ -4,17 +4,32 @@
   "platform": "cisco_ios",
   "description": "Basic Cisco IOS configuration template with common settings",
   "variables": {
+    "dns_server": "8.8.8.8",
+    "domain": "example.com",
+    "ntp_server": "pool.ntp.org",
+    "snmp_community": "public",
+    "contact": "admin@example.com",
     "hostname": "SW01",
     "mgmt_interface": "GigabitEthernet0/0",
     "ip_address": "192.168.1.100",
     "subnet_mask": "255.255.255.0",
     "gateway": "192.168.1.1",
+    "location": "Server Room"
+  },
+  "global_variables": {
     "dns_server": "8.8.8.8",
     "domain": "example.com",
     "ntp_server": "pool.ntp.org",
     "snmp_community": "public",
-    "location": "Server Room",
     "contact": "admin@example.com"
+  },
+  "device_variables": {
+    "hostname": "SW01",
+    "mgmt_interface": "GigabitEthernet0/0",
+    "ip_address": "192.168.1.100",
+    "subnet_mask": "255.255.255.0",
+    "gateway": "192.168.1.1",
+    "location": "Server Room"
   },
   "created_date": 1748659631.9692287,
   "modified_date": 1748659631.9692287,
