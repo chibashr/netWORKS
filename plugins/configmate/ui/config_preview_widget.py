@@ -727,7 +727,7 @@ class ConfigPreviewWidget(QWidget):
                     )
                     
                     if config:
-                        self.config_generated.emit(device.device_id, self.current_template)
+                        self.config_generated.emit(device.id, self.current_template)
                         logger.info(f"Generated config for device {device.get_property('name')}")
                     else:
                         logger.error(f"Failed to generate config for device {device.get_property('name')}")
@@ -757,7 +757,7 @@ class ConfigPreviewWidget(QWidget):
             
             if reply == QMessageBox.StandardButton.Yes:
                 for device in self.selected_devices:
-                    self.apply_requested.emit(device.device_id, self.current_config)
+                    self.apply_requested.emit(device.id, self.current_config)
                 
                 self.status_label.setText("Configuration apply requested")
             
@@ -794,9 +794,13 @@ class ConfigPreviewWidget(QWidget):
                 
                 # Connect preview device combo signal if not already connected
                 try:
+                    # Disconnect all existing connections first
                     self.preview_device_combo.currentTextChanged.disconnect()
-                except:
-                    pass  # Signal wasn't connected, that's fine
+                except (TypeError, RuntimeError):
+                    # Signal wasn't connected or already disconnected, that's fine
+                    pass
+                
+                # Always connect the signal
                 self.preview_device_combo.currentTextChanged.connect(self._on_preview_device_changed)
                 
                 if self.auto_preview_check.isChecked():

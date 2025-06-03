@@ -35,11 +35,14 @@ class ComparisonResult:
     
     def __init__(self, device1_name: str, device2_name: str, 
                  device1_config: str, device2_config: str,
-                 comparison_type: ComparisonType = ComparisonType.CONFIGURATION):
+                 comparison_type: ComparisonType = ComparisonType.CONFIGURATION,
+                 device1_ip: str = None, device2_ip: str = None):
         self.device1_name = device1_name
         self.device2_name = device2_name
         self.device1_config = device1_config
         self.device2_config = device2_config
+        self.device1_ip = device1_ip or "Unknown IP"
+        self.device2_ip = device2_ip or "Unknown IP"
         self.comparison_type = comparison_type
         
         # Comparison results
@@ -57,19 +60,40 @@ class ComparisonResult:
             lines1 = self.device1_config.splitlines(keepends=False)
             lines2 = self.device2_config.splitlines(keepends=False)
             
-            # Generate unified diff
+            # Generate unified diff with enhanced device information
+            fromfile = f"{self.device1_name} Configuration"
+            tofile = f"{self.device2_name} Configuration"
+            
             self.unified_diff = list(difflib.unified_diff(
                 lines1, lines2,
-                fromfile=self.device1_name,
-                tofile=self.device2_name,
-                lineterm=''
+                fromfile=fromfile,
+                tofile=tofile,
+                lineterm='',
+                n=3  # Context lines
             ))
+            
+            # Enhance unified diff with additional device information if available
+            if self.unified_diff and len(self.unified_diff) > 2:
+                # Insert device details after the header lines
+                enhanced_diff = []
+                enhanced_diff.extend(self.unified_diff[:2])  # Keep original --- and +++ lines
+                
+                # Add device information
+                enhanced_diff.append(f"@@ Device Information @@")
+                enhanced_diff.append(f"- Device 1: {self.device1_name} ({self.device1_ip})")
+                enhanced_diff.append(f"+ Device 2: {self.device2_name} ({self.device2_ip})")
+                enhanced_diff.append(f"@@ Comparison Type: {self.comparison_type.value} @@")
+                enhanced_diff.append("")  # Empty line for readability
+                
+                # Add the rest of the diff
+                enhanced_diff.extend(self.unified_diff[2:])
+                self.unified_diff = enhanced_diff
             
             # Generate side-by-side diff
             self.side_by_side_diff = list(difflib.context_diff(
                 lines1, lines2,
-                fromfile=self.device1_name,
-                tofile=self.device2_name,
+                fromfile=fromfile,
+                tofile=tofile,
                 lineterm=''
             ))
             
@@ -193,8 +217,8 @@ class ComparisonResult:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(f"Configuration Comparison Report\n")
                 f.write(f"{'=' * 50}\n\n")
-                f.write(f"Device 1: {self.device1_name}\n")
-                f.write(f"Device 2: {self.device2_name}\n")
+                f.write(f"Device 1: {self.device1_name} ({self.device1_ip})\n")
+                f.write(f"Device 2: {self.device2_name} ({self.device2_ip})\n")
                 f.write(f"Comparison Type: {self.comparison_type.value}\n\n")
                 
                 # Statistics
@@ -215,6 +239,45 @@ class ComparisonResult:
         except Exception as e:
             logger.error(f"Error exporting comparison to {file_path}: {e}")
             return False
+    
+    def to_html(self) -> str:
+        """Generate HTML representation of the comparison for export"""
+        try:
+            return self.get_html_diff()
+        except Exception as e:
+            logger.error(f"Error generating HTML representation: {e}")
+            return f"<html><body><h1>Comparison Error</h1><p>{e}</p></body></html>"
+    
+    def to_text(self) -> str:
+        """Generate text representation of the comparison for export"""
+        try:
+            lines = []
+            lines.append("Configuration Comparison Report")
+            lines.append("=" * 50)
+            lines.append("")
+            lines.append(f"Device 1: {self.device1_name} ({self.device1_ip})")
+            lines.append(f"Device 2: {self.device2_name} ({self.device2_ip})")
+            lines.append(f"Comparison Type: {self.comparison_type.value}")
+            lines.append("")
+            
+            # Statistics
+            lines.append("Statistics:")
+            lines.append(f"  Lines Added: {self.statistics.get('lines_added', 0)}")
+            lines.append(f"  Lines Removed: {self.statistics.get('lines_removed', 0)}")
+            lines.append(f"  Lines Unchanged: {self.statistics.get('lines_unchanged', 0)}")
+            lines.append(f"  Similarity: {self.statistics.get('similarity_ratio', 0):.2%}")
+            lines.append("")
+            
+            # Unified diff
+            lines.append("Unified Diff:")
+            lines.append("-" * 30)
+            lines.extend(self.unified_diff)
+            
+            return '\n'.join(lines)
+            
+        except Exception as e:
+            logger.error(f"Error generating text representation: {e}")
+            return f"Comparison Error: {e}"
 
 
 class ConfigComparator:
@@ -293,7 +356,9 @@ class ConfigComparator:
                 device2.get_property('name', 'Device 2'),
                 config1,
                 config2,
-                ComparisonType.CONFIGURATION
+                ComparisonType.CONFIGURATION,
+                device1.get_property('ip_address', 'Unknown IP'),
+                device2.get_property('ip_address', 'Unknown IP')
             )
             
             logger.info(f"Compared configurations between {result.device1_name} and {result.device2_name}")
@@ -302,7 +367,7 @@ class ConfigComparator:
         except Exception as e:
             logger.error(f"Error comparing device configurations: {e}")
             # Return empty comparison result
-            return ComparisonResult("Error", "Error", "", "", ComparisonType.CONFIGURATION)
+            return ComparisonResult("Error", "Error", "", "", ComparisonType.CONFIGURATION, "Unknown IP", "Unknown IP")
     
     def compare_show_commands(self, device1: Any, device2: Any, 
                             command: str,
@@ -343,7 +408,9 @@ class ConfigComparator:
                 f"{device2.get_property('name', 'Device 2')} ({command})",
                 output1,
                 output2,
-                ComparisonType.SHOW_COMMAND
+                ComparisonType.SHOW_COMMAND,
+                device1.get_property('ip_address', 'Unknown IP'),
+                device2.get_property('ip_address', 'Unknown IP')
             )
             
             logger.info(f"Compared '{command}' output between {device1.get_property('name')} and {device2.get_property('name')}")
@@ -351,7 +418,7 @@ class ConfigComparator:
             
         except Exception as e:
             logger.error(f"Error comparing show command outputs: {e}")
-            return ComparisonResult("Error", "Error", "", "", ComparisonType.SHOW_COMMAND)
+            return ComparisonResult("Error", "Error", "", "", ComparisonType.SHOW_COMMAND, "Unknown IP", "Unknown IP")
     
     def compare_multiple_devices(self, devices: List[Any], 
                                command: str = "show running-config") -> List[ComparisonResult]:
@@ -406,7 +473,9 @@ class ConfigComparator:
                 template2_name,
                 template1_content,
                 template2_content,
-                ComparisonType.TEMPLATE
+                ComparisonType.TEMPLATE,
+                "Unknown IP",
+                "Unknown IP"
             )
             
             logger.info(f"Compared templates '{template1_name}' and '{template2_name}'")
@@ -414,7 +483,7 @@ class ConfigComparator:
             
         except Exception as e:
             logger.error(f"Error comparing templates: {e}")
-            return ComparisonResult("Error", "Error", "", "", ComparisonType.TEMPLATE)
+            return ComparisonResult("Error", "Error", "", "", ComparisonType.TEMPLATE, "Unknown IP", "Unknown IP")
     
     def add_ignore_pattern(self, pattern: str):
         """
@@ -446,30 +515,68 @@ class ConfigComparator:
     def _get_device_config(self, device: Any, command: str) -> str:
         """Get configuration from device's cached command outputs"""
         try:
-            # Check if device has command outputs stored
+            # First, try to get command outputs from device object (if already loaded)
             command_outputs = None
             if hasattr(device, 'command_outputs') and device.command_outputs:
                 command_outputs = device.command_outputs
             elif hasattr(device, 'get_command_outputs'):
                 command_outputs = device.get_command_outputs()
             
+            # If not found in memory, try to load from file system
             if not command_outputs:
-                logger.debug(f"No command outputs found for device {getattr(device, 'device_id', 'Unknown')}")
+                command_outputs = self._load_device_command_outputs_from_file(device)
+            
+            if not command_outputs:
+                logger.debug(f"No command outputs found for device {getattr(device, 'id', 'Unknown')}")
                 return ""
             
+            # Enhanced command ID patterns with descriptive names matching
+            # Map user-friendly command to possible stored command IDs
+            command_patterns = []
+            if command.lower() in ['show running-config', 'show run', 'running-config']:
+                command_patterns = [
+                    "Cisco_IOS_XE_16.x_Show_Running_Config",
+                    "Cisco_IOS_Show_Running_Config", 
+                    "Show_Running_Config",
+                    "Running_Config",
+                    "show running-config",
+                    "show run",
+                    "show_run"
+                ]
+            elif command.lower() in ['show version', 'version']:
+                command_patterns = [
+                    "Cisco_IOS_XE_16.x_Show_Version",
+                    "Cisco_IOS_Show_Version",
+                    "Show_Version",
+                    "show version",
+                    "version"
+                ]
+            elif command.lower() in ['show interface status', 'show interfaces status']:
+                command_patterns = [
+                    "Cisco_IOS_XE_16.x_Show_Interface_Status",
+                    "Cisco_IOS_Show_Interface_Status",
+                    "Show_Interface_Status",
+                    "show interface status",
+                    "show interfaces status"
+                ]
+            else:
+                # For other commands, try exact match and some variations
+                command_patterns = [command, command.replace(' ', '_'), command.replace(' ', '-')]
+            
             # Try exact command match first
-            if command in command_outputs:
-                cmd_outputs = command_outputs[command]
-                if cmd_outputs and isinstance(cmd_outputs, dict):
-                    # Get the most recent output
-                    timestamps = list(cmd_outputs.keys())
-                    if timestamps:
-                        latest_timestamp = max(timestamps)
-                        output_data = cmd_outputs[latest_timestamp]
-                        if isinstance(output_data, dict) and 'output' in output_data:
-                            return output_data['output']
-                        elif isinstance(output_data, str):
-                            return output_data
+            for pattern in command_patterns:
+                if pattern in command_outputs:
+                    cmd_outputs = command_outputs[pattern]
+                    if cmd_outputs and isinstance(cmd_outputs, dict):
+                        # Get the most recent output
+                        timestamps = list(cmd_outputs.keys())
+                        if timestamps:
+                            latest_timestamp = max(timestamps)
+                            output_data = cmd_outputs[latest_timestamp]
+                            if isinstance(output_data, dict) and 'output' in output_data:
+                                return output_data['output']
+                            elif isinstance(output_data, str):
+                                return output_data
             
             # Try fuzzy matching for similar commands
             command_lower = command.lower()
@@ -485,12 +592,65 @@ class ConfigComparator:
                             elif isinstance(output_data, str):
                                 return output_data
             
-            logger.debug(f"No output found for command '{command}' on device {getattr(device, 'device_id', 'Unknown')}")
+            logger.debug(f"No output found for command '{command}' on device {getattr(device, 'id', 'Unknown')}")
             return ""
             
         except Exception as e:
             logger.error(f"Error getting device config: {e}")
             return ""
+    
+    def _load_device_command_outputs_from_file(self, device):
+        """Load command outputs from the file system for a device"""
+        try:
+            import json
+            from pathlib import Path
+            
+            # Try to get workspace path from device manager if available
+            workspace_path = None
+            device_id = getattr(device, 'id', None)
+            
+            if not device_id:
+                return None
+            
+            # Try multiple ways to get workspace path
+            if hasattr(device, 'device_manager') and device.device_manager:
+                workspace_path = device.device_manager.get_workspace_dir()
+            elif hasattr(device, 'get_workspace_path'):
+                workspace_path = device.get_workspace_path()
+            else:
+                # Try common workspace locations
+                possible_paths = [
+                    Path.cwd() / 'workspaces' / 'langlade_wi',
+                    Path.cwd() / 'workspaces' / 'default',
+                    Path.cwd() / 'data' / 'workspaces' / 'langlade_wi'
+                ]
+                for path in possible_paths:
+                    device_dir = path / 'devices' / device_id
+                    if device_dir.exists():
+                        workspace_path = path
+                        break
+            
+            if not workspace_path:
+                logger.debug("No workspace path available for ConfigComparator")
+                return None
+            
+            # Construct path to command outputs file
+            command_outputs_file = Path(workspace_path) / 'devices' / device_id / 'commands' / 'command_outputs.json'
+            
+            if not command_outputs_file.exists():
+                logger.debug(f"Command outputs file does not exist: {command_outputs_file}")
+                return None
+            
+            # Load command outputs from file
+            with open(command_outputs_file, 'r', encoding='utf-8') as f:
+                command_outputs = json.load(f)
+            
+            logger.debug(f"ConfigComparator loaded {len(command_outputs)} command outputs from file for device {device_id}")
+            return command_outputs
+            
+        except Exception as e:
+            logger.error(f"Error loading command outputs from file in ConfigComparator: {e}")
+            return None
     
     def _get_command_output(self, device: Any, command: str) -> str:
         """Get command output from device's cached command outputs"""

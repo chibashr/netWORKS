@@ -797,7 +797,13 @@ class TemplateEditorDialog(QDialog):
         logger.info(f"Creating template from device {device.get_property('name')} configuration")
         
         try:
-            # Set device name as template name suggestion
+            # Check if we have multiple selected devices for enhanced variable detection
+            selected_devices = getattr(self.plugin, '_selected_devices', [])
+            if len(selected_devices) > 1:
+                logger.info(f"Multiple devices selected ({len(selected_devices)}), using multi-device variable detection")
+                return self._create_from_multiple_configs(selected_devices)
+            
+            # Single device template creation (original logic)
             device_name = device.get_property('name', 'Unknown')
             self.name_edit.setText(f"{device_name}_template")
             
@@ -837,6 +843,503 @@ class TemplateEditorDialog(QDialog):
         except Exception as e:
             logger.error(f"Error creating template from config: {e}")
             QMessageBox.critical(self, "Error", f"Failed to create template: {e}")
+
+    def _create_from_multiple_configs(self, devices):
+        """Create template from multiple device configurations using comparison-based variable detection"""
+        try:
+            # Get configurations from all devices
+            device_configs = {}
+            device_names = []
+            
+            for device in devices:
+                device_name = device.get_property('name', 'Unknown')
+                device_names.append(device_name)
+                
+                # Get show running-config or show der from device
+                config_text = self._get_device_config_for_template(device)
+                if config_text:
+                    device_configs[device_name] = config_text
+                else:
+                    logger.warning(f"No configuration available for device {device_name}")
+            
+            if len(device_configs) < 2:
+                QMessageBox.warning(self, "Warning", 
+                                  f"Need at least 2 devices with configurations. Found {len(device_configs)} devices with configs.")
+                return
+            
+            # Set template name based on multiple devices
+            if len(device_names) <= 3:
+                template_name = f"{'_'.join(device_names)}_template"
+            else:
+                template_name = f"{device_names[0]}_and_{len(device_names)-1}_others_template"
+            
+            self.name_edit.setText(template_name)
+            
+            # Detect platform from first device
+            first_device = devices[0]
+            device_type = first_device.get_property('device_type', 'generic')
+            if 'cisco' in device_type.lower():
+                if 'nexus' in device_type.lower() or 'nxos' in device_type.lower():
+                    platform = 'cisco_nxos'
+                else:
+                    platform = 'cisco_ios'
+            elif 'juniper' in device_type.lower():
+                platform = 'juniper'
+            else:
+                platform = 'generic'
+            
+            self.platform_combo.setCurrentText(platform)
+            
+            # Use multi-device variable detection
+            logger.info(f"Analyzing configurations from {len(device_configs)} devices")
+            variables = self.plugin.variable_detector.detect_variables_multi_config(device_configs)
+            
+            # Use the first device's config as base and apply variable substitutions
+            base_config = list(device_configs.values())[0]
+            base_device_name = list(device_configs.keys())[0]
+            
+            template_format = self.plugin.get_setting_value("template_format") or "text"
+            if template_format == "text":
+                template_content = self._generate_multi_device_text_template(base_config, variables, device_names)
+            else:
+                template_content = self._generate_multi_device_jinja_template(base_config, variables, device_names)
+            
+            self.template_editor.setPlainText(template_content)
+            
+            # Auto-detect variables from the generated template
+            if self.auto_detect_vars_cb.isChecked():
+                self._detect_variables()
+            
+            # Set description
+            self.description_edit.setPlainText(
+                f"Template created from {len(device_configs)} device configurations: {', '.join(device_names)} "
+                f"on {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                f"Variables detected by comparing configurations across devices:\n"
+                f"- {len([v for v in variables if v.confidence >= 0.7])} high-confidence variables\n"
+                f"- {len([v for v in variables if 0.5 <= v.confidence < 0.7])} medium-confidence variables\n"
+                f"- Based on differences found between device configurations"
+            )
+            
+            logger.info(f"Multi-device template created with {len(variables)} variables detected")
+            
+        except Exception as e:
+            logger.error(f"Error creating multi-device template: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to create multi-device template: {e}")
+    
+    def _get_device_config_for_template(self, device):
+        """Get the appropriate configuration from device for template creation"""
+        try:
+            device_name = device.get_property('name', 'Unknown')
+            device_id = device.id
+            logger.debug(f"=== Attempting to get config for device: {device_name} (ID: {device_id}) ===")
+            
+            # Use ConfigMate plugin's method to load command outputs from file
+            command_outputs = None
+            
+            # First, try to get command outputs from device object (if already loaded)
+            if hasattr(device, 'command_outputs') and device.command_outputs:
+                command_outputs = device.command_outputs
+                logger.debug(f"Found command_outputs attribute with {len(command_outputs)} commands")
+            elif hasattr(device, 'get_command_outputs'):
+                command_outputs = device.get_command_outputs()
+                logger.debug(f"Found get_command_outputs() method returning {len(command_outputs) if command_outputs else 0} commands")
+            
+            # If not found in memory, try to load from file system using ConfigMate's method
+            if not command_outputs and hasattr(self.plugin, '_load_device_command_outputs_from_file'):
+                logger.debug("Loading command outputs from file using ConfigMate plugin method...")
+                command_outputs = self.plugin._load_device_command_outputs_from_file(device)
+                if command_outputs:
+                    logger.debug(f"ConfigMate plugin loaded {len(command_outputs)} command outputs from file")
+                else:
+                    logger.debug("ConfigMate plugin method returned None or empty")
+            
+            # If ConfigMate's method fails, try direct file system search
+            if not command_outputs:
+                logger.debug("ConfigMate plugin method failed, attempting direct file search...")
+                command_outputs = self._load_command_outputs_direct(device)
+                if command_outputs:
+                    logger.debug(f"Direct file search loaded {len(command_outputs)} command outputs")
+            
+            # Alternative: Try other device property access methods
+            if not command_outputs:
+                logger.debug("Checking alternative command storage locations...")
+                
+                # Try getting command outputs as a property
+                if hasattr(device, 'get_property'):
+                    command_outputs = device.get_property('command_outputs')
+                    if command_outputs:
+                        logger.debug(f"Found command_outputs property with {len(command_outputs)} commands")
+                
+                # Check for cached commands
+                if not command_outputs and hasattr(device, 'cached_commands'):
+                    command_outputs = device.cached_commands
+                    logger.debug(f"Found cached_commands with {len(command_outputs) if command_outputs else 0} commands")
+                
+                # Check for command_cache
+                elif not command_outputs and hasattr(device, 'command_cache'):
+                    command_outputs = device.command_cache
+                    logger.debug(f"Found command_cache with {len(command_outputs) if command_outputs else 0} commands")
+                
+                # Check properties dict directly
+                elif not command_outputs and hasattr(device, 'properties') and isinstance(device.properties, dict):
+                    if 'command_outputs' in device.properties:
+                        command_outputs = device.properties['command_outputs']
+                        logger.debug(f"Found command_outputs in properties with {len(command_outputs) if command_outputs else 0} commands")
+            
+            if not command_outputs:
+                logger.warning(f"No command outputs found for device {device_name}")
+                logger.debug(f"Tried: command_outputs, get_command_outputs(), plugin._load_device_command_outputs_from_file(), direct file search, get_property('command_outputs'), cached_commands, command_cache, properties dict")
+                return None
+            
+            logger.debug(f"Available commands for {device_name}: {list(command_outputs.keys())}")
+            
+            # Use ConfigMate's enhanced command patterns for better matching
+            command_patterns = [
+                # Exact matches for common formats
+                "show running-config",
+                "show run",
+                "show_run", 
+                "Show Running Config",
+                "Show Running-Config",
+                "show running",
+                "sh run",
+                "sh running-config",
+                "running-config",
+                "running_config",
+                # Descriptive command IDs (from NetWORKS command manager)
+                "Cisco_IOS_XE_16.x_Show_Running_Config",
+                "Cisco_IOS_Show_Running_Config", 
+                "Show_Running_Config",
+                "Running_Config",
+                # Additional patterns
+                "show configuration",
+                "show config",
+                "show der"
+            ]
+            
+            # Try exact command ID matches first
+            for pattern in command_patterns:
+                if pattern in command_outputs:
+                    cmd_outputs = command_outputs[pattern]
+                    logger.debug(f"Checking exact command '{pattern}': {type(cmd_outputs)}")
+                    config_text = self._extract_command_output(cmd_outputs)
+                    if config_text and len(config_text.strip()) > 100:
+                        logger.info(f"Found config using exact command: {pattern} ({len(config_text)} chars)")
+                        return config_text
+            
+            # Try fuzzy matching with ConfigMate's scoring approach
+            logger.debug("Attempting fuzzy matching with command scoring...")
+            import re
+            candidates = []
+            
+            for cmd_id, cmd_outputs in command_outputs.items():
+                if cmd_outputs and isinstance(cmd_outputs, dict):
+                    cmd_lower = cmd_id.lower()
+                    score = 0
+                    
+                    # Higher scores for better matches (ConfigMate's scoring logic)
+                    if re.search(r'running.*config', cmd_lower):
+                        score += 100
+                    elif 'running' in cmd_lower and 'config' in cmd_lower:
+                        score += 90
+                    elif 'running' in cmd_lower:
+                        score += 50
+                    elif 'config' in cmd_lower:
+                        score += 30
+                    elif 'show' in cmd_lower and ('run' in cmd_lower or 'conf' in cmd_lower):
+                        score += 40
+                    elif any(keyword in cmd_lower for keyword in ['show', 'run', 'conf']):
+                        score += 10
+                    
+                    if score > 0:
+                        config_text = self._extract_command_output(cmd_outputs)
+                        if config_text and len(config_text.strip()) > 100:
+                            timestamps = list(cmd_outputs.keys()) if isinstance(cmd_outputs, dict) else ['now']
+                            latest_timestamp = max(timestamps) if timestamps else 'now'
+                            candidates.append((score, cmd_id, config_text, latest_timestamp))
+                            logger.debug(f"Command '{cmd_id}' scored {score} with {len(config_text)} chars")
+            
+            # Sort by score (highest first) and use the best match
+            if candidates:
+                candidates.sort(reverse=True, key=lambda x: x[0])
+                best_score, best_cmd, best_config, best_timestamp = candidates[0]
+                logger.info(f"Found config using fuzzy match: {best_cmd} (score: {best_score}, {len(best_config)} chars)")
+                return best_config
+            
+            logger.warning(f"No suitable configuration found for device {device_name} after all search methods")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting device config for template: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+    
+    def _load_command_outputs_direct(self, device):
+        """Direct file system search for command_outputs.json files"""
+        try:
+            import json
+            from pathlib import Path
+            
+            device_id = device.id
+            logger.debug(f"Starting direct file search for device {device_id}")
+            
+            # Get current working directory and try multiple search strategies
+            current_dir = Path.cwd()
+            logger.debug(f"Current working directory: {current_dir}")
+            
+            # Strategy 1: Check if we're in the NetWORKS root directory
+            possible_workspaces = [
+                current_dir / 'config' / 'workspaces',
+                current_dir / 'workspaces',
+                current_dir.parent / 'config' / 'workspaces',
+                current_dir.parent / 'workspaces',
+                Path(__file__).parent.parent.parent.parent / 'config' / 'workspaces'
+            ]
+            
+            # Strategy 2: Add common workspace names
+            workspace_names = ['langlade_wi', 'default', 'current']
+            
+            # Search all combinations
+            search_paths = []
+            for workspace_base in possible_workspaces:
+                if workspace_base.exists():
+                    logger.debug(f"Found workspace base directory: {workspace_base}")
+                    for workspace_name in workspace_names:
+                        workspace_dir = workspace_base / workspace_name
+                        if workspace_dir.exists():
+                            device_dir = workspace_dir / 'devices' / device_id
+                            command_file = device_dir / 'commands' / 'command_outputs.json'
+                            search_paths.append(command_file)
+                            logger.debug(f"Added search path: {command_file}")
+                        
+                        # Also try direct device search in workspace base
+                        device_dir = workspace_base / 'devices' / device_id
+                        command_file = device_dir / 'commands' / 'command_outputs.json'
+                        search_paths.append(command_file)
+            
+            # Strategy 3: Exhaustive search in current directory tree
+            logger.debug("Attempting exhaustive search for command_outputs.json files...")
+            for root_dir in [current_dir, current_dir.parent]:
+                if root_dir.exists():
+                    for commands_file in root_dir.rglob(f'**/devices/{device_id}/commands/command_outputs.json'):
+                        search_paths.append(commands_file)
+                        logger.debug(f"Found via exhaustive search: {commands_file}")
+            
+            # Remove duplicates while preserving order
+            unique_paths = []
+            seen = set()
+            for path in search_paths:
+                if path not in seen:
+                    unique_paths.append(path)
+                    seen.add(path)
+            
+            logger.debug(f"Searching {len(unique_paths)} unique paths for command outputs...")
+            
+            # Try each path
+            for command_file in unique_paths:
+                logger.debug(f"Checking: {command_file}")
+                if command_file.exists():
+                    logger.info(f"Found command outputs file: {command_file}")
+                    try:
+                        with open(command_file, 'r', encoding='utf-8') as f:
+                            command_outputs = json.load(f)
+                        logger.info(f"Successfully loaded {len(command_outputs)} commands from {command_file}")
+                        return command_outputs
+                    except Exception as e:
+                        logger.error(f"Error reading command file {command_file}: {e}")
+                        continue
+                else:
+                    logger.debug(f"File does not exist: {command_file}")
+            
+            logger.warning(f"No command_outputs.json file found for device {device_id} after exhaustive search")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error in direct command outputs search: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+    
+    def _extract_command_output(self, cmd_outputs):
+        """Extract command output from the command outputs structure"""
+        try:
+            logger.debug(f"_extract_command_output called with: {type(cmd_outputs)}")
+            
+            if not cmd_outputs:
+                logger.debug("cmd_outputs is None or empty")
+                return None
+            
+            if isinstance(cmd_outputs, str):
+                logger.debug(f"cmd_outputs is string, length: {len(cmd_outputs)}")
+                return cmd_outputs
+            
+            if isinstance(cmd_outputs, dict):
+                logger.debug(f"cmd_outputs is dict with keys: {list(cmd_outputs.keys())}")
+                
+                # Get the most recent output
+                timestamps = list(cmd_outputs.keys())
+                if timestamps:
+                    logger.debug(f"Found timestamps: {timestamps}")
+                    latest_timestamp = max(timestamps)
+                    logger.debug(f"Using latest timestamp: {latest_timestamp}")
+                    output_data = cmd_outputs[latest_timestamp]
+                    logger.debug(f"Output data type: {type(output_data)}")
+                    
+                    if isinstance(output_data, dict):
+                        logger.debug(f"Output data dict keys: {list(output_data.keys())}")
+                        if 'output' in output_data:
+                            output_text = output_data['output']
+                            logger.debug(f"Found 'output' key with {len(output_text) if output_text else 0} characters")
+                            return output_text
+                        else:
+                            logger.debug("No 'output' key found in output_data dict")
+                            # Try other common keys
+                            for key in ['text', 'content', 'result', 'data']:
+                                if key in output_data:
+                                    logger.debug(f"Found alternative key '{key}' in output_data")
+                                    return output_data[key]
+                    elif isinstance(output_data, str):
+                        logger.debug(f"Output data is string with {len(output_data)} characters")
+                        return output_data
+                    else:
+                        logger.debug(f"Unexpected output_data type: {type(output_data)}")
+                else:
+                    logger.debug("No timestamps found in cmd_outputs dict")
+            else:
+                logger.debug(f"Unexpected cmd_outputs type: {type(cmd_outputs)}")
+                # Try to convert to string as last resort
+                try:
+                    str_output = str(cmd_outputs)
+                    if len(str_output) > 100:
+                        logger.debug(f"Converted to string: {len(str_output)} characters")
+                        return str_output
+                    else:
+                        logger.debug(f"String conversion too short: {len(str_output)} characters")
+                except Exception as str_e:
+                    logger.debug(f"Failed to convert to string: {str_e}")
+            
+            logger.debug("No extractable output found")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error extracting command output: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+    
+    def _generate_multi_device_text_template(self, base_config, variables, device_names):
+        """Generate a text template from multi-device variable detection"""
+        try:
+            template = base_config
+            substitutions_made = 0
+            
+            # Sort variables by confidence (highest first)
+            sorted_vars = sorted(variables, key=lambda x: x.confidence, reverse=True)
+            
+            # Apply substitutions with placeholders
+            for variable in sorted_vars:
+                # Only use high-confidence variables for template generation
+                if variable.confidence < 0.6:
+                    continue
+                
+                placeholder = f"<{variable.name.upper()}>"
+                
+                try:
+                    # Use the variable's specific occurrences for replacement
+                    for line_num, matched_text in variable.occurrences:
+                        if matched_text in template:
+                            template = template.replace(matched_text, placeholder, 1)  # Replace only first occurrence
+                            substitutions_made += 1
+                            break  # Only replace first occurrence per variable
+                            
+                except Exception as e:
+                    logger.warning(f"Error substituting variable {variable.name}: {e}")
+            
+            # Add comprehensive template header
+            header = f"""! Multi-Device Configuration Template
+! Generated from {len(device_names)} device configurations on {time.strftime('%Y-%m-%d %H:%M:%S')}
+! Source devices: {', '.join(device_names)}
+! Variables detected by comparing configurations across devices
+! Total variables detected: {len([v for v in variables if v.confidence >= 0.6])}
+! Substitutions made: {substitutions_made}
+!
+! Variable types detected:
+"""
+            
+            # Group variables by confidence level
+            high_conf_vars = [v for v in sorted_vars if v.confidence >= 0.8]
+            med_conf_vars = [v for v in sorted_vars if 0.6 <= v.confidence < 0.8]
+            
+            if high_conf_vars:
+                header += "! High-confidence variables (>80%):\n"
+                for variable in high_conf_vars:
+                    example_value = variable.examples[0] if variable.examples else "value"
+                    header += f"!   <{variable.name.upper()}>: {variable.description} (example: {example_value})\n"
+                header += "!\n"
+            
+            if med_conf_vars:
+                header += "! Medium-confidence variables (60-80%):\n"
+                for variable in med_conf_vars:
+                    example_value = variable.examples[0] if variable.examples else "value"
+                    header += f"!   <{variable.name.upper()}>: {variable.description} (example: {example_value})\n"
+                header += "!\n"
+            
+            template = header + template
+            
+            logger.info(f"Generated multi-device text template with {substitutions_made} variable substitutions")
+            return template
+            
+        except Exception as e:
+            logger.error(f"Error generating multi-device text template: {e}")
+            return base_config
+    
+    def _generate_multi_device_jinja_template(self, base_config, variables, device_names):
+        """Generate a Jinja2 template from multi-device variable detection"""
+        try:
+            template = base_config
+            substitutions_made = 0
+            
+            # Sort variables by confidence (highest first)
+            sorted_vars = sorted(variables, key=lambda x: x.confidence, reverse=True)
+            
+            # Apply Jinja2 variable substitutions
+            for variable in sorted_vars:
+                if variable.confidence < 0.6:
+                    continue
+                
+                jinja_var = f"{{{{ {variable.name} }}}}"
+                
+                try:
+                    # Use the variable's specific occurrences for replacement
+                    for line_num, matched_text in variable.occurrences:
+                        if matched_text in template:
+                            template = template.replace(matched_text, jinja_var, 1)
+                            substitutions_made += 1
+                            break
+                            
+                except Exception as e:
+                    logger.warning(f"Error substituting Jinja2 variable {variable.name}: {e}")
+            
+            # Add Jinja2 template header
+            header = f"""{{% comment %}}
+Multi-Device Configuration Template
+Generated from {len(device_names)} device configurations on {time.strftime('%Y-%m-%d %H:%M:%S')}
+Source devices: {', '.join(device_names)}
+Variables detected: {len([v for v in variables if v.confidence >= 0.6])}
+Substitutions made: {substitutions_made}
+{{% endcomment %}}
+
+"""
+            
+            template = header + template
+            
+            logger.info(f"Generated multi-device Jinja2 template with {substitutions_made} variable substitutions")
+            return template
+            
+        except Exception as e:
+            logger.error(f"Error generating multi-device Jinja2 template: {e}")
+            return base_config
 
     def _update_selected_devices(self):
         """Update the list of selected devices from the plugin"""

@@ -41,9 +41,15 @@ class MainWindow(QMainWindow):
         self.config = app.config
         self.connectivity_manager = app.connectivity_manager
         
-        # Set window properties
+        # Set window properties for easy resizing
         self.updateWindowTitle()
         self.resize(1200, 800)
+        self.setMinimumSize(800, 600)  # Set reasonable minimum size
+        
+        # Ensure window is resizable
+        self.setSizePolicy(
+            QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        )
         
         # Initialize UI components
         self._create_actions()
@@ -258,21 +264,176 @@ class MainWindow(QMainWindow):
         self.plugin_menus = {}
         
     def _create_toolbar(self):
-        """Create the main toolbar"""
-        self.toolbar = QToolBar("Main Toolbar", self)
-        self.toolbar.setObjectName("MainToolbar")
-        self.toolbar.setMovable(True)
-        self.toolbar.setIconSize(QSize(24, 24))
-        self.addToolBar(self.toolbar)
+        """Create the main toolbar as a tab widget for better space utilization"""
+        # Create a container widget for the tab-based toolbar
+        self.toolbar_container = QWidget()
+        self.toolbar_container.setObjectName("ToolbarContainer")
+        self.toolbar_container.setMaximumHeight(65)  # Reduced from 70 to fit smaller buttons
         
-        # Add actions to toolbar
-        self.toolbar.addAction(self.action_new_device)
-        self.toolbar.addAction(self.action_new_group)
-        self.toolbar.addSeparator()
-        self.toolbar.addAction(self.action_save)
-        self.toolbar.addSeparator()
-        self.toolbar.addAction(self.action_refresh)
+        # Create layout for the container
+        toolbar_layout = QHBoxLayout(self.toolbar_container)
+        toolbar_layout.setContentsMargins(4, 2, 4, 2)
+        toolbar_layout.setSpacing(0)
         
+        # Create tab widget for toolbar sections
+        self.toolbar_tabs = QTabWidget()
+        self.toolbar_tabs.setObjectName("ToolbarTabs")
+        self.toolbar_tabs.setTabPosition(QTabWidget.North)
+        self.toolbar_tabs.setMaximumHeight(61)  # Reduced from 66 to fit smaller buttons
+        
+        # Style the tab widget for a toolbar appearance
+        self.toolbar_tabs.setStyleSheet("""
+            QTabWidget {
+                background-color: #f8f8f8;
+                border: none;
+                border-bottom: 1px solid #e0e0e0;
+            }
+            QTabWidget::pane {
+                border: none;
+                background-color: #f8f8f8;
+                margin: 0px;
+                padding: 0px;
+            }
+            QTabWidget::tab-bar {
+                alignment: left;
+            }
+            QTabBar::tab {
+                background-color: #e8e8e8;
+                border: 1px solid #d0d0d0;
+                border-bottom: none;
+                border-radius: 4px 4px 0px 0px;
+                padding: 4px 12px;
+                margin-right: 2px;
+                font-size: 10px;
+                font-weight: 500;
+                color: #555555;
+            }
+            QTabBar::tab:selected {
+                background-color: #f8f8f8;
+                border-bottom: 1px solid #f8f8f8;
+                color: #333333;
+            }
+            QTabBar::tab:hover {
+                background-color: #f0f0f0;
+            }
+        """)
+        
+        # Create the Core tab
+        self._create_toolbar_tab("Core", [
+            self.action_new_device,
+            self.action_new_group,
+            None,  # Separator
+            self.action_save,
+            None,  # Separator
+            self.action_refresh
+        ])
+        
+        # Add tab widget to toolbar layout
+        toolbar_layout.addWidget(self.toolbar_tabs)
+        
+        # Add toolbar container to main window
+        self.addToolBar(Qt.TopToolBarArea, self._create_toolbar_widget())
+        
+        # Plugin tabs will be added dynamically
+        self.plugin_toolbar_tabs = {}
+        
+    def _create_toolbar_widget(self):
+        """Create a QToolBar containing the tab widget"""
+        toolbar = QToolBar("Main Toolbar", self)
+        toolbar.setObjectName("MainToolbar")
+        toolbar.setMovable(True)
+        toolbar.setFloatable(False)
+        toolbar.addWidget(self.toolbar_container)
+        
+        # Store reference for later use
+        self.toolbar = toolbar
+        return toolbar
+    
+    def _create_toolbar_tab(self, tab_name, actions):
+        """Create a tab with toolbar buttons
+        
+        Args:
+            tab_name: Name of the tab
+            actions: List of actions (None for separators)
+        """
+        if not actions:
+            return
+            
+        # Create tab widget
+        tab_widget = QWidget()
+        tab_layout = QHBoxLayout(tab_widget)
+        tab_layout.setContentsMargins(8, 4, 8, 4)  # Reduced vertical margins
+        tab_layout.setSpacing(8)  # Increased spacing between buttons for clearer separation
+        
+        # Add actions as buttons
+        for action in actions:
+            if action is None:
+                # Create separator with better visual styling
+                separator = QFrame()
+                separator.setFrameShape(QFrame.VLine)
+                separator.setFrameShadow(QFrame.Sunken)
+                separator.setFixedWidth(2)
+                separator.setMinimumHeight(25)  # Reduced height to match smaller buttons
+                separator.setStyleSheet("""
+                    QFrame {
+                        color: #c0c0c0; 
+                        background-color: #c0c0c0;
+                        margin: 4px 6px;
+                        border: none;
+                    }
+                """)
+                tab_layout.addWidget(separator)
+            else:
+                # Create button for action
+                button = QPushButton()
+                # Manually set button properties from action (QPushButton doesn't have setDefaultAction)
+                button.setText(action.text())
+                button.setIcon(action.icon())
+                button.setToolTip(action.statusTip() or action.text())
+                button.setEnabled(action.isEnabled())
+                button.setMaximumHeight(32)  # Reduced from 40 to fit better
+                button.setMinimumHeight(30)  # Set minimum height for consistency
+                button.setMinimumWidth(85)   # Slightly increased for better appearance
+                
+                # Connect button click to action trigger
+                button.clicked.connect(action.trigger)
+                
+                # Enhanced button styling without unsupported transform properties
+                button.setStyleSheet("""
+                    QPushButton {
+                        background-color: #f5f5f5;
+                        border: 1px solid #d0d0d0;
+                        border-radius: 5px;
+                        padding: 6px 14px;
+                        font-size: 11px;
+                        font-weight: 500;
+                        color: #333333;
+                        text-align: center;
+                        margin: 1px;
+                    }
+                    QPushButton:hover {
+                        background-color: #e8e8e8;
+                        border-color: #b0b0b0;
+                    }
+                    QPushButton:pressed {
+                        background-color: #d8d8d8;
+                        border-color: #a0a0a0;
+                    }
+                    QPushButton:disabled {
+                        background-color: #f8f8f8;
+                        color: #999999;
+                        border-color: #e0e0e0;
+                    }
+                """)
+                
+                tab_layout.addWidget(button)
+        
+        # Add stretch to push buttons to the left
+        tab_layout.addStretch()
+        
+        # Add tab to tab widget
+        self.toolbar_tabs.addTab(tab_widget, tab_name)
+    
     def _create_statusbar(self):
         """Create status bar"""
         self.status_bar = QStatusBar()
@@ -304,6 +465,7 @@ class MainWindow(QMainWindow):
     def _create_central_widget(self):
         """Create central widget with device table"""
         self.central_widget = QWidget()
+        self.central_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setCentralWidget(self.central_widget)
         
         # Main layout
@@ -321,6 +483,8 @@ class MainWindow(QMainWindow):
         self.dock_device_tree = QDockWidget("Devices", self)
         self.dock_device_tree.setObjectName("DevicesTreeDock")
         self.dock_device_tree.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.dock_device_tree.setMinimumWidth(200)
+        self.dock_device_tree.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         
         # Create device tree
         self.device_tree_model = DeviceTreeModel(self.device_manager)
@@ -334,6 +498,8 @@ class MainWindow(QMainWindow):
         self.dock_properties = QDockWidget("Properties", self)
         self.dock_properties.setObjectName("PropertiesDock")
         self.dock_properties.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.dock_properties.setMinimumWidth(250)
+        self.dock_properties.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         
         # Create properties panel
         self.properties_widget = QTabWidget()
@@ -414,6 +580,8 @@ class MainWindow(QMainWindow):
         self.dock_log = QDockWidget("Log", self)
         self.dock_log.setObjectName("LogDock")
         self.dock_log.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
+        self.dock_log.setMinimumHeight(100)
+        self.dock_log.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         
         # Use LogPanel in the dock widget
         self.log_panel = LogPanel()
@@ -453,42 +621,70 @@ class MainWindow(QMainWindow):
             
         plugin = plugin_info.instance
         
-        # Add toolbar actions
+        # Add toolbar actions with tab support
         toolbar_actions = plugin.get_toolbar_actions()
         if toolbar_actions:
-            self.toolbar.addSeparator()
-            for action in toolbar_actions:
-                self.toolbar.addAction(action)
-                
-        # Add menu actions
+            # Check if plugin provides grouped actions
+            if isinstance(toolbar_actions, dict):
+                # Plugin provides grouped actions - create tabs for each group
+                for group_name, actions in toolbar_actions.items():
+                    tab_name = f"{plugin_info.name} - {group_name}"
+                    self._create_toolbar_tab(tab_name, actions)
+                    # Store for cleanup
+                    if plugin_info.id not in self.plugin_toolbar_tabs:
+                        self.plugin_toolbar_tabs[plugin_info.id] = []
+                    self.plugin_toolbar_tabs[plugin_info.id].append(tab_name)
+            else:
+                # Legacy flat list of actions - create single tab
+                tab_name = plugin_info.name
+                self._create_toolbar_tab(tab_name, toolbar_actions)
+                # Store for cleanup
+                if plugin_info.id not in self.plugin_toolbar_tabs:
+                    self.plugin_toolbar_tabs[plugin_info.id] = []
+                self.plugin_toolbar_tabs[plugin_info.id].append(tab_name)
+        
+        # Add menu actions - organize Tools menu by plugin
         menu_actions = plugin.get_menu_actions()
         for menu_name, actions in menu_actions.items():
-            # Check if it's an existing menu or a new plugin menu
-            existing_menu = self.findMenu(menu_name)
-            if existing_menu:
-                # Add actions to existing menu
+            # Check if it's a Tools menu item - organize these by plugin
+            if menu_name == "Tools":
+                # Create or get plugin submenu in Tools
+                plugin_submenu = self._get_or_create_plugin_tools_submenu(plugin_info)
                 for action in actions:
-                    existing_menu.addAction(action)
-                    # Store the menu and action for later removal
+                    plugin_submenu.addAction(action)
+                    # Store the submenu and action for later removal
                     if not hasattr(plugin_info, 'ui_components'):
                         plugin_info.ui_components = {}
-                    if 'menu_actions' not in plugin_info.ui_components:
-                        plugin_info.ui_components['menu_actions'] = []
-                    plugin_info.ui_components['menu_actions'].append((menu_name, action))
+                    if 'tools_submenu_actions' not in plugin_info.ui_components:
+                        plugin_info.ui_components['tools_submenu_actions'] = []
+                    plugin_info.ui_components['tools_submenu_actions'].append((plugin_submenu, action))
             else:
-                # Create a new plugin menu if it doesn't exist
-                if menu_name not in self.plugin_menus:
-                    self.plugin_menus[menu_name] = self.menu_bar.addMenu(menu_name)
-                    
-                # Add actions to the plugin menu
-                for action in actions:
-                    self.plugin_menus[menu_name].addAction(action)
-                    # Store the menu and action for later removal
-                    if not hasattr(plugin_info, 'ui_components'):
-                        plugin_info.ui_components = {}
-                    if 'plugin_menu_actions' not in plugin_info.ui_components:
-                        plugin_info.ui_components['plugin_menu_actions'] = []
-                    plugin_info.ui_components['plugin_menu_actions'].append((menu_name, action))
+                # Handle other menu actions as before
+                existing_menu = self.findMenu(menu_name)
+                if existing_menu:
+                    # Add actions to existing menu
+                    for action in actions:
+                        existing_menu.addAction(action)
+                        # Store the menu and action for later removal
+                        if not hasattr(plugin_info, 'ui_components'):
+                            plugin_info.ui_components = {}
+                        if 'menu_actions' not in plugin_info.ui_components:
+                            plugin_info.ui_components['menu_actions'] = []
+                        plugin_info.ui_components['menu_actions'].append((menu_name, action))
+                else:
+                    # Create a new plugin menu if it doesn't exist
+                    if menu_name not in self.plugin_menus:
+                        self.plugin_menus[menu_name] = self.menu_bar.addMenu(menu_name)
+                        
+                    # Add actions to the plugin menu
+                    for action in actions:
+                        self.plugin_menus[menu_name].addAction(action)
+                        # Store the menu and action for later removal
+                        if not hasattr(plugin_info, 'ui_components'):
+                            plugin_info.ui_components = {}
+                        if 'plugin_menu_actions' not in plugin_info.ui_components:
+                            plugin_info.ui_components['plugin_menu_actions'] = []
+                        plugin_info.ui_components['plugin_menu_actions'].append((menu_name, action))
                 
         # Add device panels to properties widget
         device_panels = plugin.get_device_panels()
@@ -516,15 +712,85 @@ class MainWindow(QMainWindow):
             if 'dock_widgets' not in plugin_info.ui_components:
                 plugin_info.ui_components['dock_widgets'] = []
             plugin_info.ui_components['dock_widgets'].append((widget_name, dock))
+    
+    def _get_or_create_plugin_tools_submenu(self, plugin_info):
+        """Get or create a submenu for a plugin in the Tools menu
+        
+        Args:
+            plugin_info: The plugin information object
             
+        Returns:
+            QMenu: The plugin's submenu in the Tools menu
+        """
+        # Check if we already have a submenu for this plugin
+        submenu_key = f"plugin_tools_{plugin_info.id}"
+        
+        if not hasattr(self, 'plugin_tools_submenus'):
+            self.plugin_tools_submenus = {}
+            
+        if submenu_key not in self.plugin_tools_submenus:
+            # Create plugin submenu in Tools menu
+            plugin_submenu = self.menu_tools.addMenu(plugin_info.name)
+            plugin_submenu.setObjectName(submenu_key)
+            
+            # Style the submenu
+            plugin_submenu.setStyleSheet("""
+                QMenu {
+                    font-weight: normal;
+                }
+                QMenu::item {
+                    padding: 6px 20px;
+                }
+            """)
+            
+            self.plugin_tools_submenus[submenu_key] = plugin_submenu
+            
+            # Store for cleanup
+            if not hasattr(plugin_info, 'ui_components'):
+                plugin_info.ui_components = {}
+            if 'tools_submenu' not in plugin_info.ui_components:
+                plugin_info.ui_components['tools_submenu'] = []
+            plugin_info.ui_components['tools_submenu'].append((submenu_key, plugin_submenu))
+            
+        return self.plugin_tools_submenus[submenu_key]
+    
     def remove_plugin_ui_components(self, plugin_info):
         """Remove UI components from a plugin"""
         logger.debug(f"Removing UI components for plugin: {plugin_info}")
+        
+        # Clean up toolbar tabs for this plugin
+        if plugin_info.id in self.plugin_toolbar_tabs:
+            for tab_name in self.plugin_toolbar_tabs[plugin_info.id]:
+                # Find and remove the tab
+                for i in range(self.toolbar_tabs.count()):
+                    if self.toolbar_tabs.tabText(i) == tab_name:
+                        # Remove the tab and its widget
+                        widget = self.toolbar_tabs.widget(i)
+                        self.toolbar_tabs.removeTab(i)
+                        if widget:
+                            widget.deleteLater()
+                        break
+            del self.plugin_toolbar_tabs[plugin_info.id]
         
         if not hasattr(plugin_info, 'ui_components'):
             logger.debug(f"No UI components to remove for plugin: {plugin_info}")
             return
             
+        # Remove Tools submenu actions
+        if 'tools_submenu_actions' in plugin_info.ui_components:
+            for submenu, action in plugin_info.ui_components['tools_submenu_actions']:
+                submenu.removeAction(action)
+                
+        # Remove Tools submenu if it's empty
+        if 'tools_submenu' in plugin_info.ui_components:
+            for submenu_key, submenu in plugin_info.ui_components['tools_submenu']:
+                if submenu.isEmpty():
+                    # Remove submenu from Tools menu
+                    self.menu_tools.removeAction(submenu.menuAction())
+                    # Remove from our tracking
+                    if hasattr(self, 'plugin_tools_submenus') and submenu_key in self.plugin_tools_submenus:
+                        del self.plugin_tools_submenus[submenu_key]
+                    
         # Remove menu actions from existing menus
         if 'menu_actions' in plugin_info.ui_components:
             for menu_name, action in plugin_info.ui_components['menu_actions']:
@@ -558,7 +824,13 @@ class MainWindow(QMainWindow):
                 
         # Clear the components
         plugin_info.ui_components = {}
-        
+    
+    def _rebuild_toolbar_after_plugin_removal(self):
+        """Rebuild toolbar after plugin removal - not needed for tab-based system"""
+        # This method is kept for compatibility but does nothing
+        # since tabs are removed individually in remove_plugin_ui_components
+        pass
+    
     def update_property_panel(self, devices=None):
         """Update property panel with device info
         
@@ -2555,13 +2827,118 @@ class MainWindow(QMainWindow):
                 raw_value = value_item.data(Qt.UserRole)
                 key = name_item.text()
                 
+                # Check if this is an editable property and we have a single device selected
+                selected_devices = self.device_manager.get_selected_devices()
+                if len(selected_devices) == 1 and self._is_editable_property(key):
+                    self._edit_property_inline(row, key, raw_value, selected_devices[0])
+                    return
+                
                 # Open detailed view for dictionaries, lists, or long strings
                 if isinstance(raw_value, (dict, list)) or (isinstance(raw_value, str) and len(raw_value) > 100):
                     self._show_detailed_property(key, raw_value)
                 # For URLs, open in browser
                 elif isinstance(raw_value, str) and (raw_value.startswith('http://') or raw_value.startswith('https://')):
                     import webbrowser
-                    webbrowser.open(raw_value) 
+                    webbrowser.open(raw_value)
+    
+    def _is_editable_property(self, property_key):
+        """Check if a property can be edited inline
+        
+        Args:
+            property_key: The property key to check
+            
+        Returns:
+            bool: True if the property can be edited
+        """
+        # Core properties that can be edited
+        editable_core_props = ["alias", "hostname", "ip_address", "mac_address", "notes", "tags"]
+        
+        # Check if it's a core editable property
+        if property_key in editable_core_props:
+            return True
+            
+        # Allow editing of custom properties (not plugin properties)
+        if not any(sep in property_key for sep in [':', '.', '_']) or property_key.startswith('custom_'):
+            return True
+            
+        return False
+    
+    def _edit_property_inline(self, row, property_key, current_value, device):
+        """Enable inline editing of a property
+        
+        Args:
+            row: The table row
+            property_key: The property to edit
+            current_value: Current property value
+            device: The device being edited
+        """
+        # Get the value item
+        value_item = self.properties_table.item(row, 1)
+        if not value_item:
+            return
+            
+        # Create an input dialog for editing
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+        
+        # Format the current value for editing
+        if isinstance(current_value, list):
+            edit_value = ', '.join(str(v) for v in current_value)
+        else:
+            edit_value = str(current_value) if current_value is not None else ""
+        
+        # Show input dialog
+        new_value, ok = QInputDialog.getText(
+            self,
+            f"Edit {property_key}",
+            f"Enter new value for '{property_key}':",
+            text=edit_value
+        )
+        
+        if ok and new_value != edit_value:
+            # Process the new value
+            processed_value = self._process_edited_value(property_key, new_value)
+            
+            # Update the device
+            try:
+                device.set_property(property_key, processed_value)
+                
+                # Update the display
+                formatted_value = self._format_property_value(processed_value)
+                value_item.setText(formatted_value)
+                value_item.setData(Qt.UserRole, processed_value)
+                
+                # Emit device changed signal
+                self.device_manager.device_changed.emit(device)
+                
+                self.status_bar.showMessage(f"Updated {property_key} for {device.get_property('alias', 'device')}", 3000)
+                
+            except Exception as e:
+                logger.error(f"Error updating property {property_key}: {e}")
+                QMessageBox.warning(
+                    self,
+                    "Edit Error",
+                    f"Failed to update property '{property_key}': {str(e)}"
+                )
+    
+    def _process_edited_value(self, property_key, new_value):
+        """Process an edited value based on the property type
+        
+        Args:
+            property_key: The property being edited
+            new_value: The new string value from input
+            
+        Returns:
+            The processed value in the correct type
+        """
+        # Handle special properties that should be lists
+        if property_key in ['tags']:
+            if not new_value.strip():
+                return []
+            # Split by comma and clean up
+            return [tag.strip() for tag in new_value.split(',') if tag.strip()]
+        
+        # For other properties, return as string (but empty string as None for cleanliness)
+        return new_value if new_value.strip() else None
     
     @Slot(bool)
     def on_connectivity_changed(self, is_online):

@@ -86,7 +86,7 @@ class ComparisonWorker(QObject):
             # Get configurations for all devices
             configs = {}
             for i, device in enumerate(self.devices):
-                device_id = device.device_id  # Use device_id instead of get_property('id')
+                device_id = device.id  # Use device.id instead of device.device_id
                 config = self.plugin._get_device_config(device)
                 configs[device_id] = {
                     'device': device,
@@ -218,32 +218,33 @@ class ConfigComparisonDialog(QDialog):
         
         # Device 1 selection
         self.device1_combo = QComboBox()
-        self.device1_combo.addItems([device.get_property('name', f'Device {i+1}') for i, device in enumerate(self.devices)])
-        self.device1_combo.setCurrentIndex(0)
+        self._populate_device_combo(self.device1_combo, selected_index=0)
         selection_layout.addWidget(QLabel("Device 1:"), 0, 0)
         selection_layout.addWidget(self.device1_combo, 0, 1)
         
         # Device 2 selection
         self.device2_combo = QComboBox()
-        self.device2_combo.addItems([device.get_property('name', f'Device {i+1}') for i, device in enumerate(self.devices)])
-        if len(self.devices) > 1:
-            self.device2_combo.setCurrentIndex(1)
+        self._populate_device_combo(self.device2_combo, selected_index=1 if len(self.devices) > 1 else 0)
         selection_layout.addWidget(QLabel("Device 2:"), 0, 2)
         selection_layout.addWidget(self.device2_combo, 0, 3)
         
         # Command selection for Device 1
         self.command1_combo = QComboBox()
         self.command1_combo.setEditable(True)
-        self._populate_command_combo(self.command1_combo, 0 if self.devices else None)
+        self._populate_command_combo(self.command1_combo, 0)
         selection_layout.addWidget(QLabel("Command 1:"), 1, 0)
         selection_layout.addWidget(self.command1_combo, 1, 1)
         
         # Command selection for Device 2
         self.command2_combo = QComboBox()
         self.command2_combo.setEditable(True)
-        self._populate_command_combo(self.command2_combo, 1 if len(self.devices) > 1 else None)
+        self._populate_command_combo(self.command2_combo, 1 if len(self.devices) > 1 else 0)
         selection_layout.addWidget(QLabel("Command 2:"), 1, 2)
         selection_layout.addWidget(self.command2_combo, 1, 3)
+        
+        # Connect device combo changes to update command combos
+        self.device1_combo.currentIndexChanged.connect(lambda: self._update_command_combo_for_device(self.command1_combo, self.device1_combo.currentIndex()))
+        self.device2_combo.currentIndexChanged.connect(lambda: self._update_command_combo_for_device(self.command2_combo, self.device2_combo.currentIndex()))
         
         # Refresh button for selections
         refresh_selection_btn = QPushButton("Update Comparison")
@@ -300,17 +301,45 @@ class ConfigComparisonDialog(QDialog):
         """Create side-by-side comparison view"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setSpacing(2)  # Minimal spacing between elements
+        layout.setContentsMargins(5, 2, 5, 5)  # Reduce top margin significantly
         
-        # Device labels
+        # Device labels - compact with IP addresses
         labels_layout = QHBoxLayout()
-        device1_label = QLabel(self.devices[0].get_property('name', 'Device 1'))
-        device1_label.setStyleSheet("font-weight: bold; padding: 5px;")
-        device2_label = QLabel(self.devices[1].get_property('name', 'Device 2'))
-        device2_label.setStyleSheet("font-weight: bold; padding: 5px;")
+        labels_layout.setContentsMargins(2, 1, 2, 1)  # Very small margins
+        labels_layout.setSpacing(1)  # Minimal spacing between labels
+        
+        device1_name = self.devices[0].get_property('name', 'Device 1')
+        device1_ip = self.devices[0].get_property('ip_address', 'No IP')
+        device1_label = QLabel(f"{device1_name} ({device1_ip})")
+        device1_label.setStyleSheet("font-weight: bold; padding: 2px 4px; font-size: 10px; background-color: #f8f8f8; border: 1px solid #ddd; margin: 0px;")
+        device1_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        device1_label.setMaximumHeight(20)  # Constrain height
+        
+        device2_name = self.devices[1].get_property('name', 'Device 2') 
+        device2_ip = self.devices[1].get_property('ip_address', 'No IP')
+        device2_label = QLabel(f"{device2_name} ({device2_ip})")
+        device2_label.setStyleSheet("font-weight: bold; padding: 2px 4px; font-size: 10px; background-color: #f8f8f8; border: 1px solid #ddd; margin: 0px;")
+        device2_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        device2_label.setMaximumHeight(20)  # Constrain height
         
         labels_layout.addWidget(device1_label)
         labels_layout.addWidget(device2_label)
         layout.addLayout(labels_layout)
+        
+        # Linked scrolling control - more compact
+        scroll_control_layout = QHBoxLayout()
+        scroll_control_layout.setContentsMargins(2, 0, 2, 0)  # No vertical margins
+        scroll_control_layout.setSpacing(5)
+        
+        self.link_scrolling_checkbox = QCheckBox("Link scrolling")
+        self.link_scrolling_checkbox.setChecked(True)
+        self.link_scrolling_checkbox.setToolTip("Synchronize scrolling between the two configuration views")
+        self.link_scrolling_checkbox.setStyleSheet("font-size: 9px; margin: 0px; padding: 1px;")  # Smaller font
+        scroll_control_layout.addWidget(self.link_scrolling_checkbox)
+        scroll_control_layout.addStretch()
+        
+        layout.addLayout(scroll_control_layout)
         
         # Text editors in splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -318,10 +347,12 @@ class ConfigComparisonDialog(QDialog):
         self.config1_editor = QTextEdit()
         self.config1_editor.setFont(QFont("Consolas", 10))
         self.config1_editor.setReadOnly(True)
+        self.config1_editor.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         
         self.config2_editor = QTextEdit()
         self.config2_editor.setFont(QFont("Consolas", 10))
         self.config2_editor.setReadOnly(True)
+        self.config2_editor.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         
         splitter.addWidget(self.config1_editor)
         splitter.addWidget(self.config2_editor)
@@ -329,7 +360,63 @@ class ConfigComparisonDialog(QDialog):
         
         layout.addWidget(splitter)
         
+        # Connect linked scrolling
+        self._setup_linked_scrolling()
+        
         return widget
+    
+    def _setup_linked_scrolling(self):
+        """Set up linked scrolling between the two text editors"""
+        try:
+            # Get scroll bars
+            self.scrollbar1 = self.config1_editor.verticalScrollBar()
+            self.scrollbar2 = self.config2_editor.verticalScrollBar()
+            
+            # Track which editor is being scrolled to avoid infinite loops
+            self._scrolling_from_editor1 = False
+            self._scrolling_from_editor2 = False
+            
+            # Connect scroll events
+            self.scrollbar1.valueChanged.connect(self._on_editor1_scroll)
+            self.scrollbar2.valueChanged.connect(self._on_editor2_scroll)
+            
+            # Connect link checkbox
+            self.link_scrolling_checkbox.toggled.connect(self._on_link_scrolling_toggled)
+            
+        except Exception as e:
+            logger.error(f"Error setting up linked scrolling: {e}")
+    
+    def _on_editor1_scroll(self, value):
+        """Handle scrolling in editor 1"""
+        if self.link_scrolling_checkbox.isChecked() and not self._scrolling_from_editor2:
+            self._scrolling_from_editor1 = True
+            # Sync scroll position as percentage
+            max1 = self.scrollbar1.maximum()
+            max2 = self.scrollbar2.maximum()
+            if max1 > 0 and max2 > 0:
+                percentage = value / max1
+                new_value = int(percentage * max2)
+                self.scrollbar2.setValue(new_value)
+            self._scrolling_from_editor1 = False
+    
+    def _on_editor2_scroll(self, value):
+        """Handle scrolling in editor 2"""
+        if self.link_scrolling_checkbox.isChecked() and not self._scrolling_from_editor1:
+            self._scrolling_from_editor2 = True
+            # Sync scroll position as percentage
+            max2 = self.scrollbar2.maximum()
+            max1 = self.scrollbar1.maximum()
+            if max2 > 0 and max1 > 0:
+                percentage = value / max2
+                new_value = int(percentage * max1)
+                self.scrollbar1.setValue(new_value)
+            self._scrolling_from_editor2 = False
+    
+    def _on_link_scrolling_toggled(self, checked):
+        """Handle link scrolling checkbox toggle"""
+        if checked:
+            # Sync to editor 1's position when linking is enabled
+            self._on_editor1_scroll(self.scrollbar1.value())
     
     def _create_unified_diff_view(self) -> QWidget:
         """Create unified diff view"""
@@ -478,15 +565,15 @@ class ConfigComparisonDialog(QDialog):
         result = self.comparison_result
         
         # Display side-by-side configurations with highlighting
-        self.config1_editor.setPlainText(result.config1)
-        self.config2_editor.setPlainText(result.config2)
+        self.config1_editor.setPlainText(result.device1_config)
+        self.config2_editor.setPlainText(result.device2_config)
         
         # Apply diff highlighting
         self.diff_highlighter1 = DiffHighlighter(self.config1_editor.document())
         self.diff_highlighter2 = DiffHighlighter(self.config2_editor.document())
         
         # Display unified diff
-        unified_diff = result.get_unified_diff()
+        unified_diff = '\n'.join(result.unified_diff)
         self.unified_diff_editor.setPlainText(unified_diff)
         
         # Apply diff highlighting to unified view
@@ -504,13 +591,13 @@ class ConfigComparisonDialog(QDialog):
     def _display_statistics(self, result):
         """Display comparison statistics"""
         stats = [
-            ("Total Lines (Device 1)", len(result.config1.splitlines())),
-            ("Total Lines (Device 2)", len(result.config2.splitlines())),
-            ("Added Lines", result.stats.get('added_lines', 0)),
-            ("Removed Lines", result.stats.get('removed_lines', 0)),
-            ("Modified Lines", result.stats.get('modified_lines', 0)),
-            ("Unchanged Lines", result.stats.get('unchanged_lines', 0)),
-            ("Similarity %", f"{result.stats.get('similarity_percent', 0):.1f}%")
+            ("Total Lines (Device 1)", len(result.device1_config.splitlines())),
+            ("Total Lines (Device 2)", len(result.device2_config.splitlines())),
+            ("Added Lines", result.statistics.get('lines_added', 0)),
+            ("Removed Lines", result.statistics.get('lines_removed', 0)),
+            ("Modified Lines", result.statistics.get('difference_count', 0)),
+            ("Unchanged Lines", result.statistics.get('lines_unchanged', 0)),
+            ("Similarity %", f"{result.statistics.get('similarity_ratio', 0)*100:.1f}%")
         ]
         
         self.stats_table.setRowCount(len(stats))
@@ -576,51 +663,65 @@ class ConfigComparisonDialog(QDialog):
     def _populate_command_combo(self, combo, device_index):
         """Populate the command combo with available commands for a device"""
         try:
-            # Default commands
-            default_commands = [
-                "show running-config",
-                "show startup-config", 
-                "show version",
-                "show interfaces",
-                "show ip route",
-                "show vlan",
-                "show mac address-table",
-                "show arp",
-                "show cdp neighbors",
-                "show inventory"
-            ]
+            combo.clear()  # Clear existing items
             
-            # Add default commands
-            combo.addItems(default_commands)
-            combo.setCurrentText("show running-config")  # Default selection
+            # Get the device from available devices (initially uses original devices)
+            devices_to_use = getattr(self, 'all_available_devices', self.devices)
             
             # If device index is provided, get actual commands from device
-            if device_index is not None and device_index < len(self.devices):
-                device = self.devices[device_index]
+            if device_index is not None and device_index < len(devices_to_use):
+                device = devices_to_use[device_index]
                 available_commands = self._get_device_commands(device)
                 
                 if available_commands:
-                    # Add separator
-                    combo.addItem("--- Device Commands ---")
                     # Add actual device commands
-                    for cmd in available_commands:
-                        if cmd not in default_commands:
-                            combo.addItem(cmd)
+                    combo.addItems(available_commands)
+                    # Set default to show running-config if available
+                    if "show running-config" in available_commands:
+                        combo.setCurrentText("show running-config")
+                    else:
+                        combo.setCurrentIndex(0)  # Select first available command
+                    
+                    logger.debug(f"Populated command combo for device {device_index} with {len(available_commands)} commands")
+                else:
+                    # No commands found, show informative message
+                    combo.addItem("No commands available")
+                    logger.warning(f"No cached commands found for device {device.get_property('name', 'Unknown')}")
+            else:
+                # Fallback: add some default commands if no device specified
+                default_commands = [
+                    "show running-config",
+                    "show version",
+                    "show interface status"
+                ]
+                combo.addItems(default_commands)
+                combo.setCurrentText("show running-config")
+                logger.debug("Populated command combo with default commands (no device specified)")
                             
         except Exception as e:
             logger.error(f"Error populating command combo: {e}")
+            # Fallback: add basic commands
+            combo.clear()
+            combo.addItems(["show running-config", "show version"])
+            combo.setCurrentText("show running-config")
     
     def _get_device_commands(self, device):
         """Get available commands for a device from cached outputs"""
         try:
-            # Check if device has command outputs stored
+            # Use the plugin's new method to get available commands
+            if hasattr(self.plugin, '_get_device_available_commands'):
+                return self.plugin._get_device_available_commands(device)
+            
+            # Fallback: try to access command outputs directly (old method)
             if hasattr(device, 'command_outputs') and device.command_outputs:
                 return list(device.command_outputs.keys())
             elif hasattr(device, 'get_command_outputs'):
                 outputs = device.get_command_outputs()
                 if outputs:
                     return list(outputs.keys())
+                    
             return []
+            
         except Exception as e:
             logger.debug(f"Error getting device commands: {e}")
             return []
@@ -628,16 +729,18 @@ class ConfigComparisonDialog(QDialog):
     def _update_comparison_from_selection(self):
         """Update comparison based on selected devices and commands"""
         try:
-            # Get selected devices
+            # Get selected devices from all available devices
             device1_index = self.device1_combo.currentIndex()
             device2_index = self.device2_combo.currentIndex()
             
-            if device1_index >= len(self.devices) or device2_index >= len(self.devices):
+            available_devices = getattr(self, 'all_available_devices', self.devices)
+            
+            if device1_index >= len(available_devices) or device2_index >= len(available_devices):
                 QMessageBox.warning(self, "Selection Error", "Invalid device selection")
                 return
             
-            device1 = self.devices[device1_index]
-            device2 = self.devices[device2_index]
+            device1 = available_devices[device1_index]
+            device2 = available_devices[device2_index]
             
             # Get selected commands
             command1 = self.command1_combo.currentText().strip()
@@ -737,4 +840,139 @@ class ConfigComparisonDialog(QDialog):
             
         except Exception as e:
             logger.error(f"Error getting command output: {e}")
-            return None 
+            return None
+
+    def _populate_device_combo(self, combo, selected_index):
+        """Populate the device combo with available devices"""
+        try:
+            combo.clear()  # Clear existing items
+            
+            # Get all available devices from the plugin (not just the ones being compared)
+            all_devices = self._get_all_available_devices()
+            
+            if not all_devices:
+                # Fallback to devices passed to comparison
+                all_devices = self.devices
+            
+            # Store all available devices for reference
+            self.all_available_devices = all_devices
+            
+            # Add all devices to the combo with IP addresses
+            for device in all_devices:
+                device_name = device.get_property('name', 'Unknown')
+                device_ip = device.get_property('ip_address', 'No IP')
+                combo.addItem(f"{device_name} ({device_ip})")
+            
+            # Set the selected device (use original devices for initial selection)
+            if selected_index < len(self.devices):
+                # Find the index of the original device in the full list
+                original_device = self.devices[selected_index]
+                original_device_id = original_device.id
+                
+                for i, device in enumerate(all_devices):
+                    if device.id == original_device_id:
+                        combo.setCurrentIndex(i)
+                        break
+                else:
+                    combo.setCurrentIndex(0)
+            else:
+                combo.setCurrentIndex(0)
+            
+            logger.debug(f"Populated device combo with {len(all_devices)} devices")
+            
+        except Exception as e:
+            logger.error(f"Error populating device combo: {e}")
+            # Fallback: add basic devices
+            combo.clear()
+            for device in self.devices:
+                combo.addItem(f"{device.get_property('name', 'Unknown')} ({device.get_property('ip_address', 'No IP')})")
+            combo.setCurrentIndex(selected_index if selected_index < len(self.devices) else 0)
+    
+    def _get_all_available_devices(self):
+        """Get all devices that have command outputs available"""
+        try:
+            # Try to get all devices from the plugin's device manager
+            if hasattr(self.plugin, 'device_manager') and self.plugin.device_manager:
+                # Try different method names that might exist on DeviceManager
+                all_devices = None
+                if hasattr(self.plugin.device_manager, 'get_all_devices'):
+                    all_devices = self.plugin.device_manager.get_all_devices()
+                elif hasattr(self.plugin.device_manager, 'get_devices'):
+                    all_devices = self.plugin.device_manager.get_devices()
+                elif hasattr(self.plugin.device_manager, 'devices'):
+                    # If devices is a property or attribute
+                    devices_attr = getattr(self.plugin.device_manager, 'devices')
+                    if isinstance(devices_attr, dict):
+                        all_devices = list(devices_attr.values())
+                    elif isinstance(devices_attr, list):
+                        all_devices = devices_attr
+                elif hasattr(self.plugin.device_manager, '_devices'):
+                    # If _devices is a private attribute
+                    devices_attr = getattr(self.plugin.device_manager, '_devices')
+                    if isinstance(devices_attr, dict):
+                        all_devices = list(devices_attr.values())
+                    elif isinstance(devices_attr, list):
+                        all_devices = devices_attr
+                
+                if all_devices:
+                    # Filter to only devices that have command outputs
+                    devices_with_commands = []
+                    for device in all_devices:
+                        available_commands = self.plugin._get_device_available_commands(device)
+                        if available_commands:
+                            devices_with_commands.append(device)
+                    
+                    if devices_with_commands:
+                        return devices_with_commands
+            
+            # Fallback: return the devices passed to comparison
+            return self.devices
+            
+        except Exception as e:
+            logger.error(f"Error getting all available devices: {e}")
+            return self.devices
+    
+    def _update_command_combo_for_device(self, combo, device_index):
+        """Update the command combo for a specific device"""
+        try:
+            combo.clear()  # Clear existing items
+            
+            # Get the device from all available devices
+            available_devices = getattr(self, 'all_available_devices', self.devices)
+            
+            # If device index is provided, get actual commands from device
+            if device_index is not None and device_index < len(available_devices):
+                device = available_devices[device_index]
+                available_commands = self._get_device_commands(device)
+                
+                if available_commands:
+                    # Add actual device commands
+                    combo.addItems(available_commands)
+                    # Set default to show running-config if available
+                    if "show running-config" in available_commands:
+                        combo.setCurrentText("show running-config")
+                    else:
+                        combo.setCurrentIndex(0)  # Select first available command
+                    
+                    logger.debug(f"Populated command combo for device {device_index} with {len(available_commands)} commands")
+                else:
+                    # No commands found, show informative message
+                    combo.addItem("No commands available")
+                    logger.warning(f"No cached commands found for device {device.get_property('name', 'Unknown')}")
+            else:
+                # Fallback: add some default commands if no device specified
+                default_commands = [
+                    "show running-config",
+                    "show version",
+                    "show interface status"
+                ]
+                combo.addItems(default_commands)
+                combo.setCurrentText("show running-config")
+                logger.debug("Populated command combo with default commands (no device specified)")
+                            
+        except Exception as e:
+            logger.error(f"Error populating command combo: {e}")
+            # Fallback: add basic commands
+            combo.clear()
+            combo.addItems(["show running-config", "show version"])
+            combo.setCurrentText("show running-config") 

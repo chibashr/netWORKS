@@ -724,16 +724,13 @@ class VariableDetector:
             return config_text  # Return original if failed
 
     def _generate_text_template_from_config(self, config_text: str, 
-                                          variables: List[VariableCandidate],
-                                          device, device_name: str) -> str:
+                                          variables: List[VariableCandidate]) -> str:
         """
         Generate a plain text template with placeholder comments
         
         Args:
             config_text: Original configuration text
             variables: List of detected variables to substitute  
-            device: Device object for extracting values
-            device_name: Device name for context
             
         Returns:
             Plain text template with comment placeholders for variables
@@ -741,11 +738,6 @@ class VariableDetector:
         try:
             template = config_text
             substitutions_made = 0
-            device_properties = {}
-            
-            # Extract device properties
-            if hasattr(device, 'properties'):
-                device_properties = device.properties
             
             # Sort variables by confidence (highest first)
             sorted_vars = sorted(variables, key=lambda x: x.confidence, reverse=True)
@@ -755,10 +747,6 @@ class VariableDetector:
                 # Skip low-confidence variables
                 if variable.confidence < 0.6:
                     continue
-                
-                # Get suggested value for this variable
-                suggested_values = self.suggest_variable_values(variable.name, device_properties)
-                suggested_value = suggested_values[0] if suggested_values else f"<{variable.name.upper()}>"
                 
                 # Create placeholder comment
                 placeholder = f"<{variable.name.upper()}>"
@@ -787,7 +775,7 @@ class VariableDetector:
                     logger.warning(f"Error substituting variable {variable.name}: {e}")
             
             # Add template header with variable information
-            header = f"""! Configuration Template for {device_name}
+            header = f"""! Configuration Template
 ! Generated from device configuration on {time.strftime('%Y-%m-%d %H:%M:%S')}
 ! Variables detected: {len([v for v in variables if v.confidence >= 0.6])}
 ! Substitutions made: {substitutions_made}
@@ -797,8 +785,7 @@ class VariableDetector:
             
             for variable in sorted_vars:
                 if variable.confidence >= 0.6:
-                    suggested_values = self.suggest_variable_values(variable.name, device_properties)
-                    example_value = suggested_values[0] if suggested_values else "value"
+                    example_value = variable.examples[0] if variable.examples else "value"
                     header += f"!   <{variable.name.upper()}>: {variable.description} (example: {example_value})\n"
             
             header += "!\n"

@@ -7,6 +7,21 @@ ConfigMate Plugin for NetWORKS
 Configuration and template management tool designed for network engineers.
 Provides template creation, configuration generation, and comparison capabilities
 with intuitive GUI integration.
+
+Author: NetWORKS Team
+Version: 1.0.0
+License: MIT
+Requirements: Python 3.8+, Qt 6.5+, Jinja2
+
+Features:
+- Template creation and management with syntax highlighting
+- Intelligent template generation from device configurations  
+- Configuration generation with variable substitution
+- Side-by-side configuration comparison
+- Integration with command_manager for device operations
+- Batch operations for multiple devices
+- Export capabilities for templates and comparison results
+- GUI integration with toolbar, context menus, and right panel widget
 """
 
 from loguru import logger
@@ -22,7 +37,7 @@ from PySide6.QtWidgets import (
     QSplitter, QTreeWidget, QTreeWidgetItem, QTabWidget, QGroupBox,
     QComboBox, QLineEdit, QCheckBox, QMessageBox, QDialog, QDialogButtonBox,
     QFormLayout, QScrollArea, QFileDialog, QProgressBar, QTableWidget,
-    QTableWidgetItem, QHeaderView, QMenu, QToolButton
+    QTableWidgetItem, QHeaderView, QMenu, QToolButton, QSlider, QSpinBox
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer, QThread, QObject
 from PySide6.QtGui import QIcon, QFont, QColor, QTextCharFormat, QSyntaxHighlighter, QAction
@@ -94,13 +109,30 @@ class ConfigMatePlugin(PluginInterface):
     """
     ConfigMate Plugin implementation
     
-    Provides comprehensive configuration and template management capabilities:
+    Provides comprehensive configuration and template management capabilities for network engineers.
+    
+    Core Features:
     - Template creation and management with syntax highlighting
     - Intelligent template generation from device configurations  
     - Configuration generation with variable substitution
-    - Side-by-side configuration comparison
+    - Side-by-side configuration comparison with diff highlighting
     - Integration with command_manager for device operations
     - Batch operations for multiple devices
+    - Export capabilities for templates and comparison results
+    - GUI integration with toolbar, context menus, and right panel widget
+    - Variable detection and substitution system
+    
+    Supported Platforms:
+    - Cisco IOS/IOS-XE
+    - Cisco NX-OS
+    - Juniper JunOS
+    - Generic text-based configurations
+    
+    Plugin Interface:
+    - Implements all required plugin interface methods
+    - Provides comprehensive settings management
+    - Integrates seamlessly with NetWORKS application
+    - Supports extensible template formats (text, Jinja2, Python)
     """
     
     # Custom signals
@@ -111,10 +143,14 @@ class ConfigMatePlugin(PluginInterface):
     comparison_completed = Signal(list)  # comparison_results
     
     def __init__(self, app=None):
-        """Initialize the ConfigMate plugin"""
+        """Initialize the ConfigMate plugin
+        
+        Args:
+            app: Main application instance (optional, set during initialization)
+        """
         super().__init__()
         self.name = "ConfigMate Plugin"
-        self.version = "1.0.0"
+        self.version = "1.0.1"
         self.description = "Configuration and template management tool for network engineers"
         self.author = "NetWORKS Team"
         
@@ -141,65 +177,194 @@ class ConfigMatePlugin(PluginInterface):
         self.menu_actions = {}
         self.context_menu_actions = []
         
-        # Plugin settings
+        # Plugin settings - Enhanced with more options
         self.settings = {
+            # Core Settings
             "default_platform": {
                 "name": "Default Platform",
                 "description": "Default device platform for new templates",
                 "type": "choice",
                 "default": "cisco_ios",
                 "value": "cisco_ios",
-                "choices": ["cisco_ios", "cisco_nxos", "juniper", "generic"]
+                "choices": ["cisco_ios", "cisco_nxos", "juniper", "generic"],
+                "category": "Core"
             },
             "auto_detect_variables": {
                 "name": "Auto-Detect Variables",
-                "description": "Automatically detect variables when creating templates",
+                "description": "Automatically detect variables when creating templates from device configurations",
                 "type": "bool",
                 "default": True,
-                "value": True
-            },
-            "syntax_highlighting": {
-                "name": "Syntax Highlighting",
-                "description": "Enable syntax highlighting in template editor",
-                "type": "bool",
-                "default": True,
-                "value": True
-            },
-            "confirm_apply": {
-                "name": "Confirm Apply",
-                "description": "Always confirm before applying configurations",
-                "type": "bool",
-                "default": True,
-                "value": True
-            },
-            "max_preview_lines": {
-                "name": "Max Preview Lines",
-                "description": "Maximum lines to show in configuration preview",
-                "type": "int",
-                "default": 100,
-                "value": 100
-            },
-            "backup_before_apply": {
-                "name": "Backup Before Apply",
-                "description": "Create backup before applying configurations",
-                "type": "bool",
-                "default": True,
-                "value": True
-            },
-            "comparison_context_lines": {
-                "name": "Comparison Context Lines",
-                "description": "Number of context lines to show in comparisons",
-                "type": "int",
-                "default": 3,
-                "value": 3
+                "value": True,
+                "category": "Core"
             },
             "template_format": {
                 "name": "Template Format",
-                "description": "Default format for saved templates",
+                "description": "Default format for saved templates (text: plain text, jinja2: Jinja2 templates, simple: basic variable substitution)",
                 "type": "choice",
                 "default": "text",
                 "value": "text",
-                "choices": ["text", "jinja2", "simple", "python"]
+                "choices": ["text", "jinja2", "simple", "python"],
+                "category": "Core"
+            },
+            
+            # UI Settings
+            "syntax_highlighting": {
+                "name": "Syntax Highlighting",
+                "description": "Enable syntax highlighting in template editor for better readability",
+                "type": "bool",
+                "default": True,
+                "value": True,
+                "category": "UI"
+            },
+            "max_preview_lines": {
+                "name": "Max Preview Lines",
+                "description": "Maximum lines to show in configuration preview (0 = unlimited)",
+                "type": "int",
+                "default": 100,
+                "value": 100,
+                "min": 0,
+                "max": 10000,
+                "category": "UI"
+            },
+            "comparison_context_lines": {
+                "name": "Comparison Context Lines",
+                "description": "Number of context lines to show around differences in comparisons",
+                "type": "int",
+                "default": 3,
+                "value": 3,
+                "min": 0,
+                "max": 20,
+                "category": "UI"
+            },
+            "diff_algorithm": {
+                "name": "Diff Algorithm",
+                "description": "Algorithm to use for configuration comparison",
+                "type": "choice",
+                "default": "unified",
+                "value": "unified",
+                "choices": ["unified", "context", "side_by_side"],
+                "category": "UI"
+            },
+            
+            # Safety Settings
+            "confirm_apply": {
+                "name": "Confirm Apply",
+                "description": "Always confirm before applying configurations to devices",
+                "type": "bool",
+                "default": True,
+                "value": True,
+                "category": "Safety"
+            },
+            "backup_before_apply": {
+                "name": "Backup Before Apply",
+                "description": "Create backup before applying configurations (highly recommended)",
+                "type": "bool",
+                "default": True,
+                "value": True,
+                "category": "Safety"
+            },
+            "validate_syntax": {
+                "name": "Validate Syntax",
+                "description": "Validate configuration syntax before applying",
+                "type": "bool",
+                "default": True,
+                "value": True,
+                "category": "Safety"
+            },
+            "apply_timeout": {
+                "name": "Apply Timeout",
+                "description": "Timeout in seconds for configuration apply operations",
+                "type": "int",
+                "default": 300,
+                "value": 300,
+                "min": 30,
+                "max": 1800,
+                "category": "Safety"
+            },
+            
+            # Export Settings
+            "export_format": {
+                "name": "Export Format",
+                "description": "Default format for exported configurations",
+                "type": "choice",
+                "default": "text",
+                "value": "text",
+                "choices": ["text", "html", "pdf", "json", "yaml"],
+                "category": "Export"
+            },
+            "include_metadata": {
+                "name": "Include Metadata",
+                "description": "Include metadata (timestamps, device info) in exported files",
+                "type": "bool",
+                "default": True,
+                "value": True,
+                "category": "Export"
+            },
+            "export_directory": {
+                "name": "Export Directory",
+                "description": "Default directory for exported files (empty = ask each time)",
+                "type": "string",
+                "default": "",
+                "value": "",
+                "category": "Export"
+            },
+            
+            # Advanced Settings
+            "variable_detection_sensitivity": {
+                "name": "Variable Detection Sensitivity",
+                "description": "Sensitivity level for automatic variable detection (higher = more variables detected)",
+                "type": "choice",
+                "default": "medium",
+                "value": "medium",
+                "choices": ["low", "medium", "high"],
+                "category": "Advanced"
+            },
+            "template_cache_size": {
+                "name": "Template Cache Size",
+                "description": "Number of templates to keep in memory cache",
+                "type": "int",
+                "default": 50,
+                "value": 50,
+                "min": 5,
+                "max": 500,
+                "category": "Advanced"
+            },
+            "parallel_generation": {
+                "name": "Parallel Generation",
+                "description": "Generate configurations in parallel for multiple devices",
+                "type": "bool",
+                "default": True,
+                "value": True,
+                "category": "Advanced"
+            },
+            "max_parallel_jobs": {
+                "name": "Max Parallel Jobs",
+                "description": "Maximum number of parallel configuration generation jobs",
+                "type": "int",
+                "default": 4,
+                "value": 4,
+                "min": 1,
+                "max": 16,
+                "category": "Advanced"
+            },
+            
+            # Debug Settings
+            "debug_mode": {
+                "name": "Debug Mode",
+                "description": "Enable debug mode for troubleshooting (increases logging)",
+                "type": "bool",
+                "default": False,
+                "value": False,
+                "category": "Debug"
+            },
+            "log_level": {
+                "name": "Log Level",
+                "description": "Logging level for ConfigMate operations",
+                "type": "choice",
+                "default": "INFO",
+                "value": "INFO",
+                "choices": ["DEBUG", "INFO", "WARNING", "ERROR"],
+                "category": "Debug"
             }
         }
         
@@ -648,7 +813,7 @@ class ConfigMatePlugin(PluginInterface):
                 if config:
                     results.append(f"✓ Generated config for '{device_name}' ({len(config.splitlines())} lines)")
                     logger.info(f"Generated config for device {device_name}")
-                    self.config_generated.emit(device.device_id, template_name)
+                    self.config_generated.emit(device.id, template_name)
                 else:
                     results.append(f"✗ Failed to generate config for '{device_name}'")
                     
@@ -781,25 +946,25 @@ class ConfigMatePlugin(PluginInterface):
         for cached command outputs (show running-config, etc.)
         """
         try:
-            # Check if device has command outputs stored
-            if not hasattr(device, 'command_outputs') and not hasattr(device, 'get_command_outputs'):
-                logger.debug(f"Device {device.device_id} has no command outputs available")
-                return None
-            
-            # Get command outputs from device
+            # First, try to get command outputs from device object (if already loaded)
             command_outputs = None
             if hasattr(device, 'command_outputs') and device.command_outputs:
                 command_outputs = device.command_outputs
             elif hasattr(device, 'get_command_outputs'):
                 command_outputs = device.get_command_outputs()
             
+            # If not found in memory, try to load from file system
             if not command_outputs:
-                logger.debug(f"No command outputs found for device {device.device_id}")
+                command_outputs = self._load_device_command_outputs_from_file(device)
+            
+            if not command_outputs:
+                logger.debug(f"No command outputs found for device {device.id}")
                 return None
             
             # Try to get cached show run output first
-            # Check different possible command IDs with more comprehensive patterns
-            command_ids_to_try = [
+            # Enhanced command ID patterns with descriptive names and fuzzy matching
+            command_patterns = [
+                # Exact matches for common formats
                 "show running-config",
                 "show run",
                 "show_run", 
@@ -809,13 +974,21 @@ class ConfigMatePlugin(PluginInterface):
                 "sh run",
                 "sh running-config",
                 "running-config",
-                "running_config"
+                "running_config",
+                # Descriptive command IDs (from NetWORKS command manager)
+                "Cisco_IOS_XE_16.x_Show_Running_Config",
+                "Cisco_IOS_Show_Running_Config", 
+                "Show_Running_Config",
+                "Running_Config",
+                # Generic patterns
+                ".*[Rr]unning.*[Cc]onfig.*",
+                ".*[Ss]how.*[Rr]un.*"
             ]
             
             # Try exact command ID matches first
-            for command_id in command_ids_to_try:
-                if command_id in command_outputs:
-                    cmd_outputs = command_outputs[command_id]
+            for pattern in command_patterns:
+                if pattern in command_outputs:
+                    cmd_outputs = command_outputs[pattern]
                     if cmd_outputs and isinstance(cmd_outputs, dict):
                         # Get the most recent output (latest timestamp)
                         timestamps = list(cmd_outputs.keys())
@@ -825,16 +998,17 @@ class ConfigMatePlugin(PluginInterface):
                             if isinstance(output_data, dict) and 'output' in output_data:
                                 config_text = output_data['output']
                                 if config_text and len(config_text.strip()) > 50:  # Ensure it's substantial
-                                    logger.info(f"Found cached command output for '{command_id}' ({len(config_text)} chars)")
+                                    logger.info(f"Found cached command output for '{pattern}' ({len(config_text)} chars)")
                                     return config_text
                             elif isinstance(output_data, str) and len(output_data.strip()) > 50:
-                                logger.info(f"Found cached command output for '{command_id}' ({len(output_data)} chars)")
+                                logger.info(f"Found cached command output for '{pattern}' ({len(output_data)} chars)")
                                 return output_data
             
-            # Try fuzzy matching on all available outputs
-            logger.debug(f"Available command outputs for device {device.device_id}: {list(command_outputs.keys())}")
+            # Try fuzzy matching on all available outputs if exact matches fail
+            logger.debug(f"Available command outputs for device {device.id}: {list(command_outputs.keys())}")
             
             # Score commands by how likely they are to contain running config
+            import re
             candidates = []
             for cmd_id, cmd_outputs in command_outputs.items():
                 if cmd_outputs and isinstance(cmd_outputs, dict):
@@ -842,8 +1016,10 @@ class ConfigMatePlugin(PluginInterface):
                     score = 0
                     
                     # Higher scores for better matches
-                    if 'running' in cmd_lower and 'config' in cmd_lower:
+                    if re.search(r'running.*config', cmd_lower):
                         score += 100
+                    elif 'running' in cmd_lower and 'config' in cmd_lower:
+                        score += 90
                     elif 'running' in cmd_lower:
                         score += 50
                     elif 'config' in cmd_lower:
@@ -877,18 +1053,176 @@ class ConfigMatePlugin(PluginInterface):
                 logger.info(f"Using best match command '{best_cmd}' (score: {best_score}, {len(best_config)} chars, timestamp: {best_timestamp})")
                 return best_config
             
-            logger.debug(f"No suitable configuration commands found for device {device.device_id}")
+            logger.debug(f"No suitable configuration commands found for device {device.id}")
             return None
             
         except Exception as e:
             logger.error(f"Failed to get device config: {e}")
             return None
     
+    def _load_device_command_outputs_from_file(self, device):
+        """Load command outputs from the file system for a device"""
+        try:
+            import json
+            from pathlib import Path
+            
+            # Get workspace path from device manager
+            workspace_path = None
+            if hasattr(self, 'device_manager') and self.device_manager:
+                workspace_path = self.device_manager.get_workspace_dir()
+            
+            if not workspace_path:
+                # Try to detect workspace path from common locations
+                current_dir = Path.cwd()
+                possible_paths = [
+                    current_dir / 'workspaces' / 'langlade_wi',
+                    current_dir / 'workspaces' / 'default',
+                    current_dir.parent / 'workspaces' / 'langlade_wi',
+                    current_dir.parent / 'workspaces' / 'default',
+                    Path(__file__).parent.parent.parent / 'workspaces' / 'langlade_wi',
+                    Path(__file__).parent.parent.parent / 'workspaces' / 'default'
+                ]
+                
+                logger.debug(f"Trying to find workspace path, current dir: {current_dir}")
+                for path in possible_paths:
+                    device_dir = path / 'devices' / device.id
+                    logger.debug(f"Checking path: {device_dir}")
+                    if device_dir.exists():
+                        workspace_path = path
+                        logger.debug(f"Found workspace at: {workspace_path}")
+                        break
+            
+            if not workspace_path:
+                logger.debug("No workspace path available")
+                return None
+            
+            # Construct path to command outputs file
+            device_id = device.id
+            command_outputs_file = Path(workspace_path) / 'devices' / device_id / 'commands' / 'command_outputs.json'
+            
+            if not command_outputs_file.exists():
+                logger.debug(f"Command outputs file does not exist: {command_outputs_file}")
+                return None
+            
+            # Load command outputs from file
+            with open(command_outputs_file, 'r', encoding='utf-8') as f:
+                command_outputs = json.load(f)
+            
+            logger.debug(f"Loaded {len(command_outputs)} command outputs from file for device {device_id}")
+            return command_outputs
+            
+        except Exception as e:
+            logger.error(f"Error loading command outputs from file for device {device.id}: {e}")
+            return None
+    
+    def _get_device_available_commands(self, device):
+        """Get list of available commands for a device (for dropdown population)"""
+        try:
+            # Load command outputs from file system
+            command_outputs = self._load_device_command_outputs_from_file(device)
+            
+            if not command_outputs:
+                return []
+            
+            # Map descriptive command IDs to user-friendly names
+            command_mapping = {
+                "Cisco_IOS_XE_16.x_Show_Running_Config": "show running-config",
+                "Cisco_IOS_Show_Running_Config": "show running-config", 
+                "Show_Running_Config": "show running-config",
+                "Running_Config": "show running-config",
+                "Cisco_IOS_XE_16.x_Show_Interface_Status": "show interface status",
+                "Cisco_IOS_Show_Interface_Status": "show interface status",
+                "Show_Interface_Status": "show interface status",
+                "Cisco_IOS_XE_16.x_Show_Version": "show version",
+                "Cisco_IOS_Show_Version": "show version",
+                "Show_Version": "show version",
+                "Cisco_IOS_XE_16.x_Show_IP_Route": "show ip route",
+                "Cisco_IOS_Show_IP_Route": "show ip route",
+                "Show_IP_Route": "show ip route",
+                "Cisco_IOS_XE_16.x_Show_VLAN": "show vlan",
+                "Cisco_IOS_Show_VLAN": "show vlan",
+                "Show_VLAN": "show vlan",
+                "Cisco_IOS_XE_16.x_Show_ARP": "show arp",
+                "Cisco_IOS_Show_ARP": "show arp",
+                "Show_ARP": "show arp",
+            }
+            
+            # Get user-friendly command names
+            available_commands = []
+            seen_commands = set()
+            
+            for cmd_id in command_outputs.keys():
+                # Use mapping if available, otherwise clean up the command ID
+                if cmd_id in command_mapping:
+                    friendly_name = command_mapping[cmd_id]
+                else:
+                    # Try to extract command from descriptive ID
+                    friendly_name = self._extract_command_from_id(cmd_id)
+                
+                if friendly_name and friendly_name not in seen_commands:
+                    available_commands.append(friendly_name)
+                    seen_commands.add(friendly_name)
+            
+            # Sort commands with common ones first
+            priority_commands = [
+                "show running-config",
+                "show version", 
+                "show interface status",
+                "show ip route",
+                "show vlan",
+                "show arp"
+            ]
+            
+            sorted_commands = []
+            # Add priority commands first (if they exist)
+            for cmd in priority_commands:
+                if cmd in available_commands:
+                    sorted_commands.append(cmd)
+                    available_commands.remove(cmd)
+            
+            # Add remaining commands alphabetically
+            sorted_commands.extend(sorted(available_commands))
+            
+            logger.debug(f"Device {device.id} has {len(sorted_commands)} available commands: {sorted_commands}")
+            return sorted_commands
+            
+        except Exception as e:
+            logger.error(f"Error getting available commands for device {device.id}: {e}")
+            return []
+    
+    def _extract_command_from_id(self, cmd_id):
+        """Extract user-friendly command name from descriptive command ID"""
+        try:
+            import re
+            
+            # Remove vendor/platform prefixes
+            clean_id = re.sub(r'^(Cisco_IOS_XE_\d+\.x_|Cisco_IOS_|Juniper_|HP_)', '', cmd_id)
+            
+            # Convert Show_Command_Name to "show command name"
+            if clean_id.startswith('Show_'):
+                clean_id = clean_id[5:]  # Remove 'Show_'
+                # Convert underscores to spaces and lowercase
+                result = clean_id.replace('_', ' ').lower()
+                return f"show {result}"
+            
+            # Handle other patterns
+            clean_id = clean_id.replace('_', ' ').lower()
+            
+            # If it doesn't start with 'show', add it if it seems like a show command
+            if not clean_id.startswith('show') and any(word in clean_id for word in ['running', 'config', 'version', 'interface', 'route', 'vlan', 'arp']):
+                return f"show {clean_id}"
+            
+            return clean_id
+            
+        except Exception as e:
+            logger.debug(f"Error extracting command from ID '{cmd_id}': {e}")
+            return cmd_id
+    
     def _get_config_status_value(self, device):
         """Get configuration status value for device table column"""
         try:
             # Check if device has generated configs
-            device_id = device.device_id
+            device_id = device.id
             config_file = self._data_path / f"{device_id}_last_config.txt"
             
             if config_file.exists():
@@ -932,7 +1266,7 @@ class ConfigMatePlugin(PluginInterface):
         try:
             info_lines = []
             info_lines.append(f"Device Information:")
-            info_lines.append(f"  ID: {getattr(device, 'device_id', 'Unknown')}")
+            info_lines.append(f"  ID: {getattr(device, 'id', 'Unknown')}")
             
             # Common properties to check
             common_props = [
@@ -1048,6 +1382,314 @@ end"""
         except Exception as e:
             logger.error(f"Failed to create sample template: {e}")
             return False
+
+    def get_info(self):
+        """Get comprehensive plugin information
+        
+        Returns:
+            dict: Complete plugin information including metadata, capabilities, and status
+        """
+        return {
+            "id": "configmate",
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "author": self.author,
+            "license": "MIT",
+            "website": "https://github.com/networks/configmate",
+            "documentation": "https://docs.networks.com/plugins/configmate",
+            "requirements": {
+                "python": ">=3.8",
+                "qt": ">=6.5",
+                "dependencies": ["jinja2>=3.0", "difflib"]
+            },
+            "capabilities": self.get_capabilities(),
+            "supported_platforms": [
+                "cisco_ios", "cisco_nxos", "juniper", "generic"
+            ],
+            "template_formats": ["text", "jinja2", "simple", "python"],
+            "export_formats": ["text", "html", "pdf", "json", "yaml"],
+            "initialized": self._initialized,
+            "running": self._running,
+            "data_path": str(self._data_path) if self._data_path else None,
+            "templates_path": str(self._templates_path) if self._templates_path else None,
+            "template_count": len(self.template_manager.get_template_list()) if self.template_manager else 0
+        }
+    
+    def get_description(self):
+        """Get detailed plugin description
+        
+        Returns:
+            str: Comprehensive description of the plugin's functionality
+        """
+        return """
+ConfigMate is a comprehensive configuration and template management plugin for network engineers.
+
+CORE FEATURES:
+• Template Management: Create, edit, and organize configuration templates with syntax highlighting
+• Smart Generation: Generate device configurations using templates with automatic variable substitution
+• Intelligent Detection: Automatically detect variables from existing device configurations
+• Configuration Comparison: Side-by-side comparison of configurations with detailed diff highlighting
+• Batch Operations: Apply templates and generate configurations for multiple devices simultaneously
+• Export Capabilities: Export templates and configurations in various formats (text, HTML, PDF, JSON, YAML)
+
+INTEGRATION:
+• Seamless integration with NetWORKS device management
+• Command Manager integration for configuration retrieval and deployment
+• Context menu actions for quick access to common operations
+• Toolbar integration for frequently used features
+• Right panel widget for live configuration preview
+
+SUPPORTED PLATFORMS:
+• Cisco IOS/IOS-XE: Full syntax highlighting and validation
+• Cisco NX-OS: Native command set support
+• Juniper JunOS: Configuration structure awareness
+• Generic: Universal text-based configuration support
+
+TEMPLATE FORMATS:
+• Text: Simple text templates with basic variable substitution
+• Jinja2: Advanced templating with conditional logic and loops
+• Simple: Basic variable replacement for quick templates
+• Python: Execute Python code for complex generation logic
+
+SAFETY FEATURES:
+• Configuration validation before deployment
+• Automatic backup creation before applying changes
+• Confirmation dialogs for destructive operations
+• Timeout protection for long-running operations
+• Syntax validation for supported platforms
+
+This plugin is designed to streamline network configuration management workflows
+and reduce errors through template-based automation and intelligent comparison tools.
+        """.strip()
+    
+    def get_capabilities(self):
+        """Get plugin capabilities
+        
+        Returns:
+            list: List of plugin capabilities
+        """
+        return [
+            "template_management",
+            "configuration_generation", 
+            "configuration_comparison",
+            "variable_detection",
+            "batch_operations",
+            "syntax_highlighting",
+            "export_capabilities",
+            "platform_support_cisco_ios",
+            "platform_support_cisco_nxos", 
+            "platform_support_juniper",
+            "platform_support_generic",
+            "template_format_text",
+            "template_format_jinja2",
+            "template_format_simple",
+            "template_format_python",
+            "export_format_text",
+            "export_format_html",
+            "export_format_pdf",
+            "export_format_json",
+            "export_format_yaml",
+            "command_manager_integration",
+            "device_integration",
+            "gui_integration",
+            "context_menu_actions",
+            "toolbar_actions",
+            "device_panels",
+            "configuration_validation",
+            "backup_creation",
+            "parallel_processing",
+            "cache_management"
+        ]
+
+    def get_settings_pages(self):
+        """Get settings pages for the plugin
+        
+        Returns:
+            list: List of (page_name, widget) tuples for settings dialog
+        """
+        pages = []
+        
+        try:
+            # Core Settings Page
+            core_page = self._create_settings_page("Core", [
+                "default_platform", "auto_detect_variables", "template_format"
+            ])
+            pages.append(("ConfigMate - Core", core_page))
+            
+            # UI Settings Page
+            ui_page = self._create_settings_page("UI", [
+                "syntax_highlighting", "max_preview_lines", "comparison_context_lines", "diff_algorithm"
+            ])
+            pages.append(("ConfigMate - Interface", ui_page))
+            
+            # Safety Settings Page
+            safety_page = self._create_settings_page("Safety", [
+                "confirm_apply", "backup_before_apply", "validate_syntax", "apply_timeout"
+            ])
+            pages.append(("ConfigMate - Safety", safety_page))
+            
+            # Export Settings Page  
+            export_page = self._create_settings_page("Export", [
+                "export_format", "include_metadata", "export_directory"
+            ])
+            pages.append(("ConfigMate - Export", export_page))
+            
+            # Advanced Settings Page
+            advanced_page = self._create_settings_page("Advanced", [
+                "variable_detection_sensitivity", "template_cache_size", 
+                "parallel_generation", "max_parallel_jobs"
+            ])
+            pages.append(("ConfigMate - Advanced", advanced_page))
+            
+            # Debug Settings Page (only if debug mode is enabled)
+            if self.get_setting_value("debug_mode"):
+                debug_page = self._create_settings_page("Debug", [
+                    "debug_mode", "log_level"
+                ])
+                pages.append(("ConfigMate - Debug", debug_page))
+        
+        except Exception as e:
+            logger.error(f"Error creating settings pages: {e}")
+        
+        return pages
+    
+    def _create_settings_page(self, category, setting_ids):
+        """Create a settings page widget for a specific category
+        
+        Args:
+            category (str): Settings category name
+            setting_ids (list): List of setting IDs to include
+            
+        Returns:
+            QWidget: Settings page widget
+        """
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Add category description
+        desc_label = QLabel(f"{category} Settings")
+        desc_label.setStyleSheet("font-weight: bold; font-size: 14px; margin-bottom: 10px;")
+        layout.addWidget(desc_label)
+        
+        # Create form layout for settings
+        form_widget = QWidget()
+        form_layout = QFormLayout(form_widget)
+        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        
+        for setting_id in setting_ids:
+            if setting_id in self.settings:
+                setting = self.settings[setting_id]
+                
+                # Create setting widget based on type
+                setting_widget = self._create_setting_widget(setting_id, setting)
+                if setting_widget:
+                    # Create label with description tooltip
+                    label = QLabel(setting["name"])
+                    label.setToolTip(setting.get("description", ""))
+                    
+                    form_layout.addRow(label, setting_widget)
+        
+        layout.addWidget(form_widget)
+        layout.addStretch()  # Add stretch to push content to top
+        
+        return widget
+    
+    def _create_setting_widget(self, setting_id, setting):
+        """Create a widget for a specific setting
+        
+        Args:
+            setting_id (str): Setting identifier
+            setting (dict): Setting configuration
+            
+        Returns:
+            QWidget: Widget for the setting
+        """
+        setting_type = setting.get("type", "string")
+        current_value = setting.get("value")
+        
+        if setting_type == "bool":
+            widget = QCheckBox()
+            widget.setChecked(current_value)
+            widget.toggled.connect(lambda checked: self.update_setting(setting_id, checked))
+            
+        elif setting_type == "choice":
+            widget = QComboBox()
+            choices = setting.get("choices", [])
+            widget.addItems(choices)
+            if current_value in choices:
+                widget.setCurrentText(current_value)
+            widget.currentTextChanged.connect(lambda text: self.update_setting(setting_id, text))
+            
+        elif setting_type == "int":
+            widget = QSpinBox()
+            widget.setMinimum(setting.get("min", 0))
+            widget.setMaximum(setting.get("max", 999999))
+            widget.setValue(current_value)
+            widget.valueChanged.connect(lambda value: self.update_setting(setting_id, value))
+            
+        elif setting_type == "string":
+            widget = QLineEdit()
+            widget.setText(str(current_value))
+            widget.textChanged.connect(lambda text: self.update_setting(setting_id, text))
+            
+        else:
+            # Fallback to string
+            widget = QLineEdit()
+            widget.setText(str(current_value))
+            widget.textChanged.connect(lambda text: self.update_setting(setting_id, text))
+        
+        # Set tooltip with description
+        if "description" in setting:
+            widget.setToolTip(setting["description"])
+        
+        return widget
+
+    def get_documentation_url(self):
+        """Get the URL for plugin documentation
+        
+        Returns:
+            str: URL to comprehensive plugin documentation
+        """
+        return "https://docs.networks.com/plugins/configmate"
+    
+    def get_support_info(self):
+        """Get plugin support information
+        
+        Returns:
+            dict: Support and troubleshooting information
+        """
+        return {
+            "documentation": self.get_documentation_url(),
+            "github": "https://github.com/networks/configmate",
+            "issues": "https://github.com/networks/configmate/issues",
+            "discussions": "https://github.com/networks/configmate/discussions",
+            "email": "support@networks.com",
+            "version": self.version,
+            "compatibility": {
+                "min_app_version": "0.8.16",
+                "python": ">=3.8",
+                "qt": ">=6.5"
+            },
+            "troubleshooting": {
+                "common_issues": [
+                    {
+                        "issue": "Templates not loading",
+                        "solution": "Check templates directory permissions and ensure templates are in correct format"
+                    },
+                    {
+                        "issue": "Configuration generation fails", 
+                        "solution": "Verify device connectivity and template variables are properly defined"
+                    },
+                    {
+                        "issue": "Syntax highlighting not working",
+                        "solution": "Enable syntax highlighting in plugin settings and restart application"
+                    }
+                ],
+                "log_location": str(self._data_path / "logs") if self._data_path else "workspace/configmate/logs",
+                "debug_mode": "Enable 'Debug Mode' in plugin settings for detailed logging"
+            }
+        }
 
 
 # Plugin entry point function

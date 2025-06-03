@@ -1039,7 +1039,11 @@ class OutputHandler:
         Args:
             device: The selected device
         """
-        logger.debug(f"Updating commands panel for device: {device.id}")
+        logger.debug(f"Updating commands panel for device: {device.id if device else 'None'}")
+        
+        if not device:
+            logger.warning("No device provided to update_commands_panel")
+            return
         
         if not hasattr(self.plugin, 'commands_panel_widget') or not self.plugin.commands_panel_widget:
             logger.warning("Commands panel widget not found")
@@ -1060,8 +1064,49 @@ class OutputHandler:
             
         layout = panel.layout()
         
-        # Get command outputs for the device
-        outputs = self.get_command_outputs(device.id)
+        # Get command outputs for the device - use enhanced method
+        outputs = self._get_command_outputs_enhanced(device.id)
+        
+        if not outputs:
+            # Show informative message when no outputs found
+            info_label = QLabel(f"No command history found for device: {device.get_property('alias', device.id)}\n\nCommand outputs will appear here after running commands on this device.")
+            info_label.setWordWrap(True)
+            info_label.setAlignment(Qt.AlignCenter)
+            info_label.setStyleSheet("""
+                QLabel {
+                    color: #666;
+                    font-style: italic;
+                    padding: 20px;
+                    background-color: #f8f9fa;
+                    border: 1px solid #dee2e6;
+                    border-radius: 4px;
+                    margin: 10px;
+                }
+            """)
+            layout.addWidget(info_label)
+            
+            # Add a "Run Command" button to help users get started
+            run_button = QPushButton("Run Commands on This Device")
+            run_button.clicked.connect(lambda: self._run_command_for_device(device))
+            run_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #0056b3;
+                }
+            """)
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            button_layout.addWidget(run_button)
+            button_layout.addStretch()
+            layout.addLayout(button_layout)
+            return
         
         # Create a splitter for command list and output view
         splitter = QSplitter(Qt.Vertical)
@@ -1103,8 +1148,11 @@ class OutputHandler:
                 })
                 
                 # Date/time
-                dt = datetime.datetime.fromisoformat(timestamp)
-                dt_item = QTableWidgetItem(dt.strftime("%Y-%m-%d %H:%M:%S"))
+                try:
+                    dt = datetime.datetime.fromisoformat(timestamp)
+                    dt_item = QTableWidgetItem(dt.strftime("%Y-%m-%d %H:%M:%S"))
+                except:
+                    dt_item = QTableWidgetItem(timestamp)
                 
                 # Success
                 success = "Yes" if data.get("success", True) else "No"
@@ -1205,11 +1253,7 @@ class OutputHandler:
             lambda: self._on_command_selection_changed(command_list, output_stack, raw_output, table_output, table_view_toggle)
         )
         
-        # Display a message if no commands found
-        if command_list.rowCount() == 0:
-            info_label = QLabel(f"No command history found for device: {device.get_property('alias', device.id)}")
-            info_label.setWordWrap(True)
-            layout.insertWidget(0, info_label)
+        logger.info(f"Commands panel updated for device {device.get_property('alias', device.id)} with {command_list.rowCount()} commands")
     
     def _can_display_as_table(self, text):
         """Determine if text can be displayed as a table
@@ -1524,4 +1568,69 @@ class OutputHandler:
         filename = filename.rstrip('-')
             
         return filename
+        
+    def _get_command_outputs_enhanced(self, device_id):
+        """Enhanced method to get command outputs with better workspace loading"""
+        # First try the standard method
+        outputs = self.get_command_outputs(device_id)
+        
+        if outputs:
+            logger.debug(f"Found {len(outputs)} commands for device {device_id} in memory")
+            return outputs
+        
+        # If no outputs in memory, try to load from workspace specifically
+        logger.debug(f"No outputs in memory for device {device_id}, trying workspace load...")
+        
+        try:
+            import json
+            from pathlib import Path
+            
+            # Try to get workspace directory
+            workspace_dir = None
+            if hasattr(self.plugin, 'get_current_workspace_dir'):
+                try:
+                    workspace_dir = self.plugin.get_current_workspace_dir()
+                except:
+                    pass
+            
+            # If no workspace from plugin, try to find it manually
+            if not workspace_dir:
+                current_dir = Path.cwd()
+                possible_workspaces = [
+                    current_dir / 'workspaces' / 'langlade_wi',
+                    current_dir / 'workspaces' / 'default',
+                    current_dir / 'config' / 'workspaces' / 'langlade_wi',
+                    current_dir / 'config' / 'workspaces' / 'default'
+                ]
+                
+                for ws_path in possible_workspaces:
+                    if ws_path.exists():
+                        workspace_dir = ws_path
+                        logger.debug(f"Found workspace directory: {workspace_dir}")
+                        break
+            
+            if workspace_dir and workspace_dir.exists():
+                device_dir = workspace_dir / 'devices' / device_id
+                commands_dir = device_dir / 'commands'
+                output_file = commands_dir / 'command_outputs.json'
+                
+                if output_file.exists():
+                    logger.debug(f"Loading command outputs from: {output_file}")
+                    with open(output_file, 'r', encoding='utf-8') as f:
+                        device_outputs = json.load(f)
+                    
+                    # Store in memory for future use
+                    self.outputs[device_id] = device_outputs
+                    
+                    logger.info(f"Loaded {len(device_outputs)} commands for device {device_id} from workspace")
+                    return device_outputs
+                else:
+                    logger.debug(f"No command outputs file found at: {output_file}")
+            else:
+                logger.debug(f"No workspace directory found")
+                
+        except Exception as e:
+            logger.error(f"Error loading command outputs from workspace for device {device_id}: {e}")
+        
+        return {}
         

@@ -1,6 +1,6 @@
 {
   "name": "NetWORKS",
-  "version": "0.9.24",
+  "version": "0.9.35",
   "description": "Network management and monitoring tool",
   "author": "NetWORKS Team",
   "license": "MIT",
@@ -9,12 +9,12 @@
     "type": "git",
     "url": "https://github.com/networks/networks.git"
   },
-  "version_string": "0.9.24",
+  "version_string": "0.9.35",
   "version_info": {
     "major": 0,
     "minor": 9,
-    "patch": 24,
-    "build": 306
+    "patch": 35,
+    "build": 329
   },
   "app_directory": "src",
   "main_module": "main",
@@ -33,7 +33,7 @@
   "command_outputs_directory": "command_outputs",
   "directory_structure_version": "2.0",
   "persistent_directories": true,
-  "build_date": "2025-01-18",
+  "build_date": "2025-06-02",
   "release_notes": [
     "CONSOLIDATION: Moved all workspace data from config/workspaces/ to root workspaces/ directory for cleaner organization",
     "CLEANUP: Eliminated duplicate workspace folders and standardized workspace storage location",
@@ -45,12 +45,191 @@
     "Connectivity checks now happen before update checks, issue reporting, and other network operations",
     "Visual indicators show 🌐 Online or 📵 Offline status with clear tooltips",
     "Window title shows [OFFLINE] when no internet connection is detected",
-    "Connectivity status updates automatically every 30 seconds and when network state changes"
+    "Connectivity status updates automatically every 30 seconds and when network state changes",
+    "UI/UX IMPROVEMENTS: Enhanced user interface design and interaction",
+    "Added grouped toolbar sections with headers for better organization of core and plugin buttons",
+    "Implemented double-click editing of device properties in the properties panel for faster editing workflow",
+    "Improved button and dropdown proportions with consistent sizing for better visual appearance",
+    "Enhanced toolbar supports dynamic plugin grouping with proper cleanup during plugin lifecycle",
+    "Property editing now supports inline editing for core properties like alias, hostname, IP address, notes, and tags",
+    "Toolbar sections are dynamically created and removed as plugins are loaded and unloaded"
   ],
   "release_type": "stable",
   "versioning_scheme": "semver",
   "update_channel": "stable",
+  "settings_file": "networks_settings.json",
+  "backup_directory": "backups",
+  "documentation_directory": "docs",
   "changelog": [
+    {
+      "version": "0.9.35",
+      "date": "2024-12-28",
+      "changes": [
+        "CRITICAL FIX: Resolved toolbar button clipping and CSS warnings",
+        "Fixed 'Unknown property transform' warnings by removing unsupported CSS transform properties",
+        "Reduced button height from 40px to 32px (max) and 30px (min) to prevent bottom clipping",
+        "Adjusted toolbar container height from 70px to 65px and tab widget height from 66px to 61px",
+        "Reduced vertical margins from 5px to 4px and padding from 8px to 6px for better fit",
+        "Decreased separator height from 30px to 25px to match smaller button dimensions",
+        "Reduced button margins from 2px to 1px for tighter layout",
+        "Eliminated CSS transform animations that weren't supported in Qt stylesheets",
+        "Toolbar buttons now display completely without bottom clipping while maintaining visual appeal"
+      ]
+    },
+    {
+      "version": "0.9.34",
+      "date": "2024-12-28", 
+      "changes": [
+        "IMPROVED TOOLBAR DESIGN: Fixed button hover effects being clipped",
+        "Increased toolbar container height from 60px to 70px to accommodate hover effects",
+        "Increased tab widget height from 56px to 66px to prevent visual clipping",
+        "Enhanced button spacing with increased margins (8,5,8,5) and spacing (8px) for clearer separation",
+        "Improved button visual design with subtle borders and hover animations",
+        "Added enhanced separator styling with better contrast and defined dimensions",
+        "Button hover effects now include subtle transform animation and improved color transitions",
+        "Increased button height from 36px to 40px for better visual balance and click targets",
+        "Better visual distinction between buttons with improved disabled state styling"
+      ]
+    },
+    {
+      "version": "0.9.33",
+      "date": "2024-12-28",
+      "changes": [
+        "CRITICAL FIX: Removed invalid setDefaultAction call from QPushButton causing startup crash",
+        "Fixed AttributeError: 'QPushButton' object has no attribute 'setDefaultAction'",
+        "Manually set button properties from actions instead of using unsupported method",
+        "Connected button clicked signal to action trigger for proper functionality",
+        "Application now starts successfully with new tab-based toolbar system",
+        "Maintained all toolbar functionality while using correct QPushButton API"
+      ]
+    },
+    {
+      "version": "0.9.32",
+      "date": "2024-12-28",
+      "changes": [
+        "MAJOR TOOLBAR REDESIGN: Replaced grouped toolbar with tab-based system",
+        "Eliminated wasted space and improved button readability significantly",
+        "Each plugin section now gets its own tab for better organization",
+        "Buttons now use standard QPushButton with proper text display",
+        "Reduced toolbar height to 60px while providing much better space utilization",
+        "Plugin tabs are dynamically created and removed during plugin lifecycle",
+        "Enhanced visual design with clean tab interface and improved accessibility",
+        "Maintained all existing functionality while dramatically improving usability"
+      ]
+    },
+    {
+      "version": "0.9.31",
+      "date": "2024-12-28",
+      "changes": [
+        "Improved toolbar button text readability - increased font size from 9px to 11px",
+        "Reduced button empty space by optimizing button dimensions (50x45 to 70x55)",
+        "Enhanced text styling with medium font weight and better color contrast",
+        "Reduced toolbar height from 80px to 70px for more compact layout",
+        "Optimized section spacing and margins throughout toolbar for tighter appearance",
+        "Decreased separator heights and spacer widths for better space utilization",
+        "Maintained text visibility while eliminating excessive whitespace"
+      ]
+    },
+    {
+      "version": "0.9.30",
+      "date": "2024-12-28",
+      "changes": [
+        "CRITICAL FIX: Removed invalid setWordWrap call from QToolButton causing startup crash",
+        "Fixed AttributeError: 'QToolButton' object has no attribute 'setWordWrap'",
+        "Application now starts successfully without toolbar creation errors",
+        "Maintained proper button sizing to prevent text truncation without using unsupported methods"
+      ]
+    },
+    {
+      "version": "0.9.29",
+      "date": "2024-12-28",
+      "changes": [
+        "Fixed toolbar button text display - no longer truncated with proper word wrapping",
+        "Enhanced toolbar buttons to show text under icons with better sizing",
+        "Removed toolbar position setting since toolbar is manually movable",
+        "Fixed settings dialog to only apply changes when Apply button is clicked",
+        "Implemented working UI theme switching between Modern Grayscale, Classic Light, and System Default",
+        "Added functional font family, size, and weight controls that actually apply changes",
+        "Implemented working compact mode for interface spacing",
+        "Added functional toolbar style switching (Modern Grouped, Classic Flat, Icon Only, Text Only)",
+        "Enhanced settings dialog with proper immediate preview for opacity and intensity sliders",
+        "Removed redundant change handlers for cleaner settings management"
+      ]
+    },
+    {
+      "version": "0.9.28",
+      "date": "2024-12-28",
+      "changes": [
+        "Fixed window resizing - now easily resizable with proper minimum size",
+        "Improved toolbar spacing and layout to prevent text truncation",
+        "Increased toolbar section sizes and button dimensions",
+        "Enhanced toolbar visual design with better margins and spacing",
+        "Added proper size policies to all main UI components",
+        "Set minimum sizes for dock widgets to prevent cramping"
+      ]
+    },
+    {
+      "version": "0.9.27",
+      "date": "2024-12-28",
+      "changes": [
+        "Enhanced toolbar with modern grouped sections and headers",
+        "Redesigned interface with modern grayscale color palette",
+        "Improved settings dialog with comprehensive appearance options",
+        "Added immediate apply functionality for appearance changes",
+        "Enhanced documentation dialog with search and navigation",
+        "Dynamic plugin organization in Tools menu",
+        "Improved button and dropdown proportional sizing",
+        "Added window opacity and modern effects controls",
+        "Enhanced table display options and grid controls",
+        "Better font family and weight selection options"
+      ]
+    },
+    {
+      "version": "0.9.26",
+      "date": "2024-12-27",
+      "changes": [
+        "Added grouped toolbar functionality for plugins",
+        "Enhanced property editing with double-click support",
+        "Improved UI button sizing and proportions",
+        "Updated plugin interface for toolbar grouping"
+      ]
+    },
+    {
+      "version": "0.9.26",
+      "build": 308,
+      "date": "2025-06-02",
+      "changes": [
+        "UI/UX IMPROVEMENTS: Major enhancements to user interface design and interaction patterns",
+        "Added grouped toolbar sections with headers for better organization - Core actions grouped separately from plugin actions",
+        "Implemented dynamic plugin toolbar grouping with proper section headers and cleanup during plugin lifecycle",
+        "Added double-click editing functionality for device properties in the properties panel",
+        "Enhanced property editing supports core properties: alias, hostname, ip_address, mac_address, notes, tags",
+        "Custom properties can also be edited inline, with proper validation and type handling",
+        "Improved button and dropdown visual proportions with consistent min/max heights for better appearance",
+        "Enhanced QComboBox styling with min-height: 24px, max-height: 28px for consistent sizing",
+        "Updated QPushButton styling with proportional sizing: min-height: 22px, max-height: 26px, reduced padding",
+        "Updated QToolButton styling to match proportional sizing with other UI controls",
+        "Toolbar sections dynamically rebuild when plugins are loaded/unloaded to maintain proper organization",
+        "Added proper cleanup mechanisms for grouped toolbar sections during plugin unloading"
+      ]
+    },
+    {
+      "version": "0.9.25",
+      "build": 307,
+      "date": "2025-06-02",
+      "changes": [
+        "CRITICAL FIX: Resolved Windows file locking issues in Loguru logging system",
+        "Fixed 'PermissionError: [WinError 32] The process cannot access the file because it is being used by another process' during log rotation",
+        "Implemented Windows-specific session-based log file naming to prevent rotation conflicts entirely",
+        "Added automatic file handle tracking and cleanup system for Windows logging",
+        "Enhanced logging manager with Windows-safe rotation strategy using time-based rotation instead of size-based",
+        "Disabled file compression on Windows to reduce file locking operations",
+        "Added proper cleanup mechanisms for file handles on application exit",
+        "Logging system now uses unique session-specific file names on Windows to avoid multi-process conflicts",
+        "Added comprehensive file lock management and automatic fallback for failed logging operations",
+        "Enhanced logging diagnostics with get_log_files_info() method for troubleshooting"
+      ]
+    },
     {
       "version": "0.9.24",
       "build": 306,
@@ -320,6 +499,20 @@
         "Fixed pip dependency installation conflicts",
         "Resolved plugin discovery import errors",
         "Updated plugin documentation with troubleshooting guide"
+      ]
+    },
+    {
+      "version": "0.9.12",
+      "build": 270,
+      "date": "2025-05-29",
+      "changes": [
+        "MAJOR TOOLBAR REDESIGN: Changed from toolbar to tab system",
+        "Improved user interface design and interaction",
+        "Added new tabbed interface for better organization of core and plugin features",
+        "Enhanced workspace management and navigation",
+        "Improved workspace path resolution and access",
+        "Added new tab for connectivity monitoring and status display",
+        "Updated all documentation to reflect the new toolbar design"
       ]
     }
   ]

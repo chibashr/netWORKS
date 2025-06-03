@@ -511,9 +511,11 @@ class NetworkScannerPlugin(PluginInterface):
         
         # Remove the "Network" category and add actions directly to toolbar
         self.toolbar_actions = {
-            "main": [
+            "Scanning": [
                 self.scan_action,
-                self.scan_selected_action,
+                self.scan_selected_action
+            ],
+            "Management": [
                 self.scan_type_manager_action
             ]
         }
@@ -1175,11 +1177,8 @@ class NetworkScannerPlugin(PluginInterface):
         
     def get_toolbar_actions(self):
         """Return actions to be placed on toolbars"""
-        # Return a flat list of actions for the toolbar
-        toolbar_actions = []
-        for category, actions in self.toolbar_actions.items():
-            toolbar_actions.extend(actions)
-        return toolbar_actions
+        # Return the grouped actions dictionary for the new grouped toolbar functionality
+        return self.toolbar_actions
         
     def get_context_menu_actions(self):
         """Return actions to be placed in context menus"""

@@ -13,6 +13,11 @@ from datetime import datetime
 from pathlib import Path
 from loguru import logger
 
+# Windows-specific imports for file locking handling
+if platform.system().lower() == "windows":
+    import threading
+    import atexit
+
 class LoggingManager:
     """Manage application logging with enhanced capabilities"""
     
@@ -37,6 +42,11 @@ class LoggingManager:
         self.init_time = datetime.now()
         self.session_id = int(time.time())
         
+        # Windows-specific file rotation management
+        self._is_windows = platform.system().lower() == "windows"
+        self._file_locks = set()  # Track file locks for cleanup
+        self._cleanup_registered = False
+        
         # Create logs directory if it doesn't exist
         try:
             self.logs_dir.mkdir(parents=True, exist_ok=True)
@@ -53,6 +63,64 @@ class LoggingManager:
         
         # Initialize logging
         self._setup_logging()
+        
+        # Register cleanup on Windows
+        if self._is_windows and not self._cleanup_registered:
+            atexit.register(self._cleanup_file_locks)
+            self._cleanup_registered = True
+
+    def _cleanup_file_locks(self):
+        """Clean up file locks on Windows when application exits"""
+        if self._is_windows and self._file_locks:
+            try:
+                # Small delay to allow loguru to finish any pending operations
+                time.sleep(0.1)
+                # Remove all loguru handlers to release file locks
+                logger.remove()
+                time.sleep(0.1)  # Additional delay for Windows file system
+            except Exception:
+                pass  # Ignore cleanup errors on exit
+
+    def _windows_safe_rotation_handler(self, message, file_path):
+        """
+        Windows-safe rotation handler that prevents file locking issues
+        
+        Args:
+            message: The log message to write
+            file_path: Path to the log file
+        """
+        try:
+            # For Windows, we'll use time-based rotation instead of size-based
+            # This reduces the likelihood of file locking conflicts
+            file_path = Path(file_path)
+            if file_path.exists():
+                # Check if file is older than 1 hour and larger than 512KB
+                file_stat = file_path.stat()
+                file_age = time.time() - file_stat.st_mtime
+                file_size = file_stat.st_size
+                
+                if file_age > 3600 and file_size > 524288:  # 1 hour and 512KB
+                    # Create a new timestamped file instead of rotating
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    session_suffix = f"_{self.session_id}"
+                    new_name = file_path.stem + f"_{timestamp}{session_suffix}" + file_path.suffix
+                    new_path = file_path.parent / new_name
+                    
+                    # Use session-specific naming to avoid conflicts
+                    counter = 1
+                    while new_path.exists():
+                        new_name = file_path.stem + f"_{timestamp}{session_suffix}_{counter}" + file_path.suffix
+                        new_path = file_path.parent / new_name
+                        counter += 1
+                    
+                    # Instead of renaming, just start using the new file
+                    # Let the old file be cleaned up later by retention policy
+                    return str(new_path)
+            
+            return str(file_path)
+        except Exception:
+            # If anything fails, just use the original path
+            return str(file_path)
 
     def _setup_logging(self):
         """Set up logging handlers with proper configuration"""
@@ -91,41 +159,103 @@ class LoggingManager:
                 level="INFO",
                 colorize=True,
                 backtrace=True,
-                diagnose=True
+                diagnose=True,
+                enqueue=True  # Fix for Windows threading issues
             )
         except Exception as e:
             print(f"Warning: Could not add console logger: {e}")
         
-        # Recent logs file handler (always keeps the recent logs)
+        # Recent logs file handler (Windows-safe approach)
         try:
             if self.recent_log_path and self.recent_log_path.parent.exists():
-                logger.add(
-                    str(self.recent_log_path),  # Convert Path to string
-                    format=detailed_format,
-                    level="DEBUG",
-                    rotation="5 MB",
-                    retention=3,
-                    compression="zip",
-                    backtrace=True,
-                    diagnose=True
-                )
+                if self._is_windows:
+                    # On Windows, use session-specific naming to avoid file locking
+                    # This prevents rotation conflicts entirely
+                    timestamp = self.init_time.strftime('%Y%m%d_%H%M%S')
+                    recent_log_name = f"recent_logs_{timestamp}_{self.session_id}.log"
+                    recent_log_path = self.logs_dir / recent_log_name
+                    
+                    logger.add(
+                        str(recent_log_path),
+                        format=detailed_format,
+                        level="DEBUG",
+                        # No rotation on Windows to prevent file locking issues
+                        backtrace=True,
+                        diagnose=True,
+                        enqueue=True,
+                        catch=True
+                    )
+                    
+                    # Track this file for cleanup
+                    self._file_locks.add(str(recent_log_path))
+                    
+                    logger.debug(f"Windows: Using session-specific log file: {recent_log_name}")
+                else:
+                    # On non-Windows systems, use normal rotation
+                    logger.add(
+                        str(self.recent_log_path),
+                        format=detailed_format,
+                        level="DEBUG",
+                        rotation="5 MB",
+                        retention=3,
+                        compression="zip",
+                        backtrace=True,
+                        diagnose=True,
+                        enqueue=True,
+                        catch=True
+                    )
         except Exception as e:
             print(f"Warning: Could not add recent logs file handler: {e}")
+            # Try fallback without any special features
+            try:
+                fallback_log = self.logs_dir / f"fallback_logs_{self.session_id}.log"
+                logger.add(
+                    str(fallback_log),
+                    format=detailed_format,
+                    level="DEBUG",
+                    enqueue=True,
+                    catch=True
+                )
+                print(f"Using fallback log file: {fallback_log}")
+                if self._is_windows:
+                    self._file_locks.add(str(fallback_log))
+            except Exception as fallback_error:
+                print(f"Warning: Fallback logging also failed: {fallback_error}")
         
         # Session-specific log file
         try:
             session_log_file = self.logs_dir / f"networks_{self.init_time.strftime('%Y%m%d_%H%M%S')}_{self.session_id}.log"
             if session_log_file and session_log_file.parent.exists():
-                logger.add(
-                    str(session_log_file),  # Convert Path to string
-                    format=detailed_format,
-                    level="DEBUG",
-                    rotation="10 MB",
-                    retention="1 week",
-                    compression="zip",
-                    backtrace=True,
-                    diagnose=True
-                )
+                if self._is_windows:
+                    # On Windows, use conservative settings to avoid file locking
+                    logger.add(
+                        str(session_log_file),
+                        format=detailed_format,
+                        level="DEBUG",
+                        # Use time-based rotation instead of size-based to reduce conflicts
+                        rotation="1 day",
+                        retention="1 week",
+                        # No compression on Windows to reduce file operations
+                        backtrace=True,
+                        diagnose=True,
+                        enqueue=True,
+                        catch=True
+                    )
+                    self._file_locks.add(str(session_log_file))
+                else:
+                    # On non-Windows systems, use more aggressive settings
+                    logger.add(
+                        str(session_log_file),
+                        format=detailed_format,
+                        level="DEBUG",
+                        rotation="10 MB",
+                        retention="1 week",
+                        compression="zip",
+                        backtrace=True,
+                        diagnose=True,
+                        enqueue=True,
+                        catch=True
+                    )
         except Exception as e:
             print(f"Warning: Could not add session log file handler: {e}")
         
@@ -137,6 +267,8 @@ class LoggingManager:
             logger.debug(f"Python: {platform.python_version()}")
             logger.debug(f"Machine: {platform.machine()}")
             logger.debug(f"Log files directory: {self.logs_dir.absolute()}")
+            if self._is_windows:
+                logger.debug("Windows-specific logging configuration applied - using session-based file naming to prevent rotation conflicts")
             if 'session_log_file' in locals():
                 logger.debug(f"Session log file: {session_log_file.name}")
         except Exception as e:
@@ -221,4 +353,59 @@ class LoggingManager:
         Args:
             level (str): The logging level to set (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         """
-        self.update_configuration(level=level) 
+        self.update_configuration(level=level)
+        
+    def shutdown(self):
+        """Properly shutdown logging and release file handles"""
+        try:
+            logger.info("Shutting down logging system")
+            # Remove all handlers to release file locks
+            logger.remove()
+            # Clear file lock tracking
+            self._file_locks.clear()
+            
+            if self._is_windows:
+                # Add a small delay for Windows file system
+                time.sleep(0.1)
+                
+            logger.info("Logging system shutdown completed")
+        except Exception as e:
+            print(f"Warning: Error during logging shutdown: {e}")
+            
+    def get_log_files_info(self):
+        """Get information about current log files
+        
+        Returns:
+            dict: Information about log files and their status
+        """
+        info = {
+            "logs_directory": str(self.logs_dir.absolute()),
+            "session_id": self.session_id,
+            "is_windows": self._is_windows,
+            "tracked_files": list(self._file_locks),
+            "log_files": []
+        }
+        
+        try:
+            # List all log files in the logs directory
+            if self.logs_dir.exists():
+                for log_file in self.logs_dir.glob("*.log"):
+                    try:
+                        stat = log_file.stat()
+                        info["log_files"].append({
+                            "name": log_file.name,
+                            "size": stat.st_size,
+                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                            "tracked": str(log_file) in self._file_locks
+                        })
+                    except Exception:
+                        info["log_files"].append({
+                            "name": log_file.name,
+                            "size": "unknown",
+                            "modified": "unknown",
+                            "tracked": str(log_file) in self._file_locks
+                        })
+        except Exception as e:
+            info["error"] = str(e)
+            
+        return info 
