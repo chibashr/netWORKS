@@ -799,9 +799,37 @@ class TemplateEditorDialog(QDialog):
         try:
             # Check if we have multiple selected devices for enhanced variable detection
             selected_devices = getattr(self.plugin, '_selected_devices', [])
+            
+            # Update selected devices from plugin if needed to ensure we have latest selection
+            self.plugin._update_selection_if_needed()
+            selected_devices = getattr(self.plugin, '_selected_devices', [])
+            
+            # Check specifically for devices with running configurations
+            devices_with_configs = []
             if len(selected_devices) > 1:
-                logger.info(f"Multiple devices selected ({len(selected_devices)}), using multi-device variable detection")
-                return self._create_from_multiple_configs(selected_devices)
+                logger.info(f"Multiple devices selected ({len(selected_devices)}), checking for running configurations...")
+                
+                for dev in selected_devices:
+                    dev_name = dev.get_property('name', 'Unknown')
+                    try:
+                        # Use the template editor's more comprehensive config retrieval method
+                        dev_config = self._get_device_config_for_template(dev)
+                        if dev_config and len(dev_config.strip()) > 100:
+                            devices_with_configs.append(dev)
+                            logger.debug(f"Device '{dev_name}' has running config available ({len(dev_config)} chars)")
+                        else:
+                            logger.debug(f"Device '{dev_name}' has no substantial running config")
+                    except Exception as e:
+                        logger.warning(f"Error checking config for device '{dev_name}': {e}")
+                
+                logger.info(f"Found {len(devices_with_configs)} devices with running configurations")
+                
+                # Use multi-device detection if we have at least 2 devices with configs
+                if len(devices_with_configs) >= 2:
+                    logger.info(f"Using multi-device variable detection with {len(devices_with_configs)} devices")
+                    return self._create_from_multiple_configs(devices_with_configs)
+                else:
+                    logger.info(f"Insufficient devices with configs ({len(devices_with_configs)}), falling back to single device mode")
             
             # Single device template creation (original logic)
             device_name = device.get_property('name', 'Unknown')
@@ -842,6 +870,8 @@ class TemplateEditorDialog(QDialog):
             
         except Exception as e:
             logger.error(f"Error creating template from config: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             QMessageBox.critical(self, "Error", f"Failed to create template: {e}")
 
     def _create_from_multiple_configs(self, devices):

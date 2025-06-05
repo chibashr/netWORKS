@@ -593,7 +593,7 @@ class ConfigMatePlugin(PluginInterface):
             elif hasattr(self.main_window, 'deviceTable'):
                 device_table = self.main_window.deviceTable
             elif hasattr(self.main_window, 'central_widget'):
-                # Try to find device table in central widget
+                # Try to find device table in the central widget
                 central = self.main_window.central_widget
                 if hasattr(central, 'device_table'):
                     device_table = central.device_table
@@ -738,6 +738,16 @@ class ConfigMatePlugin(PluginInterface):
         self._selected_devices = devices if devices else []
         logger.debug(f"ConfigMate: Device selection changed - {len(self._selected_devices)} devices selected")
         
+        # Log device details for debugging
+        if self._selected_devices:
+            device_names = [device.get_property('name', 'Unknown') for device in self._selected_devices]
+            logger.debug(f"ConfigMate: Selected devices: {', '.join(device_names)}")
+            
+            # Check for running configs when multiple devices are selected
+            if len(self._selected_devices) > 1:
+                devices_with_configs = self._check_devices_for_running_configs(self._selected_devices)
+                logger.info(f"ConfigMate: {len(devices_with_configs)} of {len(self._selected_devices)} selected devices have running configurations")
+        
         # Update config preview widget with new selection
         if self.config_preview_widget:
             if hasattr(self.config_preview_widget, 'set_selected_devices'):
@@ -745,32 +755,132 @@ class ConfigMatePlugin(PluginInterface):
             elif hasattr(self.config_preview_widget, 'refresh_device_list'):
                 self.config_preview_widget.refresh_device_list()
     
+    def _check_devices_for_running_configs(self, devices):
+        """Check which devices have running configurations available"""
+        devices_with_configs = []
+        
+        for device in devices:
+            device_name = device.get_property('name', 'Unknown')
+            try:
+                config_text = self._get_device_config(device)
+                if config_text and len(config_text.strip()) > 100:  # Substantial config
+                    devices_with_configs.append(device)
+                    logger.debug(f"ConfigMate: Device '{device_name}' has running config ({len(config_text)} chars)")
+                else:
+                    logger.debug(f"ConfigMate: Device '{device_name}' has no substantial running config")
+            except Exception as e:
+                logger.warning(f"ConfigMate: Error checking config for device '{device_name}': {e}")
+        
+        return devices_with_configs
+    
     # Action handlers
     
     @safe_action_wrapper
     def open_template_manager(self):
         """Open the template management dialog"""
         # Ensure we have the latest device selection
-        self._update_selection_if_needed()
+        self._force_selection_refresh()
         
         dialog = TemplateEditorDialog(self, template_name=None, parent=self.main_window)
         dialog.exec()
     
+    def _force_selection_refresh(self):
+        """Force a refresh of the device selection state"""
+        try:
+            logger.debug("ConfigMate: Forcing device selection refresh...")
+            
+            # Store old selection for comparison
+            old_selection = self._selected_devices[:] if self._selected_devices else []
+            old_count = len(old_selection)
+            
+            # Try all available methods to get current selection
+            current_selection = None
+            
+            # Method 1: Device manager
+            if hasattr(self.device_manager, 'get_selected_devices'):
+                try:
+                    current_selection = self.device_manager.get_selected_devices()
+                    if current_selection:
+                        logger.debug(f"ConfigMate: Force refresh got {len(current_selection)} devices from device_manager")
+                except Exception as e:
+                    logger.debug(f"ConfigMate: Error getting selection from device_manager: {e}")
+            
+            # Method 2: Main window
+            if not current_selection and hasattr(self.main_window, 'get_selected_devices'):
+                try:
+                    current_selection = self.main_window.get_selected_devices()
+                    if current_selection:
+                        logger.debug(f"ConfigMate: Force refresh got {len(current_selection)} devices from main_window")
+                except Exception as e:
+                    logger.debug(f"ConfigMate: Error getting selection from main_window: {e}")
+            
+            # Method 3: Device table direct access
+            if not current_selection:
+                try:
+                    device_table = None
+                    if hasattr(self.main_window, 'device_table'):
+                        device_table = self.main_window.device_table
+                    elif hasattr(self.main_window, 'central_widget'):
+                        # Try to find device table in the central widget
+                        central = self.main_window.central_widget
+                        if hasattr(central, 'device_table'):
+                            device_table = central.device_table
+                    
+                    if device_table and hasattr(device_table, 'get_selected_devices'):
+                        current_selection = device_table.get_selected_devices()
+                        if current_selection:
+                            logger.debug(f"ConfigMate: Force refresh got {len(current_selection)} devices from device_table")
+                except Exception as e:
+                    logger.debug(f"ConfigMate: Error getting selection from device_table: {e}")
+            
+            # Update selection if we found anything
+            if current_selection is not None:
+                self._selected_devices = current_selection
+                new_count = len(self._selected_devices)
+                
+                if new_count != old_count:
+                    logger.info(f"ConfigMate: Force refresh updated selection from {old_count} to {new_count} devices")
+                    
+                    # Check for running configs on newly selected devices
+                    if new_count > 1:
+                        devices_with_configs = self._check_devices_for_running_configs(self._selected_devices)
+                        logger.info(f"ConfigMate: Force refresh - {len(devices_with_configs)} of {new_count} devices have running configurations")
+                else:
+                    logger.debug(f"ConfigMate: Force refresh - selection unchanged ({new_count} devices)")
+            else:
+                logger.debug("ConfigMate: Force refresh - no selection found through any method")
+                
+        except Exception as e:
+            logger.error(f"ConfigMate: Error during force selection refresh: {e}")
+            import traceback
+            logger.debug(f"ConfigMate: Force refresh traceback: {traceback.format_exc()}")
+    
     def _update_selection_if_needed(self):
-        """Update selection from device manager if needed"""
+        """Update selection from device manager if needed (lighter version of force refresh)"""
         try:
             # This ensures we have the latest selection in case the signal wasn't received
+            current_selection = None
+            
+            # Try multiple methods to get current selection
             if hasattr(self.device_manager, 'get_selected_devices'):
                 current_selection = self.device_manager.get_selected_devices()
-                if current_selection is not None:
-                    self._selected_devices = current_selection
-                    logger.debug(f"ConfigMate: Updated selection to {len(self._selected_devices)} devices")
+            
+            # Update our selection if we found something different
+            if current_selection is not None and current_selection != self._selected_devices:
+                old_count = len(self._selected_devices) if self._selected_devices else 0
+                self._selected_devices = current_selection
+                new_count = len(self._selected_devices) if self._selected_devices else 0
+                logger.debug(f"ConfigMate: Light refresh updated selection from {old_count} to {new_count} devices")
+            
         except Exception as e:
-            logger.debug(f"ConfigMate: Could not update selection directly: {e}")
+            logger.debug(f"ConfigMate: Could not update selection lightly: {e}")
     
     @safe_action_wrapper
     def quick_generate_config(self):
         """Quick generate configuration for selected devices"""
+        # Ensure we have the latest device selection
+        self._force_selection_refresh()
+        
         selected_devices = self._get_selected_devices()
         if not selected_devices:
             QMessageBox.information(
@@ -833,6 +943,9 @@ class ConfigMatePlugin(PluginInterface):
     @safe_action_wrapper
     def compare_configurations(self):
         """Compare configurations between selected devices"""
+        # Ensure we have the latest device selection
+        self._force_selection_refresh()
+        
         selected_devices = self._get_selected_devices()
         if len(selected_devices) < 2:
             QMessageBox.information(
@@ -842,8 +955,24 @@ class ConfigMatePlugin(PluginInterface):
             )
             return
         
-        # Open comparison dialog
-        dialog = ConfigComparisonDialog(selected_devices, self, self.main_window)
+        # Check which devices actually have running configurations
+        devices_with_configs = self._check_devices_for_running_configs(selected_devices)
+        if len(devices_with_configs) < 2:
+            device_names = [device.get_property('name', 'Unknown') for device in selected_devices]
+            configs_available = [device.get_property('name', 'Unknown') for device in devices_with_configs]
+            
+            QMessageBox.warning(
+                self.main_window,
+                "Insufficient Configurations",
+                f"Need at least 2 devices with running configurations for comparison.\n\n"
+                f"Selected devices: {', '.join(device_names)}\n"
+                f"Devices with configs: {', '.join(configs_available) if configs_available else 'None'}\n\n"
+                f"Make sure devices have been scanned and their running configurations are available."
+            )
+            return
+        
+        # Open comparison dialog with devices that have configs
+        dialog = ConfigComparisonDialog(devices_with_configs, self, self.main_window)
         dialog.exec()
     
     # Context menu handlers
